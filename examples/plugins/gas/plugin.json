@@ -1,0 +1,14 @@
+{
+  "id": "com.example.gas",
+  "name": "Gas",
+  "version": "1.0.0",
+  "main": "index.js",
+  "description": "Gas price and latest block on Ethereum and Base, read through host.rpc. The plugin names a chain, never an endpoint.",
+  "author": "crypto-panel examples",
+  "permissions": {
+    "chains": ["eip155:1", "eip155:8453"]
+  },
+  "navigation": [
+    { "title": "Gas", "page": "overview" }
+  ]
+}

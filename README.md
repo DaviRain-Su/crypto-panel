@@ -1,41 +1,156 @@
 # crypto-panel
 
-**Desktop apps for watching crypto, in a menu bar panel — extended by sandboxed
-plugins.** Watch-only by default: keys never reach a plugin, and signing (when it
-comes) is an approval the shell renders itself.
+**A desktop app for watching crypto — extended by sandboxed plugins.**
+It has a native wallet whose keys stay in the OS keychain: a plugin never sees
+one, and every signature passes an approval the shell decodes and draws itself.
 
-Design: [`docs/design.md`](docs/design.md). Status: design, before the first line of
-code.
+Design: [`docs/design.md`](docs/design.md). Status: **M2 and M3 implemented** —
+the shell, the sandboxed plugin runtime, the signed plugin store, and the
+native wallet with decoded approvals. Fiat prices, hardware wallets and the
+agent API are the milestones after them.
 
 ## The idea in one screen
 
-- **The shell** (Go + [MyGo](https://github.com/egoist/mygo) native UI): a tray item
-  with the portfolio's headline, a panel of pages, a plugin manager, permission
-  prompts, decoded approvals, chain brokers.
+- **The shell** (Go + [MyGo](https://github.com/egoist/mygo) native UI): a normal
+  desktop window with a sidebar of pages — Portfolio, Wallet, Plugins, Settings,
+  and one entry per plugin page — plus the plugin manager, permission prompts,
+  decoded approvals and chain brokers.
 - **Plugins** (JavaScript, anyone's): a folder with `plugin.json` and one module, run
   each in its own [moejs](https://github.com/MoeForge/moejs) runtime — pure Go, one
   realm each, with memory and time limits — and only the host functions its manifest
-  grants.
+  grants. A plugin store installs signed archives from a registry, with the
+  permissions shown before anything is unpacked into the plugins folder.
 - **Plugin UI is data.** A plugin returns pages (`stats`, `table`, `cards`, `links`,
   `chart`); the shell draws them with native UI. No HTML, no plugin-drawn dialogs, so
   an approval prompt cannot be imitated.
+- **Every plugin is an app.** Its pages sit in the sidebar beside the shell's own,
+  like the sources of a music app: adding an app is installing a plugin, and the
+  shell stays the same. The wallet those apps need is native: accounts are created
+  or imported on the Wallet page, their keys live in the OS keychain, and a plugin
+  can only ask the shell to sign — never sign itself.
+
+## What M0 does
+
+- A desktop window with a sidebar: a portfolio page (the sum of the watched
+  native balances, one card per address) and a settings page. Closing the window
+  on macOS hides it to the Dock; the app keeps watching and the Dock icon brings
+  it back. On Windows and Linux closing the window quits.
+- Two chain families, picked in Settings: **EVM** (Ethereum, Base) and
+  **Solana** (mainnet). A network's ID is its CAIP-2 identifier, e.g.
+  `eip155:8453` or `solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp`.
+- Watch-only addresses in both families: EVM addresses are validated with
+  EIP-55 checksums, Solana addresses are base58 decoded to 32 bytes. The
+  portfolio shows the selected family's addresses; the other family's stay in
+  the file until its network is selected.
+- Balances from one endpoint at a time: the native coin (ETH at 18 decimals,
+  SOL at 9), plus a short default token list (USDC, USDT, DAI, WETH on
+  Ethereum; USDC, DAI, WETH, cbETH on Base; USDC, USDT, JUP, BONK on Solana).
+- The endpoint is pinned — by `eth_chainId` for EVM, by `getGenesisHash` for
+  Solana — cached briefly, rate-limited and audited; a custom endpoint can be
+  set in Settings and is refused if it serves another chain. The default
+  Solana endpoint answers native balances but treats token-account queries as
+  a paid feature, so token rows show a warning until a custom endpoint is set.
+- English and Simplified Chinese, following the system or chosen in Settings.
+- Addresses and settings in `settings.json` under the app's user data directory;
+  an M0 file with `chainId` is migrated to `networkId` on load.
+
+## What M1 adds
+
+- **Plugins are folders** with `plugin.json` and one JavaScript module. Install
+  one from the Plugins page (a folder picker), turn it on or off, read its log,
+  or remove it. A local install is unsigned, and every page it draws says so.
+  An enabled plugin's pages appear in the sidebar beside the shell's own.
+- **A strict manifest**: unknown keys fail the install; `id` is reverse-DNS,
+  `version` is semver, `main` must be a clean `.js`/`.mjs` path inside the
+  folder. Permissions are `network` (a host allowlist; `*.example.com` covers
+  subdomains), `chains` (the CAIP-2 ids `host.rpc` may name), `read`
+  (`balances`), `storageKb`, and `sign` (which needs at least one chain).
+- **One moejs runtime per plugin**: 256 MB, a 30 s watchdog per call, no
+  dynamic code, restarted after a timeout or a memory stop. The runtime is
+  created on first use and dropped when the plugin is disabled or removed.
+- **Host functions**: `setting`, `kv` (quota from `storageKb`), `fetch`
+  (allowlisted, https, 8 MB cap, a safe header set, every origin logged), `rpc`
+  (through the shell's pinned broker; signing and sending methods refused),
+  `accounts` (addresses only), `log`, `i18n`, `render`.
+- **Pages are data**: `stats`, `table`, `cards`, `links`, `text`, `divider`,
+  `chart` (line or bar), validated by the shell and drawn with native UI. A
+  page is 256 KB at most, and every string is plain text — control and bidi
+  characters are refused, so a plugin cannot imitate the shell's chrome.
+- Two examples in `examples/plugins`: **Gas** (`host.rpc` on Ethereum and Base)
+  and **Fear & Greed** (`host.fetch` on `api.alternative.me`, with a 30-day
+  chart). The tests run both, and a fetch outside the allowlist is refused with
+  the reason the plugin sees.
+
+## What M2 adds
+
+- **A plugin store**, on the Plugins page beside the installed plugins. The app
+  ships a **featured catalog** — the two examples, signed and embedded — so the
+  store works out of the box; **Settings → Plugin registry** points it at any
+  HTTPS URL that serves a registry JSON. `docs/store.md` is the publisher's
+  guide.
+- **A registry is one static JSON file**: each entry names a plugin's id, name,
+  version, archive URL, `sha256:` hash, `ed25519:` signature and publisher key.
+  The hash covers the unpacked tree (sorted paths, sizes and bytes; the shell's
+  own files excluded). The signature is over the hash string.
+- **An install is checked before it is unpacked into place**: the archive's
+  manifest must name the entry's id and version, the tree's digest must match
+  the hash, and the signature must verify under the publisher's key. An
+  unsigned network install is refused. Zip traversal, symlinks, special files
+  and the size limits are refused too.
+- **The permission prompt is the shell's**: name, author, description, and what
+  the plugin may do — network hosts, chains, balances, signing, storage,
+  settings. An update lists the permissions that are new. A local folder
+  install is marked unsigned; a store install is signed.
+- **Updates are guarded**: a newer version only, no replay of the same version
+  with other contents, and the publisher's key must not change. Settings and
+  the plugin's `kv.json` carry over. The shell records the install in
+  `install.json` and checks the digest again at load, so a signed plugin whose
+  files changed shows as broken instead of running.
+- **`tools/pluginsign`** packs, hashes and signs a plugin folder, and writes the
+  registry entry; the featured catalog is built with it.
+
+## What M3 adds
+
+- **A native wallet**, on its own page in the sidebar: create an account with a
+  fresh key or import a private key, lock and unlock it, reveal its key to back
+  it up, or remove it. Keys are written to the OS keychain (the login Keychain
+  on macOS, the Secret Service on Linux, the Credential Manager on Windows) and
+  never to `settings.json`; the file holds only addresses and labels.
+- **Wallet accounts are watched too**: their balances join the portfolio total,
+  and a wallet address cannot also be added as a watch-only one.
+- **`host.requestSign(tx)`**, granted by `permissions.sign`: a plugin states
+  `{chainId, to, value, data, gas, maxFeePerGas, maxPriorityFeePerGas, nonce,
+  description}`; the shell fills in what is missing, decodes the calldata
+  itself (an ERC-20 transfer or approval gets the token's own symbol and
+  decimals), and shows its decode beside the plugin's description in a modal
+  window. Only a click on **Approve and sign** signs it; closing the window or
+  pressing **Reject** is a rejection the plugin sees as an error. The signed
+  transaction is broadcast through the same pinned broker, and the plugin gets
+  its hash.
+- **The approval is the only way to a signature.** The wallet's keyring is not
+  reachable from the plugin runtime: a manifest without `sign` cannot call
+  `requestSign`, and a request the user does not approve never reaches the key.
+  A wait on the user pauses the plugin's 30 s watchdog, so reading the window
+  is not a timeout.
+
+Not yet: fiat prices, hardware wallets, the agent API.
 
 ## Where the pieces come from
 
 | | |
 |---|---|
-| [Metrix.Bar](https://metrix.bar) | The product: a number in the menu bar, a panel on click, a dashboard as one declarative file, readable permissions, a read-only local API for agents |
-| [mygo-music](https://github.com/egoist/mygo-music) | The plugin model: a folder + `plugin.json` + one module, one runtime per plugin, host-enforced `network` allowlists, declarative pages, settings as native forms, secrets in the OS keychain |
-| [MyGo](https://github.com/egoist/mygo) | The substrate: `mygo.NewTray`, `mygo.NewFlyout`, `package ui`, `fetch`/`websocket`, `Secrets`, `Protocol`, `GlobalShortcut`, `ui.Tester` |
+| [Metrix.Bar](https://metrix.bar) | The product: a dashboard as one declarative file, readable permissions, a read-only local API for agents |
+| [mygo-music](https://github.com/egoist/mygo-music) | The app shape and the plugin model: one window with a sidebar, a folder + `plugin.json` + one module, one runtime per plugin, host-enforced `network` allowlists, declarative pages, settings as native forms, secrets in the OS keychain |
+| [MyGo](https://github.com/egoist/mygo) | The substrate: `mygo.NewWindow`, `package ui`, `fetch`/`websocket`, `Secrets`, `Protocol`, `GlobalShortcut`, `ui.Tester` |
 
 ## Milestones
 
 | | |
 |---|---|
-| **M0** | Shell: tray and panel, watch-only addresses, balances from one EVM RPC |
-| **M1** | Plugin runtime: manifest, moejs realm, limits, `setting`/`kv`/`fetch`/`render`, plugin manager, two demo plugins |
-| **M2** | Install from GitHub/zip with signature and hash, permission prompts, the malicious-plugin test suite |
-| **M3** | Decoded approvals, optional hot wallet in the OS keystore, `host.requestSign` |
+| **M0** | Shell: desktop window with a sidebar, watch-only addresses, balances from one RPC, EVM and Solana — **done** |
+| **M1** | Plugin runtime: manifest, moejs realm, limits, `setting`/`kv`/`fetch`/`render`, plugin manager, two demo plugins — **done** |
+| **M2** | Plugin store: signed registry installs, permission prompts, update guards, the malicious-plugin test suite — **done** |
+| **M3** | Native wallet: hot wallet in the OS keychain, decoded approvals, `host.requestSign` — **done** |
 | **M4** | Hardware wallet, agent API, screen-edge panel and global shortcut |
 
 ## Constraints that are not negotiable
@@ -45,15 +160,31 @@ code.
 - No `process` permission: spawning binaries in a crypto app is a backdoor.
 - RPC goes through the shell's broker so endpoints are pinned, cached, rate-limited
   and audited.
-- Installs are verified: `hash` and `signature` in the manifest, a strict schema, and
-  new permissions on update require confirmation.
+- Installs are verified: a registry entry's `hash` and `signature` checked before the
+  archive is unpacked into place, the digest checked again at load, a strict
+  manifest schema, and new permissions on update require confirmation.
 
-## Building (once M0 lands)
+## Building
 
 ```sh
-go tool mygo dev      # run in development
-go tool mygo build    # package into build/
-go test ./internal/...
+go run .               # run from source
+go test ./...          # unit tests
+go test ./... -live    # also hit the public endpoints
+go tool mygo dev       # live reload, native UI
+go tool mygo build     # package into build/
 ```
 
-The Go module path and the final name are open questions (see the design).
+To try a plugin, open the window's **Plugins** page, choose **Install from
+folder…**, and pick `examples/plugins/gas` or `examples/plugins/fear-greed`. The
+plugin's pages then show in the sidebar. The **Store** tab installs the same two
+from the featured catalog, signed, through the permission prompt; to publish
+your own, see [`docs/store.md`](docs/store.md).
+
+To try the wallet, open the **Wallet** page and choose **New account**. The key
+is shown once, so save it; it is also in the keychain, and **Reveal key** shows
+it again while the account is unlocked. A plugin's `host.requestSign` opens the
+approval window, which no plugin can draw or dismiss.
+
+The module path is `github.com/davirain-su/crypto-panel` for now; the design's
+open questions (the final name, the remote) can change it before the first
+release, and the change is mechanical.

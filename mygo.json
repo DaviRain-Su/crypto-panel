@@ -1,0 +1,8 @@
+{
+  "name": "Crypto Panel",
+  "identifier": "dev.davirain.crypto-panel",
+  "out": "build",
+  "macos": {
+    "infoPlist": { "LSUIElement": true }
+  }
+}

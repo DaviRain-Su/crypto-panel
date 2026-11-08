@@ -1,0 +1,337 @@
+package plugin
+
+import (
+	"archive/zip"
+	"bytes"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"io/fs"
+	"os"
+	"path"
+	"path/filepath"
+	"strconv"
+	"strings"
+	"time"
+)
+
+// Install limits, shared by the folder copy, the archive and the digest.
+const (
+	maxPluginFiles = 200
+	maxPluginTotal = 8 << 20
+	maxPluginFile  = 2 << 20
+)
+
+// Archive is a downloaded plugin that has been unpacked and verified, but
+// not installed: the shell shows its permissions first, and only the user's
+// answer moves it into the plugins folder.
+type Archive struct {
+	Manifest Manifest
+	Entry    RegistryEntry
+
+	dir   string
+	store *Store
+	done  bool
+}
+
+// Prepare unpacks a signed archive and checks it against its registry entry:
+// the manifest's id and version must match, the tree's digest must match the
+// entry's hash, and the signature must be the publisher's over that hash. It
+// also refuses an install that would replace a newer version, replay the
+// same version with other contents, or change the publisher's key.
+func (s *Store) Prepare(data []byte, entry RegistryEntry) (*Archive, error) {
+	if err := entry.Validate(); err != nil {
+		return nil, err
+	}
+	if len(data) > MaxArchiveBytes {
+		return nil, fmt.Errorf("the download is larger than %d bytes", MaxArchiveBytes)
+	}
+	if err := os.MkdirAll(s.dir, 0o755); err != nil {
+		return nil, err
+	}
+	tmp, err := os.MkdirTemp(s.dir, ".install-*")
+	if err != nil {
+		return nil, err
+	}
+	fail := func(err error) (*Archive, error) {
+		os.RemoveAll(tmp)
+		return nil, err
+	}
+	if err := extractZip(data, tmp); err != nil {
+		return fail(err)
+	}
+	m, err := LoadManifest(tmp)
+	if err == nil {
+		err = m.ValidateDir(tmp)
+	}
+	if err == nil && m.ID != entry.ID {
+		err = fmt.Errorf("the archive holds %s, not %s", m.ID, entry.ID)
+	}
+	if err == nil && m.Version != entry.Version {
+		err = fmt.Errorf("the archive is version %s, not %s", m.Version, entry.Version)
+	}
+	if err == nil {
+		var digest string
+		if digest, err = DigestDir(tmp); err == nil && digest != entry.Hash {
+			err = errors.New("the download does not match the registry's hash")
+		}
+	}
+	if err == nil {
+		err = VerifyDigest(entry.Hash, entry.Signature, entry.Publisher)
+	}
+	if err == nil {
+		err = s.checkInstall(entry)
+	}
+	if err != nil {
+		return fail(err)
+	}
+	return &Archive{Manifest: m, Entry: entry, dir: tmp, store: s}, nil
+}
+
+// checkInstall refuses an update that goes backwards, a same-version
+// archive with other contents (a replay), and a publisher key that changed
+// since the plugin was installed. A folder with no readable manifest is
+// treated as absent: a store install may repair it.
+func (s *Store) checkInstall(entry RegistryEntry) error {
+	inst, err := s.Get(entry.ID)
+	if err != nil {
+		return nil
+	}
+	old := inst.Manifest
+	switch cmp := CompareVersions(entry.Version, old.Version); {
+	case cmp < 0:
+		return fmt.Errorf("version %s is older than the installed %s", entry.Version, old.Version)
+	case cmp == 0:
+		info, ierr := loadInstallInfo(inst.Dir)
+		if ierr == nil && info.Hash == entry.Hash {
+			return fmt.Errorf("plugin %s is already installed", entry.ID)
+		}
+		return fmt.Errorf("version %s is already installed with different content", entry.Version)
+	}
+	info, ierr := loadInstallInfo(inst.Dir)
+	if ierr == nil && info.Publisher != "" && info.Publisher != entry.Publisher {
+		return errors.New("the publisher key changed since the last install")
+	}
+	return nil
+}
+
+// Install moves the prepared archive into the plugins folder, carrying the
+// plugin's settings and stored data over an update. The old folder is only
+// replaced once the new one is in place.
+func (ar *Archive) Install() (Manifest, error) {
+	if ar.done || ar.dir == "" || ar.store == nil {
+		return Manifest{}, errors.New("this archive was already installed or closed")
+	}
+	dest := filepath.Join(ar.store.dir, ar.Manifest.ID)
+	st := state{Enabled: true}
+	if _, err := os.Stat(dest); err == nil {
+		if old, err := loadState(dest); err == nil {
+			st = old
+		}
+		if data, err := os.ReadFile(filepath.Join(dest, "kv.json")); err == nil {
+			if err := writeFileAtomic(filepath.Join(ar.dir, "kv.json"), data, 0o600); err != nil {
+				return Manifest{}, err
+			}
+		}
+	}
+	if err := saveState(ar.dir, st); err != nil {
+		return Manifest{}, err
+	}
+	info := installInfo{
+		Source:    ar.Entry.URL,
+		Hash:      ar.Entry.Hash,
+		Signature: ar.Entry.Signature,
+		Publisher: ar.Entry.Publisher,
+		Installed: time.Now().UTC().Format(time.RFC3339),
+	}
+	if err := saveInstallInfo(ar.dir, info); err != nil {
+		return Manifest{}, err
+	}
+	if _, err := os.Stat(dest); err == nil {
+		backup := dest + ".old-" + strconv.FormatInt(time.Now().UnixNano(), 36)
+		if err := os.Rename(dest, backup); err != nil {
+			return Manifest{}, err
+		}
+		if err := os.Rename(ar.dir, dest); err != nil {
+			_ = os.Rename(backup, dest)
+			return Manifest{}, err
+		}
+		_ = os.RemoveAll(backup)
+	} else if err := os.Rename(ar.dir, dest); err != nil {
+		return Manifest{}, err
+	}
+	ar.done = true
+	ar.dir = ""
+	return ar.Manifest, nil
+}
+
+// Close discards an archive the user did not approve.
+func (ar *Archive) Close() {
+	if ar.done || ar.dir == "" {
+		return
+	}
+	os.RemoveAll(ar.dir)
+	ar.dir = ""
+}
+
+// installInfo is the shell's record of a signed install, kept beside the
+// plugin's state. It is not part of the plugin's digest.
+type installInfo struct {
+	Source    string `json:"source,omitempty"`
+	Hash      string `json:"hash"`
+	Signature string `json:"signature"`
+	Publisher string `json:"publisher"`
+	Installed string `json:"installed,omitempty"`
+}
+
+func loadInstallInfo(dir string) (installInfo, error) {
+	data, err := os.ReadFile(filepath.Join(dir, "install.json"))
+	if errors.Is(err, fs.ErrNotExist) {
+		return installInfo{}, nil
+	}
+	if err != nil {
+		return installInfo{}, err
+	}
+	var info installInfo
+	if err := json.Unmarshal(data, &info); err != nil {
+		return installInfo{}, err
+	}
+	return info, nil
+}
+
+func saveInstallInfo(dir string, info installInfo) error {
+	data, err := json.MarshalIndent(info, "", "  ")
+	if err != nil {
+		return err
+	}
+	data = append(data, '\n')
+	return writeFileAtomic(filepath.Join(dir, "install.json"), data, 0o600)
+}
+
+// extractZip unpacks one plugin archive into dest. A single top-level folder
+// is stripped, so a GitHub archive of the repository works as it comes. The
+// archive may not escape dest, carry links or special files, or bring more
+// than a plugin may.
+func extractZip(data []byte, dest string) error {
+	zr, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
+	if err != nil {
+		return fmt.Errorf("the archive is not a zip file: %w", err)
+	}
+	type member struct {
+		file *zip.File
+		name string
+	}
+	var members []member
+	var names []string
+	for _, f := range zr.File {
+		name, err := cleanZipName(f.Name)
+		if err != nil {
+			return err
+		}
+		if name == "" || isJunk(name) || f.FileInfo().IsDir() {
+			continue
+		}
+		if f.Mode()&fs.ModeSymlink != 0 {
+			return fmt.Errorf("the archive contains a symlink: %s", name)
+		}
+		if !f.Mode().IsRegular() {
+			return fmt.Errorf("the archive contains a special file: %s", name)
+		}
+		members = append(members, member{file: f, name: name})
+		names = append(names, name)
+	}
+	prefix := commonTopDir(names)
+	total := uint64(0)
+	seen := make(map[string]bool, len(members))
+	for _, m := range members {
+		name := strings.TrimPrefix(m.name, prefix)
+		if name == "" {
+			continue
+		}
+		if isShellFile(name) {
+			return fmt.Errorf("the archive may not contain %s", name)
+		}
+		if seen[name] {
+			return fmt.Errorf("the archive contains %s twice", name)
+		}
+		seen[name] = true
+		if m.file.UncompressedSize64 > maxPluginFile {
+			return fmt.Errorf("%s is larger than %d bytes", name, maxPluginFile)
+		}
+		if len(seen) > maxPluginFiles {
+			return fmt.Errorf("the plugin has more than %d files", maxPluginFiles)
+		}
+		rc, err := m.file.Open()
+		if err != nil {
+			return err
+		}
+		content, err := io.ReadAll(io.LimitReader(rc, maxPluginFile+1))
+		rc.Close()
+		if err != nil {
+			return err
+		}
+		if len(content) > maxPluginFile {
+			return fmt.Errorf("%s is larger than %d bytes", name, maxPluginFile)
+		}
+		// Count what was actually decompressed: a zip may lie about the
+		// sizes it declares.
+		total += uint64(len(content))
+		if total > maxPluginTotal {
+			return fmt.Errorf("the plugin is larger than %d bytes", maxPluginTotal)
+		}
+		target := filepath.Join(dest, filepath.FromSlash(name))
+		if !strings.HasPrefix(target, dest+string(os.PathSeparator)) {
+			return fmt.Errorf("the archive escapes its folder: %s", name)
+		}
+		if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+			return err
+		}
+		if err := os.WriteFile(target, content, 0o644); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// cleanZipName keeps an archive member inside the folder it is unpacked
+// into, and refuses the names zip allows but a filesystem should not.
+func cleanZipName(name string) (string, error) {
+	if name == "" || strings.ContainsRune(name, 0) || strings.Contains(name, `\`) {
+		return "", fmt.Errorf("the archive contains an invalid file name %q", name)
+	}
+	if path.IsAbs(name) {
+		return "", fmt.Errorf("the archive contains an absolute path: %s", name)
+	}
+	clean := path.Clean(name)
+	if clean == "." {
+		return "", nil
+	}
+	if clean == ".." || strings.HasPrefix(clean, "../") {
+		return "", fmt.Errorf("the archive escapes its folder: %s", name)
+	}
+	return clean, nil
+}
+
+// commonTopDir returns "dir/" when every name sits under one top-level
+// folder, as a GitHub archive does, and "" otherwise.
+func commonTopDir(names []string) string {
+	top := ""
+	for _, name := range names {
+		first, rest, ok := strings.Cut(name, "/")
+		if !ok || rest == "" {
+			return ""
+		}
+		if top == "" {
+			top = first
+			continue
+		}
+		if first != top {
+			return ""
+		}
+	}
+	if top == "" {
+		return ""
+	}
+	return top + "/"
+}

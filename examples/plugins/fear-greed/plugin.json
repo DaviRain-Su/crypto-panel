@@ -1,0 +1,14 @@
+{
+  "id": "com.example.feargreed",
+  "name": "Fear & Greed",
+  "version": "1.0.0",
+  "main": "index.js",
+  "description": "The crypto fear and greed index for the last 30 days, fetched from api.alternative.me.",
+  "author": "crypto-panel examples",
+  "permissions": {
+    "network": ["api.alternative.me"]
+  },
+  "navigation": [
+    { "title": "Fear & Greed", "page": "index" }
+  ]
+}
