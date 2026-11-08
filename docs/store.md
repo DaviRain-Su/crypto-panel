@@ -4,10 +4,10 @@ The app's Plugins page has two tabs: **Installed** and **Store**. The store
 reads a *registry* — one static JSON file that lists signed plugins — and
 installs an entry with one click, after showing what the plugin may do.
 
-The app ships a featured registry (two signed examples, embedded in the
-binary), so the store works before anything is set up. A registry of your own
-is one HTTPS URL in **Settings → Plugin registry**; `http://127.0.0.1` and
-`http://localhost` are allowed for development.
+The app ships no catalog of its own: until a registry is set, the Store tab
+says so and points at Settings. A registry is one HTTPS URL in
+**Settings → Plugin registry**; `http://127.0.0.1` and `http://localhost` are
+allowed for development.
 
 ## A registry
 
@@ -65,7 +65,7 @@ running.
 go run ./tools/pluginsign keygen -out publisher.key
 go run ./tools/pluginsign pack \
   -key publisher.key \
-  -dir examples/plugins/gas \
+  -dir internal/plugin/testdata/examples/gas \
   -url https://example.com/plugins/gas-1.0.0.zip \
   -zip gas-1.0.0.zip -entry gas.json
 go run ./tools/pluginsign registry -name "My plugins" -out registry.json gas.json
@@ -76,19 +76,9 @@ it never goes into the registry). `pack` writes the zip and the entry JSON.
 `registry` combines entries into the catalog. Serve the zip and the JSON from
 any HTTPS host — a static site, GitHub Pages, an object store.
 
-The featured catalog is built the same way, with `embedded:` URLs:
-
-```sh
-go run ./tools/pluginsign pack -key /path/to/featured.key \
-  -dir examples/plugins/gas -url embedded:gas.zip \
-  -zip internal/plugin/featured/gas.zip -entry /tmp/gas.json
-go run ./tools/pluginsign registry -name "Crypto Panel Featured" \
-  -out internal/plugin/featured/registry.json /tmp/gas.json /tmp/fear-greed.json
-```
-
-The featured private key is not in the repository. Regenerating the catalog
-with a new key is fine — it changes the publisher every featured plugin is
-installed with, so remove and reinstall them.
+The app trusts no publisher in advance: an entry's `publisher` key is the one
+that entry's plugin is installed with, and an update must be signed by the same
+key. There is no built-in registry and no embedded archive.
 
 ## What the user sees
 

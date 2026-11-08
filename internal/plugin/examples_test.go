@@ -8,8 +8,9 @@ import (
 	"testing"
 )
 
-// examplesDir is where the shipped example plugins live.
-var examplesDir = filepath.Join("..", "..", "examples", "plugins")
+// examplesDir is where the example plugins live: test fixtures, not shipped
+// with the app.
+var examplesDir = filepath.Join("testdata", "examples")
 
 // installExample installs one example into a fresh store and returns its
 // manifest and source.

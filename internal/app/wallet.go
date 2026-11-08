@@ -190,13 +190,21 @@ func (a *App) removeWalletAccount(addr string) {
 	a.invalidate()
 }
 
-// unlockAccount reads addr's key from the keychain into memory.
+// unlockAccount reads addr's key from the keychain into memory, after the
+// system confirms the user when the wallet requires it.
 func (a *App) unlockAccount(addr string) {
 	if a.keyring == nil {
 		a.walletErr = a.t(i18n.WalletUnavailable)
 		a.invalidate()
 		return
 	}
+	a.walletErr = ""
+	a.authGate(a.t(i18n.AuthReasonUnlock, a.walletName(addr)), "unlock:"+addr,
+		func(msg string) { a.walletErr = msg },
+		func() { a.finishUnlock(addr) })
+}
+
+func (a *App) finishUnlock(addr string) {
 	if err := a.keyring.Unlock(addr); err != nil {
 		a.walletErr = a.walletFailure(err)
 		a.invalidate()
@@ -224,20 +232,29 @@ func (a *App) lockAll() {
 		return
 	}
 	a.keyring.Lock()
+	a.authBusy = ""
 	a.revealedKey, a.revealedAddr = "", ""
 	a.newKey, a.newKeyAddr = "", ""
 	a.walletErr = ""
 	a.invalidate()
 }
 
-// revealKey shows addr's key, for backing it up. The key stays on screen
-// only until the page changes or the account is locked.
+// revealKey shows addr's key, for backing it up, after the system confirms
+// the user. The key stays on screen only until the page changes or the
+// account is locked.
 func (a *App) revealKey(addr string) {
 	if a.keyring == nil {
 		a.walletErr = a.t(i18n.WalletUnavailable)
 		a.invalidate()
 		return
 	}
+	a.walletErr = ""
+	a.authGate(a.t(i18n.AuthReasonReveal, a.walletName(addr)), "reveal:"+addr,
+		func(msg string) { a.walletErr = msg },
+		func() { a.finishReveal(addr) })
+}
+
+func (a *App) finishReveal(addr string) {
 	if err := a.keyring.Unlock(addr); err != nil {
 		a.walletErr = a.walletFailure(err)
 		a.invalidate()

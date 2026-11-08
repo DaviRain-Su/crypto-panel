@@ -94,6 +94,23 @@ const (
 	WalletBadge          Key = "walletBadge"
 	WalletEVMOnly        Key = "walletEVMOnly"
 
+	AuthTouchID      Key = "authTouchID"
+	AuthFaceID       Key = "authFaceID"
+	AuthOpticID      Key = "authOpticID"
+	AuthSystem       Key = "authSystem"
+	AuthTitle        Key = "authTitle"
+	AuthBody         Key = "authBody"
+	AuthUnavailable  Key = "authUnavailable"
+	AuthReasonUnlock Key = "authReasonUnlock"
+	AuthReasonReveal Key = "authReasonReveal"
+	AuthReasonSign   Key = "authReasonSign"
+	AuthCanceled     Key = "authCanceled"
+	AuthFailed       Key = "authFailed"
+	AuthWaiting      Key = "authWaiting"
+	AuthApprove      Key = "authApprove"
+	AuthProtected    Key = "authProtected"
+	SecuritySection  Key = "securitySection"
+
 	ApproveWindowTitle    Key = "approveWindowTitle"
 	ApproveTransferTitle  Key = "approveTransferTitle"
 	ApproveAllowanceTitle Key = "approveAllowanceTitle"
@@ -140,6 +157,7 @@ const (
 	PluginInstallFailed Key = "pluginInstallFailed"
 	PluginEmpty         Key = "pluginEmpty"
 	PluginEmptyWhy      Key = "pluginEmptyWhy"
+	PluginOpenStore     Key = "pluginOpenStore"
 	PluginUnsigned      Key = "pluginUnsigned"
 	PluginLogs          Key = "pluginLogs"
 	PluginLogsEmpty     Key = "pluginLogsEmpty"
@@ -153,25 +171,27 @@ const (
 	PluginDisabled      Key = "pluginDisabled"
 	Cancel              Key = "cancel"
 
-	InstalledTab      Key = "installedTab"
-	StoreTab          Key = "storeTab"
-	StoreRefresh      Key = "storeRefresh"
-	StoreLoading      Key = "storeLoading"
-	StoreEmpty        Key = "storeEmpty"
-	StoreEmptyWhy     Key = "storeEmptyWhy"
-	StoreLoadFailed   Key = "storeLoadFailed"
-	StoreRetry        Key = "storeRetry"
-	StoreFeatured     Key = "storeFeatured"
-	StoreSource       Key = "storeSource"
-	StoreSourceFolder Key = "storeSourceFolder"
-	StoreBy           Key = "storeBy"
-	StoreInstall      Key = "storeInstall"
-	StoreUpdate       Key = "storeUpdate"
-	StoreInstalled    Key = "storeInstalled"
-	StoreInstalling   Key = "storeInstalling"
-	StoreUpdated      Key = "storeUpdated"
-	StoreFailed       Key = "storeFailed"
-	StoreCanceled     Key = "storeCanceled"
+	InstalledTab       Key = "installedTab"
+	StoreTab           Key = "storeTab"
+	StoreRefresh       Key = "storeRefresh"
+	StoreLoading       Key = "storeLoading"
+	StoreEmpty         Key = "storeEmpty"
+	StoreEmptyWhy      Key = "storeEmptyWhy"
+	StoreLoadFailed    Key = "storeLoadFailed"
+	StoreRetry         Key = "storeRetry"
+	StoreNoRegistry    Key = "storeNoRegistry"
+	StoreNoRegistryWhy Key = "storeNoRegistryWhy"
+	StoreOpenSettings  Key = "storeOpenSettings"
+	StoreSource        Key = "storeSource"
+	StoreSourceFolder  Key = "storeSourceFolder"
+	StoreBy            Key = "storeBy"
+	StoreInstall       Key = "storeInstall"
+	StoreUpdate        Key = "storeUpdate"
+	StoreInstalled     Key = "storeInstalled"
+	StoreInstalling    Key = "storeInstalling"
+	StoreUpdated       Key = "storeUpdated"
+	StoreFailed        Key = "storeFailed"
+	StoreCanceled      Key = "storeCanceled"
 
 	StoreKickerInstall   Key = "storeKickerInstall"
 	StoreKickerUpdate    Key = "storeKickerUpdate"
@@ -272,6 +292,23 @@ var messages = map[Key]map[string]string{
 	WalletBadge:          {English: "Wallet", Chinese: "钱包"},
 	WalletEVMOnly:        {English: "Wallet accounts are EVM accounts. Switch to an EVM network to read their balances.", Chinese: "钱包账户是 EVM 账户，切换到 EVM 网络才能读取余额。"},
 
+	AuthTouchID:      {English: "Touch ID", Chinese: "触控 ID"},
+	AuthFaceID:       {English: "Face ID", Chinese: "面容 ID"},
+	AuthOpticID:      {English: "Optic ID", Chinese: "光学 ID"},
+	AuthSystem:       {English: "System authentication", Chinese: "系统认证"},
+	AuthTitle:        {English: "Require %s", Chinese: "需要%s"},
+	AuthBody:         {English: "Unlocking, revealing a key and every signature ask for %s.", Chinese: "解锁、查看私钥和每一次签名都需要%s。"},
+	AuthUnavailable:  {English: "This device offers no system authentication, so the wallet cannot require it.", Chinese: "此设备不支持系统认证，钱包无法启用。"},
+	AuthReasonUnlock: {English: "Unlock %s", Chinese: "解锁 %s"},
+	AuthReasonReveal: {English: "Reveal the private key of %s", Chinese: "查看 %s 的私钥"},
+	AuthReasonSign:   {English: "Approve the transaction from %s", Chinese: "确认来自 %s 的交易"},
+	AuthCanceled:     {English: "Authentication canceled.", Chinese: "已取消验证。"},
+	AuthFailed:       {English: "Authentication failed: %s", Chinese: "验证失败：%s"},
+	AuthWaiting:      {English: "Waiting for %s…", Chinese: "等待%s…"},
+	AuthApprove:      {English: "Approve with %s", Chinese: "用%s确认"},
+	AuthProtected:    {English: "Protected by %s", Chinese: "受%s保护"},
+	SecuritySection:  {English: "Security", Chinese: "安全"},
+
 	ApproveWindowTitle:    {English: "Approve transaction", Chinese: "确认交易"},
 	ApproveTransferTitle:  {English: "Transfer tokens?", Chinese: "转账代币？"},
 	ApproveAllowanceTitle: {English: "Approve a token allowance?", Chinese: "授权代币额度？"},
@@ -317,7 +354,8 @@ var messages = map[Key]map[string]string{
 	PluginInstalled:     {English: "Installed %s.", Chinese: "已安装 %s。"},
 	PluginInstallFailed: {English: "Install failed: %s", Chinese: "安装失败：%s"},
 	PluginEmpty:         {English: "No plugins installed", Chinese: "还没有安装插件"},
-	PluginEmptyWhy:      {English: "A plugin is a folder with plugin.json and a JavaScript file. examples/plugins has two to try.", Chinese: "插件是包含 plugin.json 和 JavaScript 文件的文件夹。examples/plugins 里有两个可以试试。"},
+	PluginEmptyWhy:      {English: "A plugin is a folder with plugin.json and a JavaScript file. Install one from a folder, or browse the store.", Chinese: "插件是包含 plugin.json 和 JavaScript 文件的文件夹。可以从文件夹安装，也可以去商店看看。"},
+	PluginOpenStore:     {English: "Open store", Chinese: "打开商店"},
 	PluginUnsigned:      {English: "Unsigned", Chinese: "未签名"},
 	PluginLogs:          {English: "Logs", Chinese: "日志"},
 	PluginLogsEmpty:     {English: "Nothing logged yet.", Chinese: "还没有日志。"},
@@ -331,25 +369,27 @@ var messages = map[Key]map[string]string{
 	PluginDisabled:      {English: "This plugin is turned off.", Chinese: "该插件已停用。"},
 	Cancel:              {English: "Cancel", Chinese: "取消"},
 
-	InstalledTab:      {English: "Installed", Chinese: "已安装"},
-	StoreTab:          {English: "Store", Chinese: "商店"},
-	StoreRefresh:      {English: "Refresh store", Chinese: "刷新商店"},
-	StoreLoading:      {English: "Loading the store…", Chinese: "正在加载商店…"},
-	StoreEmpty:        {English: "The store is empty", Chinese: "商店里还没有插件"},
-	StoreEmptyWhy:     {English: "The registry lists no plugins yet.", Chinese: "插件源里还没有列出任何插件。"},
-	StoreLoadFailed:   {English: "Could not load the store: %s", Chinese: "无法加载商店：%s"},
-	StoreRetry:        {English: "Retry", Chinese: "重试"},
-	StoreFeatured:     {English: "Featured plugins", Chinese: "精选插件"},
-	StoreSource:       {English: "Registry: %s", Chinese: "插件源：%s"},
-	StoreSourceFolder: {English: "a folder", Chinese: "本地文件夹"},
-	StoreBy:           {English: "by %s", Chinese: "作者 %s"},
-	StoreInstall:      {English: "Install", Chinese: "安装"},
-	StoreUpdate:       {English: "Update", Chinese: "更新"},
-	StoreInstalled:    {English: "Installed", Chinese: "已安装"},
-	StoreInstalling:   {English: "Installing %s…", Chinese: "正在安装 %s…"},
-	StoreUpdated:      {English: "Updated %s to v%s.", Chinese: "已将 %s 更新到 v%s。"},
-	StoreFailed:       {English: "Install failed: %s", Chinese: "安装失败：%s"},
-	StoreCanceled:     {English: "Install canceled.", Chinese: "已取消安装。"},
+	InstalledTab:       {English: "Installed", Chinese: "已安装"},
+	StoreTab:           {English: "Store", Chinese: "商店"},
+	StoreRefresh:       {English: "Refresh store", Chinese: "刷新商店"},
+	StoreLoading:       {English: "Loading the store…", Chinese: "正在加载商店…"},
+	StoreEmpty:         {English: "The store is empty", Chinese: "商店里还没有插件"},
+	StoreEmptyWhy:      {English: "The registry lists no plugins yet.", Chinese: "插件源里还没有列出任何插件。"},
+	StoreLoadFailed:    {English: "Could not load the store: %s", Chinese: "无法加载商店：%s"},
+	StoreRetry:         {English: "Retry", Chinese: "重试"},
+	StoreNoRegistry:    {English: "No plugin registry yet", Chinese: "还没有设置插件源"},
+	StoreNoRegistryWhy: {English: "The app ships with no plugins. Add a registry URL in Settings to browse signed plugins, or install one from a folder.", Chinese: "应用默认不带任何插件。在设置里填入插件源地址即可浏览已签名插件，也可以从文件夹安装。"},
+	StoreOpenSettings:  {English: "Open Settings", Chinese: "打开设置"},
+	StoreSource:        {English: "Registry: %s", Chinese: "插件源：%s"},
+	StoreSourceFolder:  {English: "a folder", Chinese: "本地文件夹"},
+	StoreBy:            {English: "by %s", Chinese: "作者 %s"},
+	StoreInstall:       {English: "Install", Chinese: "安装"},
+	StoreUpdate:        {English: "Update", Chinese: "更新"},
+	StoreInstalled:     {English: "Installed", Chinese: "已安装"},
+	StoreInstalling:    {English: "Installing %s…", Chinese: "正在安装 %s…"},
+	StoreUpdated:       {English: "Updated %s to v%s.", Chinese: "已将 %s 更新到 v%s。"},
+	StoreFailed:        {English: "Install failed: %s", Chinese: "安装失败：%s"},
+	StoreCanceled:      {English: "Install canceled.", Chinese: "已取消安装。"},
 
 	StoreKickerInstall:   {English: "Plugin store", Chinese: "插件商店"},
 	StoreKickerUpdate:    {English: "Plugin update", Chinese: "插件更新"},
@@ -371,7 +411,7 @@ var messages = map[Key]map[string]string{
 	StoreSignWarn:        {English: "Every signature still needs your approval in a window the shell draws.", Chinese: "每一笔签名仍需你在本应用绘制的窗口中确认。"},
 
 	StoreRegistry:     {English: "Plugin registry", Chinese: "插件源"},
-	StoreSettingsHelp: {English: "Leave empty for the featured plugins. A registry is a JSON file that lists signed plugins.", Chinese: "留空则使用精选插件。插件源是一个列出已签名插件的 JSON 文件。"},
+	StoreSettingsHelp: {English: "A registry is a JSON file that lists signed plugins. Leave empty for no store.", Chinese: "插件源是一个列出已签名插件的 JSON 文件。留空则不启用商店。"},
 	StoreInvalidURL:   {English: "Enter an https registry URL.", Chinese: "请输入 https 插件源地址。"},
 }
 

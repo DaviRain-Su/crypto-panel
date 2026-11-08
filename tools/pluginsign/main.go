@@ -3,7 +3,7 @@
 // registry entry that lists it.
 //
 //	pluginsign keygen -out publisher.key
-//	pluginsign pack -key publisher.key -dir examples/plugins/gas \
+//	pluginsign pack -key publisher.key -dir internal/plugin/testdata/examples/gas \
 //	    -url https://example.com/gas-1.0.0.zip \
 //	    -zip gas-1.0.0.zip -entry gas.json
 //	pluginsign registry -name "My plugins" -out registry.json gas.json

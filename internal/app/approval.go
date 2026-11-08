@@ -1,21 +1,24 @@
 package app
 
 import (
+	"errors"
 	"math/big"
 	"strings"
 
+	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
 
 	"github.com/davirain-su/crypto-panel/internal/chain"
 	"github.com/davirain-su/crypto-panel/internal/evmtx"
 	"github.com/davirain-su/crypto-panel/internal/i18n"
+	"github.com/davirain-su/crypto-panel/internal/passkey"
 	"github.com/davirain-su/crypto-panel/internal/wallet"
 )
 
 // approval is the shell's own window for one transaction: what the shell
 // decoded, the plugin's words beside it, and two buttons. A plugin never
-// draws this and never sees the key; a click here is the only way a
-// transaction is signed.
+// draws this and never sees the key; a click here, confirmed by the system
+// when the wallet requires it, is the only way a transaction is signed.
 type approval struct {
 	t           func(i18n.Key, ...any) string
 	pluginName  string
@@ -24,6 +27,14 @@ type approval struct {
 	summary     *evmtx.Summary
 	fromAddr    string
 	fromLabel   string
+
+	// The system check, when the wallet requires one.
+	authRequired bool
+	authName     string
+	authenticate func(string) error
+	invalidate   func()
+	busy         bool
+	authErr      string
 
 	decided  bool
 	onDecide func(bool)
@@ -41,19 +52,66 @@ func (ap *approval) decide(ok bool) {
 	}
 }
 
+// approve asks the system to confirm the user when the wallet requires it,
+// and only then approves. The prompt runs on its own goroutine; the window
+// keeps drawing and says what it is waiting for.
+func (ap *approval) approve() {
+	if ap.decided || ap.busy {
+		return
+	}
+	if !ap.authRequired || ap.authenticate == nil {
+		ap.decide(true)
+		return
+	}
+	ap.busy = true
+	ap.authErr = ""
+	ap.invalidate()
+	reason := ap.t(i18n.AuthReasonSign, ap.from())
+	authenticate := ap.authenticate
+	go func() {
+		err := authenticate(reason)
+		mygo.RunOnMain(func() {
+			if ap.decided {
+				return
+			}
+			ap.busy = false
+			if err != nil {
+				ap.authErr = ap.authFailure(err)
+				ap.invalidate()
+				return
+			}
+			ap.decide(true)
+		})
+	}()
+}
+
+func (ap *approval) authFailure(err error) string {
+	if errors.Is(err, passkey.ErrCanceled) {
+		return ap.t(i18n.AuthCanceled)
+	}
+	return ap.t(i18n.AuthFailed, err)
+}
+
 func (ap *approval) view(c *ui.Context) {
 	t := c.Theme()
 	p := paletteFor(t)
 	useAccent(t, p)
 	c.Root().Background(p.bg)
-	ui.Column(c).Fill().Padding(20).Gap(12).Children(func() {
-		ui.Text(c, strings.ToUpper(ap.pluginName)).FontSize(11).FontWeight(600).
-			TextColor(p.accent).LetterSpacing(0.6).MaxLines(1)
-		ui.Text(c, ap.title()).FontSize(22).FontWeight(700).LetterSpacing(-0.4).MaxLines(2)
-		ui.Column(c).Gap(8).Padding(14).Radius(10).Background(p.card).
+	ui.Column(c).Fill().Padding(24).Gap(14).Children(func() {
+		ui.Row(c).Gap(10).AlignItems(ui.Center).Children(func() {
+			ui.Box(c).Size(34, 34).Radius(10).Background(p.accentSoft).Center().Children(func() {
+				ui.Icon(c, iconShield).Size(18, 18).TextColor(p.accent)
+			})
+			ui.Column(c).Gap(2).Children(func() {
+				ui.Text(c, strings.ToUpper(ap.pluginName)).FontSize(10.5).FontWeight(700).
+					TextColor(p.accent).LetterSpacing(0.8).MaxLines(1)
+				ui.Text(c, ap.title()).FontSize(21).FontWeight(700).LetterSpacing(-0.4).MaxLines(2)
+			})
+		})
+		ui.Column(c).Gap(9).Padding(16).Radius(12).Background(p.card).
 			Border(1, p.hairline).Children(func() {
-			ap.row(c, p, ap.t(i18n.ApproveFrom), ap.from())
-			ap.row(c, p, ap.t(i18n.ApproveTo), wallet.Short(ap.summary.To.Hex()))
+			ap.row(c, p, ap.t(i18n.ApproveFrom), ap.fromFull())
+			ap.row(c, p, ap.t(i18n.ApproveTo), ap.summary.To.Hex())
 			if ap.summary.Call != "" {
 				ap.row(c, p, ap.t(i18n.ApproveCall), ap.summary.Call)
 			}
@@ -63,26 +121,72 @@ func (ap *approval) view(c *ui.Context) {
 		})
 		if ap.description != "" {
 			ui.Column(c).Gap(3).Children(func() {
-				ui.Text(c, ap.t(i18n.ApprovePluginSays)).FontSize(11).FontWeight(600).
-					TextColor(p.muted)
+				ui.Text(c, ap.t(i18n.ApprovePluginSays)).FontSize(10.5).FontWeight(700).
+					TextColor(p.muted).LetterSpacing(0.4)
 				ui.Text(c, ap.description).FontSize(12).MaxLines(3)
 				ui.Text(c, ap.t(i18n.ApprovePluginWords)).FontSize(10.5).
 					TextColor(p.faint).MaxLines(2)
 			})
 		}
-		ui.Text(c, ap.t(i18n.ApproveWarning)).FontSize(11).TextColor(p.danger).MaxLines(2)
+		ui.Row(c).Gap(8).Padding(10, 12).Radius(9).
+			Background(p.dangerSoft).AlignItems(ui.Start).Children(func() {
+			ui.Icon(c, iconLock).Size(14, 14).TextColor(p.danger)
+			ui.Text(c, ap.t(i18n.ApproveWarning)).FontSize(11).TextColor(p.danger).
+				Grow(1).MaxLines(2)
+		})
+		if ap.authErr != "" {
+			ui.Text(c, ap.authErr).FontSize(11).TextColor(p.danger).MaxLines(2)
+		}
 		ui.Box(c).Grow(1)
-		ui.Row(c).Gap(10).Justify(ui.End).Children(func() {
-			ui.Button(c, ap.t(i18n.ApproveReject)).OnClick(func() { ap.decide(false) })
-			ui.Button(c, ap.t(i18n.ApproveSign)).OnClick(func() { ap.decide(true) })
+		ui.Row(c).Gap(10).Justify(ui.End).AlignItems(ui.Center).Children(func() {
+			if ap.authRequired {
+				ui.Text(c, ap.t(i18n.AuthProtected, ap.authName)).FontSize(10.5).
+					TextColor(p.faint).Grow(1).MaxLines(1)
+			}
+			ui.Button(c, ap.t(i18n.ApproveReject)).
+				Disabled(ap.busy).
+				OnClick(func() { ap.decide(false) })
+			switch {
+			case ap.busy:
+				ui.Row(c).Gap(7).Height(34).PaddingX(14).Radius(9).
+					Background(p.accentSoft).AlignItems(ui.Center).Children(func() {
+					ui.Spinner(c).Size(14, 14)
+					ui.Text(c, ap.t(i18n.AuthWaiting, ap.authName)).FontSize(12).
+						FontWeight(600).TextColor(p.accent)
+				})
+			default:
+				label := ap.t(i18n.ApproveSign)
+				var icon *ui.SVG
+				if ap.authRequired {
+					label = ap.t(i18n.AuthApprove, ap.authName)
+					icon = iconFingerprint
+				}
+				ap.primaryButton(c, p, label, icon)
+			}
 		})
 	})
+}
+
+// primaryButton is the window's one action: filled with the accent, with an
+// icon when the system check is part of it.
+func (ap *approval) primaryButton(c *ui.Context, p palette, label string, icon *ui.SVG) {
+	b := ui.ButtonBase(c).Height(34).PaddingX(14).Gap(7).Radius(9).
+		AlignItems(ui.Center).FocusRing(false).Background(p.accent)
+	b.Children(func() {
+		if icon != nil {
+			ui.Icon(c, icon).Size(15, 15).TextColor(p.onAccent)
+		}
+		ui.Text(c, label).FontSize(12.5).FontWeight(600).TextColor(p.onAccent)
+	})
+	if b.Clicked() {
+		ap.approve()
+	}
 }
 
 func (ap *approval) row(c *ui.Context, p palette, label, value string) {
 	ui.Row(c).Gap(10).AlignItems(ui.Start).Children(func() {
 		ui.Text(c, label).FontSize(11).FontWeight(600).TextColor(p.muted).Width(76)
-		ui.Text(c, value).FontSize(12.5).Grow(1).MaxLines(2)
+		ui.Text(c, value).Font("monospace").FontSize(11.5).Grow(1).MaxLines(2)
 	})
 }
 
@@ -100,13 +204,22 @@ func (ap *approval) title() string {
 	}
 }
 
-// from names the account, with its label when it has one.
+// from names the account briefly, for the system prompt's reason.
 func (ap *approval) from() string {
 	short := wallet.Short(ap.fromAddr)
 	if ap.fromLabel != "" {
 		return ap.fromLabel + " · " + short
 	}
 	return short
+}
+
+// fromFull names the account with its whole address: the window is where
+// the user checks which account a transaction leaves.
+func (ap *approval) fromFull() string {
+	if ap.fromLabel != "" {
+		return ap.fromLabel + " · " + ap.fromAddr
+	}
+	return ap.fromAddr
 }
 
 func (ap *approval) amount(v *big.Int) string {

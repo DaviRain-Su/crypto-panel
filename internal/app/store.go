@@ -2,13 +2,11 @@ package app
 
 import (
 	"context"
-	"fmt"
 	"strings"
 	"time"
 
 	"github.com/davirain-su/crypto-panel/internal/i18n"
 	"github.com/davirain-su/crypto-panel/internal/plugin"
-	"github.com/davirain-su/crypto-panel/internal/plugin/featured"
 )
 
 // The plugin store's actions. A catalog is a static JSON file listing signed
@@ -36,10 +34,10 @@ func (a *App) setPluginTab(tab string) {
 	a.invalidate()
 }
 
-// loadStore reads the catalog: the built-in one when no registry URL is set,
-// else the user's registry. The fetch runs off the main thread; the result
-// comes back through runOnMain, and an answer from before a change is
-// dropped.
+// loadStore reads the catalog the user's registry URL names. With no URL
+// there is no catalog: the store shows how to set one. The fetch runs off
+// the main thread; the result comes back through runOnMain, and an answer
+// from before a change is dropped.
 func (a *App) loadStore() {
 	if a.plugins == nil {
 		return
@@ -49,19 +47,18 @@ func (a *App) loadStore() {
 	a.storeLoading = true
 	a.storeErr = ""
 	rawURL := a.settings.PluginStoreURL
+	if rawURL == "" {
+		a.storeLoading = false
+		a.storeItems = nil
+		a.storeLoaded = true
+		a.invalidate()
+		return
+	}
 	a.invalidate()
 	a.goAsync(func() {
-		var (
-			reg plugin.Registry
-			err error
-		)
-		if rawURL == "" {
-			reg, err = plugin.ParseRegistry(featured.Registry())
-		} else {
-			ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
-			defer cancel()
-			reg, err = plugin.FetchRegistry(ctx, plugin.DefaultClient(), rawURL)
-		}
+		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+		defer cancel()
+		reg, err := plugin.FetchRegistry(ctx, plugin.DefaultClient(), rawURL)
 		a.runOnMain(func() {
 			if gen != a.storeGen {
 				return
@@ -82,9 +79,6 @@ func (a *App) loadStore() {
 // storeSourceName names the catalog in the store's footer and in the
 // install prompt.
 func (a *App) storeSourceName() string {
-	if a.settings.PluginStoreURL == "" {
-		return a.t(i18n.StoreFeatured)
-	}
 	return a.settings.PluginStoreURL
 }
 
@@ -166,16 +160,9 @@ func (a *App) installFromStore(entry plugin.RegistryEntry) {
 	})
 }
 
-// fetchArchive reads an entry's archive, from the app's own catalog or the
-// network. The hash and signature are checked by Prepare, not here.
+// fetchArchive reads an entry's archive from the network. The hash and
+// signature are checked by Prepare, not here.
 func (a *App) fetchArchive(entry plugin.RegistryEntry) ([]byte, error) {
-	if strings.HasPrefix(entry.URL, "embedded:") {
-		data, ok := featured.Archive(entry.URL)
-		if !ok {
-			return nil, fmt.Errorf("the built-in archive %s is missing", entry.URL)
-		}
-		return data, nil
-	}
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 	return plugin.FetchArchive(ctx, plugin.DefaultClient(), entry.URL)

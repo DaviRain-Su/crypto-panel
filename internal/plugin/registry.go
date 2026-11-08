@@ -26,10 +26,10 @@ import (
 )
 
 // A registry is the plugin store's catalog: a static JSON file that lists
-// signed plugin archives. The app ships one (the featured plugins) and the
-// user may point it at another. The registry is not trusted with code: every
-// archive is checked against the hash and signature the entry names before
-// it is unpacked into the plugins folder.
+// signed plugin archives. The app ships none; the user points it at one in
+// Settings. The registry is not trusted with code: every archive is checked
+// against the hash and signature the entry names before it is unpacked into
+// the plugins folder.
 
 // Limits on what a registry and one download may bring.
 const (

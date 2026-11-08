@@ -202,14 +202,17 @@ func (a *App) askApproval(req approvalRequest) bool {
 			return
 		}
 		ap := &approval{
-			t:           a.t,
-			pluginName:  req.pluginName,
-			description: req.description,
-			network:     req.network,
-			summary:     req.summary,
-			fromAddr:    req.fromAddr,
-			fromLabel:   req.fromLabel,
-			onDecide:    func(ok bool) { decided <- ok },
+			t:            a.t,
+			pluginName:   req.pluginName,
+			description:  req.description,
+			network:      req.network,
+			summary:      req.summary,
+			fromAddr:     req.fromAddr,
+			fromLabel:    req.fromLabel,
+			authRequired: a.presenceRequired(),
+			authName:     a.authName(),
+			authenticate: a.authenticate,
+			onDecide:     func(ok bool) { decided <- ok },
 		}
 		win = mygo.NewWindow(mygo.WindowOptions{
 			Title:           a.t(i18n.ApproveWindowTitle),
@@ -219,9 +222,10 @@ func (a *App) askApproval(req approvalRequest) bool {
 			MinHeight:       480,
 			Parent:          a.win,
 			Modal:           true,
-			BackgroundColor: "light-dark(#ffffff, #1c1c1e)",
+			BackgroundColor: "light-dark(#f6f4ef, #141513)",
 			Content:         ui.View(ap.view),
 		})
+		ap.invalidate = func() { win.Invalidate() }
 		win.OnClose(func(*mygo.CloseEvent) { ap.decide(false) })
 		win.Focus()
 	})

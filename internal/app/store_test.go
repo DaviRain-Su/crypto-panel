@@ -61,49 +61,21 @@ func storeEntry(t *testing.T, dir, url string, key ed25519.PrivateKey) plugin.Re
 	}
 }
 
-func TestStoreShowsFeatured(t *testing.T) {
+func TestStoreStartsWithNoRegistry(t *testing.T) {
 	a := newTestApp(t)
 	a.route = routePlugins
 	a.setPluginTab("store")
-	if !a.storeLoaded {
-		t.Fatalf("the featured catalog did not load: %v", a.storeErr)
+	if a.storeErr != "" {
+		t.Fatalf("store: %v", a.storeErr)
+	}
+	if len(a.storeItems) != 0 {
+		t.Fatalf("the app ships a catalog: %+v", a.storeItems)
 	}
 	tt := ui.NewTester(a.view, windowWidth, windowHeight)
-	for _, want := range []string{"Installed", "Store", "Gas", "Fear & Greed", "Install", "Featured plugins"} {
+	for _, want := range []string{"Installed", "Store", "No plugin registry yet", "Open Settings"} {
 		if !tt.HasText(want) {
 			t.Errorf("missing %q in %q", want, tt.Texts())
 		}
-	}
-}
-
-func TestStoreInstallsFeaturedPlugin(t *testing.T) {
-	a := newTestApp(t)
-	a.route = routePlugins
-	a.setPluginTab("store")
-	if len(a.storeItems) == 0 {
-		t.Fatalf("the featured catalog is empty: %v", a.storeErr)
-	}
-	entry := a.storeItems[0]
-	a.installFromStore(entry)
-	if a.storeInstalling != "" {
-		t.Fatalf("still installing %s", a.storeInstalling)
-	}
-	if !strings.Contains(a.pluginNotice, "Installed") {
-		t.Fatalf("notice = %q", a.pluginNotice)
-	}
-	inst, err := a.plugins.Get(entry.ID)
-	if err != nil {
-		t.Fatalf("Get: %v", err)
-	}
-	if !inst.Signed {
-		t.Fatal("a store install is not signed")
-	}
-	if inst.Source != entry.URL {
-		t.Fatalf("source = %q", inst.Source)
-	}
-	tt := ui.NewTester(a.view, windowWidth, windowHeight)
-	if !tt.HasText("Installed") {
-		t.Fatalf("the store card does not say installed: %q", tt.Texts())
 	}
 }
 
@@ -203,7 +175,7 @@ func TestInstallPromptView(t *testing.T) {
 	ip := &installPrompt{
 		t:   func(k i18n.Key, args ...any) string { return i18n.T(i18n.English, k, args...) },
 		m:   m,
-		req: installRequest{source: "Featured plugins"},
+		req: installRequest{source: "https://example.com/registry.json"},
 	}
 	tt := ui.NewTester(ip.view, 460, 620)
 	for _, want := range []string{
@@ -272,7 +244,7 @@ func TestSettingsShowsTheStoreField(t *testing.T) {
 	a := newTestApp(t)
 	a.route = routeSettings
 	tt := ui.NewTester(a.view, windowWidth, windowHeight)
-	for _, want := range []string{"Plugin registry", "Leave empty for the featured plugins", "Apply"} {
+	for _, want := range []string{"Plugin registry", "Leave empty for no store", "Apply"} {
 		if !tt.HasText(want) {
 			t.Errorf("missing %q in %q", want, tt.Texts())
 		}

@@ -121,7 +121,10 @@ func (a *App) refreshLoop() {
 			}
 		})
 		time.Sleep(d)
-		mygo.RunOnMain(a.requestRefresh)
+		mygo.RunOnMain(func() {
+			a.lockIfIdle()
+			a.requestRefresh()
+		})
 	}
 }
 

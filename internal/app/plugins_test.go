@@ -28,7 +28,7 @@ func TestPluginsEmptyView(t *testing.T) {
 // installExamplePlugin copies one shipped example into the app's store.
 func installExamplePlugin(t *testing.T, a *App, name string) string {
 	t.Helper()
-	m, err := a.plugins.Install(filepath.Join("..", "..", "examples", "plugins", name))
+	m, err := a.plugins.Install(filepath.Join("..", "plugin", "testdata", "examples", name))
 	if err != nil {
 		t.Fatalf("installing %s: %v", name, err)
 	}

@@ -171,15 +171,14 @@ Rules:
 
 A registry is one static JSON file: `{version: 1, name, plugins: [...]}`, each
 entry naming the plugin's id, name, version, archive URL, `sha256:` hash,
-`ed25519:` signature and publisher key. The app ships a featured registry
-(`internal/plugin/featured`, two signed examples, embedded) and reads another
-from Settings. An install downloads the archive, unpacks it to a temporary
-folder, checks the manifest's id and version against the entry, checks the
-tree's digest, verifies the signature, and only then shows the permission
-prompt. Updates must be newer, must not replay a version with other contents,
-and must be signed by the same publisher key; settings and `kv.json` carry
-over. The signing tool is `tools/pluginsign`; `docs/store.md` is the publisher's
-guide.
+`ed25519:` signature and publisher key. The app ships no catalog: with no
+registry set, the Store tab says so and points at Settings. An install
+downloads the archive, unpacks it to a temporary folder, checks the manifest's
+id and version against the entry, checks the tree's digest, verifies the
+signature, and only then shows the permission prompt. Updates must be newer,
+must not replay a version with other contents, and must be signed by the same
+publisher key; settings and `kv.json` carry over. The signing tool is
+`tools/pluginsign`; `docs/store.md` is the publisher's guide.
 
 ## 5. Plugin API
 
@@ -245,6 +244,17 @@ the keyring reads a key into memory only while its account is unlocked. Wallet
 accounts are watched like any other address, so their balances join the
 portfolio; a wallet address cannot also be added as a watch-only one.
 
+The wallet's second factor is the system's own check. On macOS,
+`internal/passkey` calls LocalAuthentication through purego — no cgo, so the
+build stays cross-compilable — and asks for Touch ID, Face ID, Optic ID or the
+login password before an unlock, a key reveal, or a signature. The wallet locks
+when the screen locks, when the window closes, and after five minutes idle.
+This is deliberately the platform-authentication half of a passkey, not a
+WebAuthn credential: a passkey's P-256 key cannot sign a secp256k1 transaction
+without a smart account, a relying party and an associated domain, so the
+signing key stays in the keychain and the system check guards every use of it.
+The switch is per user (`disablePresence` in settings), on by default.
+
 `host.requestSign(tx)` takes `{chainId, from?, to, value?, data?, gas?,
 maxFeePerGas?, maxPriorityFeePerGas?, nonce?, description?}`. The shell picks the
 account (the named one, or the first unlocked), fills in the nonce, gas estimate
@@ -260,6 +270,12 @@ reports a hash other than the signed transaction's is refused.
 
 A page is data. The shell renders it with native UI, in the app's theme, so a plugin
 cannot imitate an approval prompt or a system dialog.
+
+The look is graphite, paper and a sage accent: warm off-white paper in light,
+near-black graphite in dark, one sage green for actions and status. Cards are
+quiet — a hairline border, a small shadow, generous spacing — and the app's own
+chrome (the sidebar, page headers, the approval window) is never drawn by a
+plugin.
 
 ```js
 export function page({ name }) {
@@ -295,6 +311,7 @@ balances (privacy), the machine.
 | A plugin phishes with a fake approval | Approvals are host-rendered, never plugin-drawn; `host.render` has no `dialog`/`confirm` block at all |
 | A plugin asks to sign something else than shown | Shell decodes the transaction itself (to, value, calldata, token approvals) and shows its own decode next to the plugin's description; a mismatch is highlighted |
 | A plugin drains CPU/memory | One runtime per plugin, 256 MB cap, 30 s call timeout, 1 s stuck detection, restart; the manager shows a plugin that was restarted |
+| Malware on the machine uses the wallet key | The key lives in the OS keychain; unlock, reveal and every signature ask for the system check; the wallet locks on screen lock, window close and five minutes idle |
 | Supply chain: a plugin update is malicious | The registry entry's `hash` and `signature` are verified at install; the digest is checked again at load; an update must be newer, must not replay a version with other contents, and must keep the publisher's key; the permission prompt lists new permissions |
 | RPC endpoint lies (MITM, wrong chain id) | The broker pins chain id per endpoint and refuses mismatches; response decoding for balances uses typed ABI decoding, and a disagreement between two endpoints can be surfaced |
 | Malicious `minAppVersion` / manifest tricks | Manifest schema is strict: unknown keys fail the install |
@@ -305,7 +322,7 @@ Key custody:
 - **M3 (done): hot wallet** in the OS keychain. Accounts are opt-in: the Wallet
   page starts empty, and a key enters only through Create or Import. The shell
   never exposes a key to a plugin; a signature exists only after the user
-  approves the shell's own decode.
+  approves the shell's own decode and, when enabled, the system check.
 - **M4: hardware wallets.** The only way to sign in the recommended setup.
 
 ## 9. Menu bar (later) and agent API (Metrix.Bar)
@@ -348,8 +365,9 @@ crypto-panel/
   main.go                 mygo.App.SetName; app.New; App.Run
   internal/app/           shell: window, sidebar, routes, pages, settings
   internal/plugin/        manifest, moejs runtime, host API, store, registry, install
-  internal/plugin/featured/  the built-in signed catalog (registry + archives)
+  internal/plugin/testdata/examples/  example plugins used by the tests
   internal/pages/         declarative page tree → ui
+  internal/passkey/       the system check: LocalAuthentication via purego
   internal/chain/         chain vocabulary: Family, Network, Token, Reader, formatting
   internal/chain/rpc/     shared JSON-RPC broker: cache, spacing, size cap, audit
   internal/chain/evm/     eip155 reader: chain-id pin, ERC-20 balances
@@ -359,7 +377,8 @@ crypto-panel/
   internal/evmtx/         EVM transactions: nonce, gas, fees, ERC-20 decode, sign, send
   internal/agent/         local API
   internal/i18n/          en, zh-Hans
-  examples/plugins/       demo plugins: gas, fear-greed
+  resources/icon.png      the app icon, generated by tools/icon
+  tools/icon/             draws the icon with x/image/vector
   tools/pluginsign/       packs and signs a plugin for a registry
 ```
 
@@ -368,9 +387,9 @@ crypto-panel/
 | | Scope | Done when |
 |---|---|---|
 | **M0** | Shell: desktop window with a sidebar, native UI, settings, i18n; watch-only addresses; balances from one RPC on EVM (Ethereum, Base) and Solana; no plugins | A user opens the app from the Dock, adds an address and sees balances in a native window on macOS and Windows |
-| **M1** | Plugin runtime: manifest, moejs realm, limits, `setting`/`kv`/`fetch`/`rpc`/`render`, manager UI (install from folder, enable, disable, logs), two demo plugins — **done** | A third-party plugin added by hand shows a page; a plugin that fetches outside its allowlist is refused and the refusal is visible |
+| **M1** | Plugin runtime: manifest, moejs realm, limits, `setting`/`kv`/`fetch`/`rpc`/`render`, manager UI (install from folder, enable, disable, logs), two example fixtures — **done** | A third-party plugin added by hand shows a page; a plugin that fetches outside its allowlist is refused and the refusal is visible |
 | **M2** | Install from GitHub/zip, signature + hash, permission prompts, restart-on-abuse, the malicious-plugin suite — **done** | All §13 fixtures behave as specified; an unsigned network install is refused |
-| **M3** | Native wallet: decoded approval UI; hot wallet in the OS keychain; `host.requestSign` behind `sign: true` — **done** | A signing plugin cannot get a signature without an explicit, decoded approval |
+| **M3** | Native wallet: decoded approval UI; hot wallet in the OS keychain; the system check on unlock, reveal and sign; `host.requestSign` behind `sign: true` — **done** | A signing plugin cannot get a signature without an explicit, decoded approval and, when enabled, the system check |
 | **M4** | Hardware wallet; agent API; menu bar headline, screen-edge panel and global shortcut | An agent reads the portfolio over the API; a Ledger signs a transfer the user approved |
 
 ## 13. Testing
@@ -396,8 +415,8 @@ crypto-panel/
 3. **Price feed**: the app's own source (a public API) or plugin-provided? (Suggest:
    the shell provides one, plugins may add others through `host.fetch`.)
 4. ~~**Plugin registry**: a static JSON on a site, a GitHub topic, or a curated list in
-   the app?~~ Resolved: a static JSON registry, plus a featured catalog embedded in
-   the app. The registry vouches for each publisher's key; an installed plugin
+   the app?~~ Resolved: a static JSON registry set in Settings; the app ships no
+   catalog. The registry vouches for each publisher's key; an installed plugin
    remembers the key it was installed with and refuses a different one on update.
 5. **Hot wallet at all?** Watch-only + hardware covers most users; a hot wallet adds
    a class of risk the plugin sandbox cannot mitigate.

@@ -27,10 +27,13 @@ type Settings struct {
 	RPCURL         string `json:"rpcUrl,omitempty"`
 	Language       string `json:"language,omitempty"`
 	RefreshSeconds int    `json:"refreshSeconds,omitempty"`
-	// PluginStoreURL is the registry the store reads. Empty means the
-	// app's built-in catalog.
-	PluginStoreURL string           `json:"pluginStoreUrl,omitempty"`
-	Accounts       []wallet.Address `json:"accounts"`
+	// PluginStoreURL is the registry the store reads. Empty means no store.
+	PluginStoreURL string `json:"pluginStoreUrl,omitempty"`
+	// DisablePresence turns off the system's confirmation before unlocking,
+	// revealing a key or signing. The check is on by default where the
+	// platform offers one.
+	DisablePresence bool             `json:"disablePresence,omitempty"`
+	Accounts        []wallet.Address `json:"accounts"`
 	// Wallet is the native wallet's accounts: addresses and labels only. The
 	// keys are in the OS keychain, never in this file.
 	Wallet []wallet.Account `json:"wallet,omitempty"`

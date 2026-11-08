@@ -1,8 +1,9 @@
 // Package app is the trusted shell: the main window, the sidebar, the pages,
-// the settings, the plugin manager and the refresh loop. It watches addresses
-// and reads balances; plugins run in their own sandboxed runtimes and reach
-// the shell only through the host functions their manifest grants. It holds
-// no keys.
+// the settings, the plugin manager, the native wallet and the refresh loop.
+// It watches addresses and reads balances; plugins run in their own sandboxed
+// runtimes and reach the shell only through the host functions their manifest
+// grants. The wallet's keys live in the OS keychain and are never handed to a
+// plugin.
 package app
 
 import (
@@ -18,6 +19,7 @@ import (
 
 	"github.com/davirain-su/crypto-panel/internal/chain"
 	"github.com/davirain-su/crypto-panel/internal/i18n"
+	"github.com/davirain-su/crypto-panel/internal/passkey"
 	"github.com/davirain-su/crypto-panel/internal/plugin"
 	"github.com/davirain-su/crypto-panel/internal/wallet"
 )
@@ -25,11 +27,11 @@ import (
 // The main window's default and smallest size in DIPs, and the sidebar's
 // width. The window is a normal desktop window, not a menu bar panel.
 const (
-	windowWidth     = 1000
-	windowHeight    = 720
-	minWindowWidth  = 760
-	minWindowHeight = 520
-	sidebarWidth    = 216
+	windowWidth     = 1060
+	windowHeight    = 760
+	minWindowWidth  = 820
+	minWindowHeight = 560
+	sidebarWidth    = 232
 )
 
 // route is what the sidebar has selected: one of the shell's pages, or a
@@ -81,6 +83,12 @@ type App struct {
 	newKeyAddr   string
 	revealedKey  string
 	revealedAddr string
+	// passkeyKind is the system check the wallet can require; authenticate
+	// asks for it, and tests replace it. authBusy names the account whose
+	// prompt is up.
+	passkeyKind  passkey.Kind
+	authenticate func(string) error
+	authBusy     string
 
 	systemLocale string
 	reader       chain.Reader
@@ -161,6 +169,8 @@ func New() (*App, error) {
 	a.runOnMain = mygo.RunOnMain
 	a.goAsync = func(fn func()) { go fn() }
 	a.confirmInstall = a.askInstall
+	a.passkeyKind = passkey.Check()
+	a.authenticate = passkey.Authenticate
 	return a, nil
 }
 
@@ -196,6 +206,8 @@ func (a *App) Ready() {
 		a.quitting = true
 		a.stopAllRunners()
 	})
+	// A locked screen is a locked wallet.
+	mygo.Power.OnLockScreen(func() { mygo.RunOnMain(a.lockAll) })
 	go a.refreshLoop()
 	a.requestRefresh()
 }
@@ -213,7 +225,7 @@ func (a *App) createWindow() {
 		TitleBarStyle:        mygo.TitleBarHidden,
 		TrafficLightPosition: &mygo.Point{X: 18, Y: 18},
 		Vibrancy:             mygo.VibrancySidebar,
-		BackgroundColor:      "light-dark(#ffffff, #1c1c1e)",
+		BackgroundColor:      "light-dark(#f6f4ef, #141513)",
 		Content:              ui.View(a.view),
 	})
 	a.win.OnClose(func(e *mygo.CloseEvent) {
@@ -225,6 +237,7 @@ func (a *App) createWindow() {
 		// and the Dock icon brings the window back. Elsewhere closing the
 		// window quits, as desktop apps do.
 		if runtime.GOOS == "darwin" {
+			a.lockAll()
 			a.win.Hide()
 			return
 		}

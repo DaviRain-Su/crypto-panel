@@ -2,6 +2,7 @@ package app
 
 import (
 	"path/filepath"
+	"strings"
 
 	"github.com/egoist/mygo/ui"
 
@@ -16,7 +17,8 @@ func (a *App) pluginsView(c *ui.Context) {
 	p := a.pal
 	a.pluginTabs(c)
 	if a.pluginNotice != "" {
-		ui.Text(c, a.pluginNotice).FontSize(11).TextColor(p.muted).MaxLines(2).Margin(0, 0, 10, 0)
+		ui.Text(c, a.pluginNotice).FontSize(11).TextColor(p.muted).MaxLines(2).
+			Margin(0, 0, 12, 0)
 	}
 	if a.pluginTab == "store" {
 		a.storeView(c)
@@ -35,20 +37,27 @@ func (a *App) pluginsView(c *ui.Context) {
 
 func (a *App) emptyPlugins(c *ui.Context) {
 	p := a.pal
-	ui.Column(c).Gap(8).Padding(28).Center().Radius(12).
-		Background(p.card).Border(1, p.hairline).Margin(20, 0, 0, 0).Children(func() {
-		ui.Box(c).Size(44, 44).Radius(12).Background(p.accentSoft).Center().Children(func() {
+	ui.Column(c).Gap(9).Padding(30).Center().Radius(14).
+		Background(p.card).Border(1, p.hairline).Margin(24, 0, 0, 0).Children(func() {
+		ui.Box(c).Size(46, 46).Radius(13).Background(p.accentSoft).Center().Children(func() {
 			ui.Icon(c, iconGrid).Size(22, 22).TextColor(p.accent)
 		})
 		ui.Text(c, a.t(i18n.PluginEmpty)).FontSize(15).FontWeight(700)
-		ui.Text(c, a.t(i18n.PluginEmptyWhy)).FontSize(12.5).TextColor(p.muted).TextAlign(ui.Center)
+		ui.Text(c, a.t(i18n.PluginEmptyWhy)).FontSize(12.5).TextColor(p.muted).
+			TextAlign(ui.Center).MaxLines(3)
+		ui.Row(c).Gap(8).Margin(6, 0, 0, 0).Children(func() {
+			a.primaryButton(c, a.t(i18n.PluginInstall), nil, false, a.installPlugin)
+			a.softButton(c, a.t(i18n.PluginOpenStore), iconStore, p.muted, func() {
+				a.setPluginTab("store")
+			})
+		})
 	})
 }
 
 func (a *App) pluginCard(c *ui.Context, item plugin.Installed) {
 	p := a.pal
 	if item.Err != "" {
-		ui.Column(c).Gap(3).Padding(16).Radius(12).
+		ui.Column(c).Gap(3).Padding(16).Radius(14).
 			Background(p.card).Border(1, p.hairline).Children(func() {
 			ui.Text(c, filepath.Base(item.Dir)).FontSize(13).FontWeight(600)
 			ui.Text(c, item.Err).FontSize(11).TextColor(p.danger).MaxLines(3)
@@ -57,26 +66,31 @@ func (a *App) pluginCard(c *ui.Context, item plugin.Installed) {
 	}
 	m := item.Manifest
 	id := m.ID
-	ui.Column(c).Key(id).Gap(10).Padding(16).Radius(12).
-		Background(p.card).Border(1, p.hairline).Children(func() {
-		ui.Row(c).AlignItems(ui.Center).Gap(8).Children(func() {
-			ui.Text(c, m.Name).FontSize(14).FontWeight(600).MaxLines(1)
-			if !item.Signed {
-				ui.Badge(c, a.t(i18n.PluginUnsigned))
-			}
-			ui.Text(c, "v"+m.Version).FontSize(11).TextColor(p.muted).Grow(1)
+	ui.Column(c).Key(id).Gap(12).Padding(16).Radius(14).
+		Background(p.card).Border(1, p.hairline).Shadow(0, 1, 2, 0, p.shadow).Children(func() {
+		ui.Row(c).AlignItems(ui.Center).Gap(12).Children(func() {
+			a.pluginTile(c, m.Name)
+			ui.Column(c).Grow(1).Gap(2).Children(func() {
+				ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
+					ui.Text(c, m.Name).FontSize(13.5).FontWeight(600).MaxLines(1)
+					if !item.Signed {
+						ui.Badge(c, a.t(i18n.PluginUnsigned))
+					}
+					ui.Text(c, "v"+m.Version).FontSize(10.5).TextColor(p.faint).MaxLines(1)
+				})
+				ui.Text(c, id).FontSize(10.5).TextColor(p.faint).MaxLines(1)
+			})
 			if on := a.pluginEnabled[id]; on != nil {
 				if ui.Switch(c, on).Changed() {
 					a.setPluginEnabled(id, *on)
 				}
 			}
 		})
-		ui.Text(c, id).FontSize(11).TextColor(p.faint).MaxLines(1)
 		if m.Description != "" {
-			ui.Text(c, m.Description).FontSize(12.5).TextColor(p.muted).MaxLines(3)
+			ui.Text(c, m.Description).FontSize(12).TextColor(p.muted).MaxLines(3)
 		}
 		if item.Enabled && len(m.Navigation) > 0 {
-			ui.Row(c).Gap(6).Children(func() {
+			ui.Row(c).Gap(6).Wrap().Children(func() {
 				for _, nav := range m.Navigation {
 					page := nav.Page
 					a.softButton(c, nav.Title, iconSparkle, p.text, func() { a.openPluginPage(id, page) })
@@ -94,13 +108,26 @@ func (a *App) pluginCard(c *ui.Context, item plugin.Installed) {
 			a.softButton(c, a.t(i18n.Remove), iconTrash, p.danger, func() { a.removePlugin(id) })
 			if runner, ok := a.pluginRunners[id]; ok {
 				if n := runner.Restarts(); n > 0 {
-					ui.Text(c, a.t(i18n.PluginRestarted, n)).FontSize(11).TextColor(p.danger).Grow(1)
+					ui.Text(c, a.t(i18n.PluginRestarted, n)).FontSize(11).
+						TextColor(p.danger).Grow(1)
 				}
 			}
 		})
 		if a.pluginLogsOpen[id] {
 			a.pluginLogsView(c, id)
 		}
+	})
+}
+
+// pluginTile is a plugin's mark: its first letter in the accent.
+func (a *App) pluginTile(c *ui.Context, name string) {
+	p := a.pal
+	letter := "?"
+	if runes := []rune(strings.TrimSpace(name)); len(runes) > 0 {
+		letter = strings.ToUpper(string(runes[0]))
+	}
+	ui.Box(c).Size(34, 34).Radius(10).Background(p.accentSoft).Center().Children(func() {
+		ui.Text(c, letter).FontSize(14).FontWeight(700).TextColor(p.accent)
 	})
 }
 
@@ -126,7 +153,7 @@ func (a *App) pluginSettingsForm(c *ui.Context, m plugin.Manifest) {
 			})
 		}
 		ui.Row(c).Children(func() {
-			ui.Button(c, a.t(i18n.PluginSave)).OnClick(func() { a.savePluginSettings(m) })
+			a.primaryButton(c, a.t(i18n.PluginSave), nil, false, func() { a.savePluginSettings(m) })
 		})
 	})
 }
@@ -141,7 +168,7 @@ func (a *App) pluginLogsView(c *ui.Context, id string) {
 	if len(entries) > 20 {
 		entries = entries[len(entries)-20:]
 	}
-	ui.Column(c).Gap(2).Padding(10).Background(p.bg).Radius(8).Children(func() {
+	ui.Column(c).Gap(2).Padding(10).Background(p.inset).Radius(8).Children(func() {
 		for _, entry := range entries {
 			color := p.muted
 			switch entry.Level {
@@ -151,7 +178,7 @@ func (a *App) pluginLogsView(c *ui.Context, id string) {
 				color = p.danger
 			}
 			ui.Text(c, entry.Time.Format("15:04:05")+"  "+entry.Level+"  "+entry.Message).
-				FontSize(10).TextColor(color).MaxLines(2)
+				Font("monospace").FontSize(10).TextColor(color).MaxLines(2)
 		}
 	})
 }

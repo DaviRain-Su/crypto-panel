@@ -13,10 +13,12 @@ import (
 	"github.com/davirain-su/crypto-panel/internal/plugin"
 )
 
-// pluginTabs switches the Plugins page between the installed plugins and the
-// store.
+// pluginTabs switches the Plugins page between the installed plugins and
+// the store, as a segmented control.
 func (a *App) pluginTabs(c *ui.Context) {
-	ui.Row(c).Gap(6).Margin(0, 0, 14, 0).Children(func() {
+	p := a.pal
+	ui.Row(c).Gap(2).Padding(3).Radius(10).Background(p.inset).
+		Border(1, p.hairline).Margin(0, 0, 16, 0).Children(func() {
 		a.tabButton(c, a.t(i18n.InstalledTab), a.pluginTab != "store", func() {
 			a.setPluginTab("installed")
 		})
@@ -28,21 +30,19 @@ func (a *App) pluginTabs(c *ui.Context) {
 
 func (a *App) tabButton(c *ui.Context, label string, selected bool, onClick func()) {
 	p := a.pal
-	b := ui.ButtonBase(c).Height(30).PaddingX(12).Radius(8).AlignItems(ui.Center).FocusRing(false)
+	b := ui.ButtonBase(c).Height(28).PaddingX(14).Radius(7).AlignItems(ui.Center).FocusRing(false)
 	bg := ui.Transparent
+	color := p.muted
 	switch {
 	case selected:
-		bg = p.press
+		bg, color = p.card, p.text
+		b.Shadow(0, 1, 1, 0, p.shadow)
 	case b.Hovered():
 		bg = p.hover
 	}
 	b.Background(b.AnimateColor("bg", bg, ui.Animation{Duration: 120 * time.Millisecond}))
-	color := p.muted
-	if selected {
-		color = p.text
-	}
 	b.Children(func() {
-		ui.Text(c, label).FontSize(12.5).FontWeight(600).TextColor(color)
+		ui.Text(c, label).FontSize(12).FontWeight(600).TextColor(color)
 	})
 	if b.Clicked() {
 		onClick()
@@ -50,9 +50,14 @@ func (a *App) tabButton(c *ui.Context, label string, selected bool, onClick func
 }
 
 // storeView is the catalog: one card per entry, with Install, Update or
-// Installed, and the source it came from.
+// Installed, and the source it came from. With no registry set there is no
+// catalog, only the way to set one.
 func (a *App) storeView(c *ui.Context) {
 	p := a.pal
+	if a.settings.PluginStoreURL == "" {
+		a.noRegistryStore(c)
+		return
+	}
 	switch {
 	case a.storeErr != "":
 		ui.Column(c).Gap(8).Padding(20).Radius(12).Background(p.card).
@@ -82,12 +87,30 @@ func (a *App) storeView(c *ui.Context) {
 	}
 }
 
+// noRegistryStore is the store before a registry is set: the app ships no
+// catalog of its own.
+func (a *App) noRegistryStore(c *ui.Context) {
+	p := a.pal
+	ui.Column(c).Gap(8).Padding(28).Center().Radius(12).
+		Background(p.card).Border(1, p.hairline).Margin(20, 0, 0, 0).Children(func() {
+		ui.Box(c).Size(44, 44).Radius(12).Background(p.accentSoft).Center().Children(func() {
+			ui.Icon(c, iconStore).Size(22, 22).TextColor(p.accent)
+		})
+		ui.Text(c, a.t(i18n.StoreNoRegistry)).FontSize(15).FontWeight(700)
+		ui.Text(c, a.t(i18n.StoreNoRegistryWhy)).FontSize(12.5).TextColor(p.muted).
+			TextAlign(ui.Center).MaxLines(3)
+		ui.Button(c, a.t(i18n.StoreOpenSettings)).Margin(6, 0, 0, 0).OnClick(func() {
+			a.goTo(routeSettings)
+		})
+	})
+}
+
 func (a *App) emptyStore(c *ui.Context) {
 	p := a.pal
 	ui.Column(c).Gap(8).Padding(28).Center().Radius(12).
 		Background(p.card).Border(1, p.hairline).Margin(20, 0, 0, 0).Children(func() {
 		ui.Box(c).Size(44, 44).Radius(12).Background(p.accentSoft).Center().Children(func() {
-			ui.Icon(c, iconGrid).Size(22, 22).TextColor(p.accent)
+			ui.Icon(c, iconStore).Size(22, 22).TextColor(p.accent)
 		})
 		ui.Text(c, a.t(i18n.StoreEmpty)).FontSize(15).FontWeight(700)
 		ui.Text(c, a.t(i18n.StoreEmptyWhy)).FontSize(12.5).TextColor(p.muted).TextAlign(ui.Center)
@@ -97,35 +120,39 @@ func (a *App) emptyStore(c *ui.Context) {
 func (a *App) storeCard(c *ui.Context, entry plugin.RegistryEntry) {
 	p := a.pal
 	inst, update := a.storeState(entry)
-	ui.Column(c).Key("store:"+entry.ID).Gap(8).Padding(16).Radius(12).
-		Background(p.card).Border(1, p.hairline).Children(func() {
-		ui.Row(c).AlignItems(ui.Center).Gap(8).Children(func() {
-			ui.Text(c, entry.Name).FontSize(14).FontWeight(600).MaxLines(1)
-			ui.Text(c, "v"+entry.Version).FontSize(11).TextColor(p.muted)
-			ui.Box(c).Grow(1)
+	ui.Column(c).Key("store:"+entry.ID).Gap(10).Padding(16).Radius(14).
+		Background(p.card).Border(1, p.hairline).Shadow(0, 1, 2, 0, p.shadow).Children(func() {
+		ui.Row(c).AlignItems(ui.Center).Gap(12).Children(func() {
+			a.pluginTile(c, entry.Name)
+			ui.Column(c).Grow(1).Gap(2).Children(func() {
+				ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
+					ui.Text(c, entry.Name).FontSize(13.5).FontWeight(600).MaxLines(1)
+					ui.Text(c, "v"+entry.Version).FontSize(10.5).TextColor(p.faint)
+				})
+				line := entry.ID
+				if entry.Author != "" {
+					line += " · " + a.t(i18n.StoreBy, entry.Author)
+				}
+				ui.Text(c, line).FontSize(10.5).TextColor(p.faint).MaxLines(1)
+			})
 			switch {
 			case a.storeInstalling == entry.ID:
-				ui.Spinner(c)
+				ui.Spinner(c).Size(16, 16)
 			case inst == nil:
-				ui.Button(c, a.t(i18n.StoreInstall)).
-					Disabled(a.storeInstalling != "").
-					OnClick(func() { a.installFromStore(entry) })
+				a.primaryButton(c, a.t(i18n.StoreInstall), nil, a.storeInstalling != "", func() {
+					a.installFromStore(entry)
+				})
 			case update:
-				ui.Button(c, a.t(i18n.StoreUpdate)).
-					Disabled(a.storeInstalling != "").
-					OnClick(func() { a.installFromStore(entry) })
+				a.primaryButton(c, a.t(i18n.StoreUpdate), nil, a.storeInstalling != "", func() {
+					a.installFromStore(entry)
+				})
 			default:
 				ui.Text(c, a.t(i18n.StoreInstalled)).FontSize(11.5).
 					FontWeight(600).TextColor(p.success)
 			}
 		})
-		line := entry.ID
-		if entry.Author != "" {
-			line += " · " + a.t(i18n.StoreBy, entry.Author)
-		}
-		ui.Text(c, line).FontSize(11).TextColor(p.faint).MaxLines(1)
 		if entry.Description != "" {
-			ui.Text(c, entry.Description).FontSize(12.5).TextColor(p.muted).MaxLines(3)
+			ui.Text(c, entry.Description).FontSize(12).TextColor(p.muted).MaxLines(3)
 		}
 		if inst != nil && inst.Err != "" {
 			ui.Text(c, inst.Err).FontSize(11).TextColor(p.danger).MaxLines(2)
@@ -175,7 +202,7 @@ func (a *App) askInstall(m plugin.Manifest, req installRequest, done func(bool))
 		MinHeight:       520,
 		Parent:          a.win,
 		Modal:           true,
-		BackgroundColor: "light-dark(#ffffff, #1c1c1e)",
+		BackgroundColor: "light-dark(#f6f4ef, #141513)",
 		Content:         ui.View(ip.view),
 	})
 	win.OnClose(func(*mygo.CloseEvent) { ip.decide(false) })
