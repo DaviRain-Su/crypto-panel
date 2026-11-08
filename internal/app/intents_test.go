@@ -12,6 +12,7 @@ import (
 
 	"github.com/davirain-su/crypto-panel/internal/i18n"
 	"github.com/davirain-su/crypto-panel/internal/intents"
+	"github.com/davirain-su/crypto-panel/internal/wallet"
 )
 
 const (
@@ -91,7 +92,6 @@ func TestIntentsPageView(t *testing.T) {
 	for _, want := range []string{
 		"Intents", "CROSS-CHAIN SWAPS, QUOTED BY 1CLICK", "Pay with", "Receive",
 		"Amount", "Recipient", "Refund to", "Get a dry quote",
-		"wNEAR · NEAR", "USDC · Ethereum",
 	} {
 		if !tt.HasText(want) {
 			t.Errorf("missing %q in %q", want, tt.Texts())
@@ -246,6 +246,94 @@ func TestIntentsApprovalRejectButton(t *testing.T) {
 	}
 	if decided {
 		t.Fatal("Reject approved the quote")
+	}
+}
+
+func TestIntentsAssetSearchFilters(t *testing.T) {
+	a := intentsTestApp(t)
+	a.route = routeIntents
+	tt := ui.NewTester(a.view, windowWidth, windowHeight)
+	if err := tt.Click("Pay with"); err != nil {
+		t.Fatal(err)
+	}
+	tt.Key(0, ui.KeyDown) // Down opens the whole list
+	if !tt.HasText("wNEAR · NEAR") || !tt.HasText("USDC · Ethereum") {
+		t.Fatalf("the picker did not open: %q", tt.Texts())
+	}
+	tt.Key(ui.Cmd, ui.KeyA) // replace the choice, rather than append to it
+	tt.Type("usd")
+	if !tt.HasText("USDC · Ethereum") {
+		t.Fatalf("the search did not find USDC: %q", tt.Texts())
+	}
+	if tt.HasText("wNEAR · NEAR") {
+		t.Fatalf("the search did not filter: %q", tt.Texts())
+	}
+}
+
+func TestIntentsAssetSearchChooses(t *testing.T) {
+	a := intentsTestApp(t)
+	a.route = routeIntents
+	tt := ui.NewTester(a.view, windowWidth, windowHeight)
+	if err := tt.Click("Pay with"); err != nil {
+		t.Fatal(err)
+	}
+	tt.Key(ui.Cmd, ui.KeyA)
+	tt.Type("usdc")
+	tt.Key(0, ui.KeyEnter)
+	if a.intentsOrigin != testDestAsset {
+		t.Fatalf("origin = %q", a.intentsOrigin)
+	}
+}
+
+func TestIntentsAssetSearchArrows(t *testing.T) {
+	a := intentsTestApp(t)
+	a.intentsTokens = append(a.intentsTokens, intents.Token{
+		AssetID: "nep141:eth.omft.near", Symbol: "ETH", Blockchain: "eth", Decimals: 18,
+	})
+	a.route = routeIntents
+	tt := ui.NewTester(a.view, windowWidth, windowHeight)
+	if err := tt.Click("Pay with"); err != nil {
+		t.Fatal(err)
+	}
+	tt.Key(ui.Cmd, ui.KeyA)
+	tt.Type("eth") // ETH · Ethereum first, then USDC · Ethereum
+	tt.Key(0, ui.KeyDown)
+	tt.Key(0, ui.KeyEnter)
+	if a.intentsOrigin != testDestAsset {
+		t.Fatalf("origin = %q", a.intentsOrigin)
+	}
+}
+
+func TestIntentsAssetPickerKeepsATypedRefund(t *testing.T) {
+	a := intentsTestApp(t)
+	a.route = routeIntents
+	tt := ui.NewTester(a.view, windowWidth, windowHeight)
+	if err := tt.Click("Pay with"); err != nil {
+		t.Fatal(err)
+	}
+	tt.Key(ui.Cmd, ui.KeyA)
+	tt.Type("usdc")
+	tt.Key(0, ui.KeyEnter)
+	if a.intentsRefund != "alice.testnet" {
+		t.Fatalf("a typed refund changed to %q", a.intentsRefund)
+	}
+}
+
+func TestIntentsAssetPickerFollowsTheDefaultRefund(t *testing.T) {
+	a := intentsTestApp(t)
+	a.createNearAccount()
+	a.settings.Wallet = []wallet.Account{{Addr: walletTestAddr}}
+	a.intentsRefund = a.settings.NearWallet[0].AccountID
+	a.route = routeIntents
+	tt := ui.NewTester(a.view, windowWidth, windowHeight)
+	if err := tt.Click("Pay with"); err != nil {
+		t.Fatal(err)
+	}
+	tt.Key(ui.Cmd, ui.KeyA)
+	tt.Type("usdc")
+	tt.Key(0, ui.KeyEnter)
+	if a.intentsRefund != walletTestAddr {
+		t.Fatalf("the default refund did not follow the chain: %q", a.intentsRefund)
 	}
 }
 

@@ -296,12 +296,15 @@ func (a *App) intentsField(c *ui.Context, label string, grow float32, control fu
 	})
 }
 
-// intentsAssetField is one of the two asset selects.
+// intentsAssetField is one of the two asset pickers. The combobox shows the
+// chosen asset and filters 1Click's list as the user types, so a symbol or a
+// chain finds one among the 200-odd assets; Up and Down move, Enter chooses,
+// and Escape closes. The caption focuses the picker, as a form's label does.
 func (a *App) intentsAssetField(c *ui.Context, key, label string, current *string) {
 	p := a.pal
 	ui.Column(c).Gap(5).Grow(1).Children(func() {
-		ui.Text(c, label).FontSize(11).FontWeight(600).TextColor(p.muted).MaxLines(1)
 		if len(a.intentsTokens) == 0 {
+			ui.Text(c, label).FontSize(11).FontWeight(600).TextColor(p.muted).MaxLines(1)
 			ui.Text(c, a.t(i18n.IntentsNoAssets)).FontSize(12).TextColor(p.faint).MaxLines(1)
 			return
 		}
@@ -313,8 +316,12 @@ func (a *App) intentsAssetField(c *ui.Context, key, label string, current *strin
 				idx = i
 			}
 		}
+		var picker ui.Element
+		ui.Text(c, label).FontSize(11).FontWeight(600).TextColor(p.muted).MaxLines(1).
+			OnClick(func() { picker.Focus() })
 		selected := labels[idx]
-		if ui.Select(c.Key(key), &selected, labels).Changed() {
+		picker = ui.Combobox(c.Key(key), &selected, labels).Label(label)
+		if picker.Changed() {
 			previous := *current
 			for i, l := range labels {
 				if l == selected {
@@ -322,17 +329,22 @@ func (a *App) intentsAssetField(c *ui.Context, key, label string, current *strin
 					break
 				}
 			}
-			// A refund address that was only the default follows the origin
-			// chain; one the user typed is left alone.
-			if key == "intents-origin" && *current != previous {
-				oldToken, _ := a.intentsToken(previous)
-				newToken, _ := a.intentsToken(*current)
-				if strings.TrimSpace(a.intentsRefund) == a.defaultRefund(oldToken) {
-					a.intentsRefund = a.defaultRefund(newToken)
-				}
-			}
+			a.intentsAssetChanged(key, previous, *current)
 		}
 	})
+}
+
+// intentsAssetChanged follows a refund address that was only the default to
+// the new origin chain; one the user typed is left alone.
+func (a *App) intentsAssetChanged(key, previous, current string) {
+	if key != "intents-origin" || current == previous || current == "" {
+		return
+	}
+	oldToken, _ := a.intentsToken(previous)
+	newToken, _ := a.intentsToken(current)
+	if strings.TrimSpace(a.intentsRefund) == a.defaultRefund(oldToken) {
+		a.intentsRefund = a.defaultRefund(newToken)
+	}
 }
 
 // intentsAssetsState says whether the asset list is loading, failed, or

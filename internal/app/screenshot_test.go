@@ -176,6 +176,22 @@ func TestScreenshots(t *testing.T) {
 	}
 	save(t, ui.NewTester(apIntents.view, 480, 620), "new-intents-approval")
 
+	// The asset picker open on a longer list, as 1Click's is.
+	a = intentsTestApp(t)
+	a.intentsTokens = append(a.intentsTokens,
+		intents.Token{AssetID: "nep141:eth.omft.near", Symbol: "ETH", Blockchain: "eth", Decimals: 18},
+		intents.Token{AssetID: "nep141:usdt.tether-token.near", Symbol: "USDT", Blockchain: "near", Decimals: 6},
+		intents.Token{AssetID: "nep141:sol.omft.near", Symbol: "SOL", Blockchain: "sol", Decimals: 9},
+		intents.Token{AssetID: "nep141:btc.omft.near", Symbol: "BTC", Blockchain: "btc", Decimals: 8},
+	)
+	a.route = routeIntents
+	tt = ui.NewTester(a.view, windowWidth, windowHeight)
+	if err := tt.Click("Pay with"); err != nil {
+		t.Fatal(err)
+	}
+	tt.Key(0, ui.KeyDown)
+	save(t, tt, "new-intents-picker")
+
 	a = newTestApp(t)
 	a.passkeyKind = passkey.KindTouchID
 	ap := approvalFor(&evmtx.Summary{
