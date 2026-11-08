@@ -129,6 +129,15 @@ func TestScreenshots(t *testing.T) {
 	a.setPluginTab("store")
 	save(t, ui.NewTester(a.view, windowWidth, windowHeight), "new-store-empty")
 
+	// The launcher with two installed apps, and one app's own settings page.
+	a = newTestApp(t)
+	installExamplePlugin(t, a, "gas")
+	installExamplePlugin(t, a, "fear-greed")
+	a.route = routePlugins
+	save(t, ui.NewTester(a.view, windowWidth, windowHeight), "new-apps-launcher")
+	a.openPluginDetail("com.example.gas")
+	save(t, ui.NewTester(a.view, windowWidth, windowHeight), "new-apps-detail")
+
 	a = newTestApp(t)
 	a.passkeyKind = passkey.KindTouchID
 	a.authenticate = func(string) error { return nil }

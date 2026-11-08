@@ -133,9 +133,12 @@ type App struct {
 	pluginView     pluginPageState
 	pluginGen      int
 
-	// The plugin store: the tab the Plugins page shows, the catalog last
-	// read, the registry form, and the entry being installed.
+	// The plugin store: the tab the Apps page shows, the app whose settings
+	// are open, the catalog last read, the registry form, and the entry
+	// being installed.
 	pluginTab       string
+	pluginDetail    string
+	storeQuery      string
 	storeURLDraft   string
 	storeFormErr    string
 	storeItems      []plugin.RegistryEntry
@@ -357,6 +360,9 @@ func (a *App) goTo(r route) {
 	if a.route.kind == "wallet" && r.kind != "wallet" {
 		a.revealedKey, a.revealedAddr = "", ""
 		a.walletNotice = ""
+	}
+	if a.route.kind == "plugins" && r.kind != "plugins" {
+		a.pluginDetail = ""
 	}
 	a.route = r
 	if r == routeIntents && !a.intentsTokensLoaded && !a.intentsTokensLoading {

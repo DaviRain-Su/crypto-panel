@@ -1,8 +1,11 @@
 package plugin
 
 import (
+	"archive/zip"
+	"bytes"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
 )
@@ -194,5 +197,89 @@ func TestKVRefusesWithoutPermission(t *testing.T) {
 	}
 	if err := kv.Put("a", []byte(`1`)); err == nil || !strings.Contains(err.Error(), "no storage permission") {
 		t.Fatalf("err = %v", err)
+	}
+}
+
+// zipOf builds an archive in memory, the way a plugin author would ship one.
+func zipOf(t *testing.T, files map[string]string) []byte {
+	t.Helper()
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	names := make([]string, 0, len(files))
+	for name := range files {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	for _, name := range names {
+		w, err := zw.Create(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := w.Write([]byte(files[name])); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := zw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return buf.Bytes()
+}
+
+// TestUnpackLocal walks a local zip install: the archive unpacks into a
+// hidden folder, its manifest is read, and the folder is either installed or
+// discarded.
+func TestUnpackLocal(t *testing.T) {
+	root := t.TempDir()
+	store := NewStore(filepath.Join(root, "plugins"), nil)
+	data := zipOf(t, map[string]string{
+		"local-app/plugin.json": storeManifest,
+		"local-app/index.js":    `export function page() { return {}; }`,
+	})
+	dir, m, err := store.UnpackLocal(data)
+	if err != nil {
+		t.Fatalf("UnpackLocal: %v", err)
+	}
+	if m.ID != "com.example.store" || m.Version != "1.0.0" {
+		t.Fatalf("manifest = %+v", m)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "index.js")); err != nil {
+		t.Fatalf("the source was not unpacked: %v", err)
+	}
+	store.DiscardUnpacked(dir)
+	if _, err := os.Stat(dir); !os.IsNotExist(err) {
+		t.Fatalf("DiscardUnpacked left %s", dir)
+	}
+}
+
+func TestUnpackLocalRefusesMissingManifest(t *testing.T) {
+	root := t.TempDir()
+	store := NewStore(filepath.Join(root, "plugins"), nil)
+	_, _, err := store.UnpackLocal(zipOf(t, map[string]string{
+		"index.js": `export function page() { return {}; }`,
+	}))
+	if err == nil {
+		t.Fatal("an archive with no manifest was accepted")
+	}
+	entries, err := os.ReadDir(store.dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range entries {
+		if strings.HasPrefix(e.Name(), ".local-") {
+			t.Fatalf("a refused archive left %s", e.Name())
+		}
+	}
+}
+
+func TestDiscardUnpackedLeavesOtherFolders(t *testing.T) {
+	root := t.TempDir()
+	store := NewStore(filepath.Join(root, "plugins"), nil)
+	elsewhere := filepath.Join(root, "elsewhere")
+	if err := os.MkdirAll(elsewhere, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	store.DiscardUnpacked(elsewhere)
+	if _, err := os.Stat(elsewhere); err != nil {
+		t.Fatalf("DiscardUnpacked deleted a folder outside the store: %v", err)
 	}
 }

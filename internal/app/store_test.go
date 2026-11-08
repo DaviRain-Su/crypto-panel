@@ -250,3 +250,34 @@ func TestSettingsShowsTheStoreField(t *testing.T) {
 		}
 	}
 }
+
+// TestStoreSearchFilters checks the store's search box: a word of a name, an
+// id, an author or a description narrows the catalog, and a word that matches
+// nothing says so.
+func TestStoreSearchFilters(t *testing.T) {
+	a := newTestApp(t)
+	a.settings.PluginStoreURL = "https://example.com/registry.json"
+	a.storeLoaded = true
+	a.storeItems = []plugin.RegistryEntry{
+		{ID: "com.example.gas", Name: "Gas prices", Description: "Ethereum gas tracker"},
+		{ID: "com.example.fear", Name: "Fear & Greed", Author: "Ada", Description: "Market sentiment"},
+	}
+	a.route = routePlugins
+	a.pluginTab = "store"
+	a.storeQuery = "sentiment"
+	if got := a.filteredStoreItems(); len(got) != 1 || got[0].ID != "com.example.fear" {
+		t.Fatalf("filtered = %+v", got)
+	}
+	tt := ui.NewTester(a.view, windowWidth, windowHeight)
+	if !tt.HasText("Fear & Greed") {
+		t.Errorf("the match is not shown: %q", tt.Texts())
+	}
+	if tt.HasText("Gas prices") {
+		t.Errorf("the non-match is shown: %q", tt.Texts())
+	}
+	a.storeQuery = "nothing matches this"
+	tt = ui.NewTester(a.view, windowWidth, windowHeight)
+	if !tt.HasText("No app matches") {
+		t.Errorf("the empty filter does not say so: %q", tt.Texts())
+	}
+}

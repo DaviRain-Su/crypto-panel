@@ -39,17 +39,19 @@ no auto-approval. The Touch ID prompt is a system check, **not** a Passkey.
 
 - **The shell** (Go + [MyGo](https://github.com/egoist/mygo) native UI): a
   normal desktop window with a sidebar of pages — Portfolio, Wallet, Apps,
-  Intents, Plugins, Settings, and one entry per plugin page — plus the plugin
-  manager, permission prompts, decoded approvals and chain brokers.
-- **Plugins** (JavaScript, anyone's): a folder with `plugin.json` and one
-  module, run each in its own [moejs](https://github.com/MoeForge/moejs)
+  Intents, DApp, Settings — plus the app launcher, permission prompts, decoded
+  approvals and chain brokers.
+- **Apps are plugins** (JavaScript, anyone's): a folder with `plugin.json` and
+  one module, run each in its own [moejs](https://github.com/MoeForge/moejs)
   runtime — pure Go, one realm each, with memory and time limits — and only the
-  host functions its manifest grants. A plugin store installs signed archives
-  from a registry, with the permissions shown before anything is unpacked.
+  host functions its manifest grants. Installed apps sit on the Apps page as a
+  launcher: click one to open it, or open its settings, logs and switch. An app
+  installs from a folder, a local zip, or the store, with its permissions
+  shown before anything is unpacked.
 - **Plugin UI is data.** A plugin returns pages (`stats`, `table`, `cards`,
   `links`, `chart`); the shell draws them with native UI. No HTML, no
   plugin-drawn dialogs, so an approval prompt cannot be imitated.
-- **DApps are untrusted pages.** The Apps page opens an https URL (or http on
+- **DApps are untrusted pages.** The DApp page opens an https URL (or http on
   localhost) in an isolated web view with a small injected NEAR wallet bridge.
   The page can ask to connect and to sign; it cannot read a key, call a Go
   method, open a window, download a file, or draw an approval.
@@ -146,6 +148,28 @@ The request is strictly parsed (unknown keys and action types are refused),
 paused on the plugin's watchdog while the approval is open, and signed only
 after the user approves. Without `sign`, or with another chain, the host
 refuses before the request reaches the wallet.
+
+### Apps and the plugin store
+
+The Apps page is the shell's launcher. Every installed plugin is an app there:
+its mark, name, version and description, with **Open** and **App settings**.
+**Open** shows the app's first page, with the app's own tabs when it declares
+more than one; **All apps** in the header comes back. Settings holds the
+enable switch, the app's pages, its settings form, its log and **Remove**. A
+folder whose `plugin.json` cannot be read shows as broken, with the error and
+a **Remove** button.
+
+An app installs three ways:
+
+- **Install from folder…** copies a plugin folder into the store;
+- **Install from zip…** unpacks a local archive — a single top-level folder is
+  stripped, so a GitHub archive works as it comes;
+- **Store** reads the registry URL set in Settings, with a search box over
+  names, ids, authors and descriptions, and installs a signed entry after the
+  permission prompt.
+
+Local installs are unsigned and the app says so. See
+[`docs/store.md`](docs/store.md) for the registry format and signing.
 
 ### NEAR Intents (dry quote)
 
@@ -244,7 +268,7 @@ network access to the NEAR testnet RPC and 1Click.
    python3 -m http.server 8080 --directory web/dapp
    ```
 
-   In the app: Apps → `http://localhost:8080` → **Open**. Press **Connect
+   In the app: DApp → `http://localhost:8080` → **Open**. Press **Connect
    wallet** and approve the shell's connect dialog. Then send `0.01` NEAR to a
    testnet account and approve the transaction. The page sees only the hash;
    it never sees a key, and it cannot approve anything itself.
@@ -364,7 +388,8 @@ go tool mygo build     # package into build/
 go run ./tools/icon    # regenerate resources/icon.png
 ```
 
-To publish a plugin, see [`docs/store.md`](docs/store.md). To try the wallet,
+To write an app, see [`docs/plugins.md`](docs/plugins.md); to publish and sign
+one, see [`docs/store.md`](docs/store.md). To try the wallet,
 open **Wallet** and choose **New account** (EVM) or **New NEAR account**; the
 key is shown once, so save it.
 

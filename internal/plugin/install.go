@@ -89,6 +89,46 @@ func (s *Store) Prepare(data []byte, entry RegistryEntry) (*Archive, error) {
 	return &Archive{Manifest: m, Entry: entry, dir: tmp, store: s}, nil
 }
 
+// UnpackLocal unpacks a local plugin archive into a hidden folder under the
+// store, so the shell can show its permissions before installing it. The
+// caller installs the folder with Install, or discards it with
+// DiscardUnpacked. A local archive is unsigned: there is no registry entry
+// to check it against.
+func (s *Store) UnpackLocal(data []byte) (string, Manifest, error) {
+	if len(data) > MaxArchiveBytes {
+		return "", Manifest{}, fmt.Errorf("the archive is larger than %d bytes", MaxArchiveBytes)
+	}
+	if err := os.MkdirAll(s.dir, 0o755); err != nil {
+		return "", Manifest{}, err
+	}
+	dir, err := os.MkdirTemp(s.dir, ".local-*")
+	if err != nil {
+		return "", Manifest{}, err
+	}
+	if err := extractZip(data, dir); err != nil {
+		os.RemoveAll(dir)
+		return "", Manifest{}, err
+	}
+	m, err := LoadManifest(dir)
+	if err == nil {
+		err = m.ValidateDir(dir)
+	}
+	if err != nil {
+		os.RemoveAll(dir)
+		return "", Manifest{}, err
+	}
+	return dir, m, nil
+}
+
+// DiscardUnpacked deletes a folder UnpackLocal made.
+func (s *Store) DiscardUnpacked(dir string) {
+	clean := filepath.Clean(dir)
+	if filepath.Dir(clean) == filepath.Clean(s.dir) &&
+		strings.HasPrefix(filepath.Base(clean), ".local-") {
+		os.RemoveAll(clean)
+	}
+}
+
 // checkInstall refuses an update that goes backwards, a same-version
 // archive with other contents (a replay), and a publisher key that changed
 // since the plugin was installed. A folder with no readable manifest is

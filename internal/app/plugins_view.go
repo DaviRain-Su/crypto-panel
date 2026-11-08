@@ -11,8 +11,8 @@ import (
 	"github.com/davirain-su/crypto-panel/internal/plugin"
 )
 
-// pluginsView is the Plugins page: the manager of the installed plugins,
-// and the store beside it.
+// pluginsView is the Apps page: the installed apps as a launcher, the
+// settings of one app, and the store beside them.
 func (a *App) pluginsView(c *ui.Context) {
 	p := a.pal
 	a.pluginTabs(c)
@@ -24,14 +24,34 @@ func (a *App) pluginsView(c *ui.Context) {
 		a.storeView(c)
 		return
 	}
+	if a.pluginDetail != "" {
+		a.appDetail(c)
+		return
+	}
 	if len(a.pluginItems) == 0 {
 		a.emptyPlugins(c)
 		return
 	}
-	ui.Column(c).Gap(10).Children(func() {
-		for _, item := range a.pluginItems {
-			a.pluginCard(c, item)
-		}
+	a.appGrid(c)
+}
+
+// pluginTabs switches the Apps page between the launcher and the store,
+// with the two ways to install a local plugin beside them.
+func (a *App) pluginTabs(c *ui.Context) {
+	p := a.pal
+	ui.Row(c).AlignItems(ui.Center).Gap(8).Margin(0, 0, 16, 0).Children(func() {
+		ui.Row(c).Gap(2).Padding(3).Radius(10).Background(p.inset).
+			Border(1, p.hairline).Children(func() {
+			a.tabButton(c, a.t(i18n.InstalledTab), a.pluginTab != "store", func() {
+				a.setPluginTab("installed")
+			})
+			a.tabButton(c, a.t(i18n.StoreTab), a.pluginTab == "store", func() {
+				a.setPluginTab("store")
+			})
+		})
+		ui.Box(c).Grow(1)
+		a.softButton(c, a.t(i18n.PluginInstall), nil, p.text, a.installPlugin)
+		a.softButton(c, a.t(i18n.AppZip), nil, p.text, a.installPluginZip)
 	})
 }
 
@@ -54,16 +74,101 @@ func (a *App) emptyPlugins(c *ui.Context) {
 	})
 }
 
-func (a *App) pluginCard(c *ui.Context, item plugin.Installed) {
+// appGrid is the launcher: one tile per installed app, as a desktop's app
+// folder.
+func (a *App) appGrid(c *ui.Context) {
+	ui.Grid(c).Columns(2).Gap(12).Children(func() {
+		for _, item := range a.pluginItems {
+			a.appTile(c, item)
+		}
+	})
+}
+
+// appTile is one installed app: its mark, name, description and the two
+// ways in — open it, or open its settings.
+func (a *App) appTile(c *ui.Context, item plugin.Installed) {
 	p := a.pal
 	if item.Err != "" {
-		ui.Column(c).Gap(3).Padding(16).Radius(14).
-			Background(p.card).Border(1, p.hairline).Children(func() {
-			ui.Text(c, filepath.Base(item.Dir)).FontSize(13).FontWeight(600)
-			ui.Text(c, item.Err).FontSize(11).TextColor(p.danger).MaxLines(3)
-		})
+		a.brokenAppTile(c, item)
 		return
 	}
+	m := item.Manifest
+	id := m.ID
+	enabled := item.Enabled
+	ui.Column(c).Key("app:"+id).Gap(10).Padding(16).Radius(14).
+		Background(p.card).Border(1, p.hairline).Shadow(0, 1, 2, 0, p.shadow).Children(func() {
+		ui.Row(c).Gap(12).AlignItems(ui.Center).Children(func() {
+			a.pluginTile(c, m.Name)
+			ui.Column(c).Grow(1).Gap(2).Children(func() {
+				ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
+					ui.Text(c, m.Name).FontSize(14).FontWeight(600).MaxLines(1)
+					if !item.Signed {
+						ui.Badge(c, a.t(i18n.PluginUnsigned))
+					}
+				})
+				ui.Text(c, "v"+m.Version).FontSize(10.5).TextColor(p.faint).MaxLines(1)
+			})
+			if !enabled {
+				ui.Text(c, a.t(i18n.AppOff)).FontSize(10.5).FontWeight(600).
+					TextColor(p.faint).MaxLines(1)
+			}
+		})
+		if m.Description != "" {
+			ui.Text(c, m.Description).FontSize(12).TextColor(p.muted).MaxLines(2)
+		}
+		ui.Row(c).Gap(6).AlignItems(ui.Center).Children(func() {
+			if enabled && len(m.Navigation) > 0 {
+				a.softButton(c, a.t(i18n.AppOpen), nil, p.text, func() { a.openPluginApp(id) })
+			}
+			a.softButton(c, a.t(i18n.AppSettings), iconGear, p.muted, func() {
+				a.openPluginDetail(id)
+			})
+		})
+	})
+}
+
+func (a *App) brokenAppTile(c *ui.Context, item plugin.Installed) {
+	p := a.pal
+	name := filepath.Base(item.Dir)
+	ui.Column(c).Key("app:"+name).Gap(8).Padding(16).Radius(14).
+		Background(p.card).Border(1, p.hairline).Children(func() {
+		ui.Row(c).Gap(12).AlignItems(ui.Center).Children(func() {
+			a.pluginTile(c, "?")
+			ui.Column(c).Grow(1).Gap(2).Children(func() {
+				ui.Text(c, name).FontSize(13.5).FontWeight(600).MaxLines(1)
+				ui.Text(c, a.t(i18n.AppBroken)).FontSize(11).TextColor(p.danger).MaxLines(1)
+			})
+		})
+		ui.Text(c, item.Err).FontSize(11).TextColor(p.danger).MaxLines(3)
+		ui.Row(c).Children(func() {
+			a.softButton(c, a.t(i18n.Remove), iconTrash, p.danger, func() {
+				a.removeBrokenPlugin(item.Dir)
+			})
+		})
+	})
+}
+
+// appDetail is one app's own page: its switch, its pages, its settings and
+// its logs, with the way back to the launcher at the top.
+func (a *App) appDetail(c *ui.Context) {
+	item, ok := a.installedPlugin(a.pluginDetail)
+	if !ok {
+		a.pluginDetail = ""
+		a.invalidate()
+		return
+	}
+	a.backButton(c, a.t(i18n.AppAll), a.closePluginDetail)
+	if item.Err != "" {
+		a.brokenAppTile(c, item)
+		return
+	}
+	a.appCard(c, item)
+}
+
+// appCard is the manager of one app: what it is, whether it runs, its
+// pages, its settings and its logs.
+func (a *App) appCard(c *ui.Context, item plugin.Installed) {
+	p := a.pal
 	m := item.Manifest
 	id := m.ID
 	ui.Column(c).Key(id).Gap(12).Padding(16).Radius(14).
@@ -188,6 +293,7 @@ func (a *App) pluginLogsView(c *ui.Context, id string) {
 // plugin's to draw.
 func (a *App) pluginPageView(c *ui.Context) {
 	p := a.pal
+	a.pluginPageTabs(c)
 	view := a.pluginView
 	switch {
 	case view.key != a.pluginKey():
@@ -203,4 +309,23 @@ func (a *App) pluginPageView(c *ui.Context) {
 			a.openPluginPage(a.route.id, page)
 		})
 	}
+}
+
+// pluginPageTabs switches between the pages an app declares, when it has
+// more than one.
+func (a *App) pluginPageTabs(c *ui.Context) {
+	item, ok := a.installedPlugin(a.route.id)
+	if !ok || len(item.Manifest.Navigation) < 2 {
+		return
+	}
+	p := a.pal
+	ui.Row(c).Gap(2).Padding(3).Radius(10).Background(p.inset).
+		Border(1, p.hairline).Margin(0, 0, 16, 0).Children(func() {
+		for _, nav := range item.Manifest.Navigation {
+			page := nav.Page
+			a.tabButton(c, nav.Title, a.route.page == page, func() {
+				a.openPluginPage(a.route.id, page)
+			})
+		}
+	})
 }

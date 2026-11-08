@@ -170,6 +170,16 @@ func (s *Store) Install(src string) (Manifest, error) {
 	return m, nil
 }
 
+// RemoveAt deletes one folder the store lists, including a folder whose
+// manifest cannot be read. The folder must sit directly under the store.
+func (s *Store) RemoveAt(dir string) error {
+	clean := filepath.Clean(dir)
+	if filepath.Dir(clean) != filepath.Clean(s.dir) {
+		return errors.New("not a plugin folder of this store")
+	}
+	return os.RemoveAll(clean)
+}
+
 // Remove deletes the plugin's folder and the secrets of its settings.
 func (s *Store) Remove(id string) error {
 	dir := filepath.Join(s.dir, id)

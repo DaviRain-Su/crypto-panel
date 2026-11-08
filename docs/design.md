@@ -440,13 +440,13 @@ crypto-panel/
 
 ## 15. PR checklist
 
-- [ ] `plugin.json` schema + strict parsing, with tests
-- [ ] moejs runtime per plugin with limits and restart
-- [ ] host functions per §6, each with a permission test
-- [ ] declarative page tree + native renderer + golden tests
-- [ ] plugin manager UI: install, enable/disable, permissions, logs, remove
+- [x] `plugin.json` schema + strict parsing, with tests
+- [x] moejs runtime per plugin with limits and restart
+- [x] host functions per §6, each with a permission test
+- [x] declarative page tree + native renderer + golden tests
+- [x] app launcher UI: install from folder/zip/store, open, enable/disable, permissions, settings, logs, remove
 - [x] signature + hash verification at install and load
-- [ ] chain broker with chain-id pin and fixtures
-- [ ] window + sidebar, with the portfolio page and plugin pages
-- [ ] docs: `docs/plugins.md` for this app (manifest, host functions, page blocks)
+- [x] chain broker with chain-id pin and fixtures
+- [x] window + sidebar, with the portfolio page and plugin pages
+- [x] docs: `docs/plugins.md` for this app (manifest, host functions, page blocks)
 - [ ] `zig/host/plugin` only if the shell goes Zig (deferred)

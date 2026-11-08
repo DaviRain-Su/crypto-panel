@@ -25,7 +25,7 @@ const (
 	NavPortfolio Key = "navPortfolio"
 	NavWallet    Key = "navWallet"
 	NavApps      Key = "navApps"
-	NavPlugins   Key = "navPlugins"
+	NavDapp      Key = "navDapp"
 	NavSettings  Key = "navSettings"
 
 	AppsSubtitle       Key = "appsSubtitle"
@@ -298,6 +298,14 @@ const (
 	PluginSave          Key = "pluginSave"
 	PluginBack          Key = "pluginBack"
 	PluginDisabled      Key = "pluginDisabled"
+	AppOpen             Key = "appOpen"
+	AppSettings         Key = "appSettings"
+	AppAll              Key = "appAll"
+	AppOff              Key = "appOff"
+	AppNoPages          Key = "appNoPages"
+	AppBroken           Key = "appBroken"
+	AppZip              Key = "appZip"
+	AppZipTitle         Key = "appZipTitle"
 	Cancel              Key = "cancel"
 
 	InstalledTab       Key = "installedTab"
@@ -313,6 +321,9 @@ const (
 	StoreOpenSettings  Key = "storeOpenSettings"
 	StoreSource        Key = "storeSource"
 	StoreSourceFolder  Key = "storeSourceFolder"
+	StoreSourceZip     Key = "storeSourceZip"
+	StoreSearch        Key = "storeSearch"
+	StoreNoMatches     Key = "storeNoMatches"
 	StoreBy            Key = "storeBy"
 	StoreInstall       Key = "storeInstall"
 	StoreUpdate        Key = "storeUpdate"
@@ -352,7 +363,7 @@ var messages = map[Key]map[string]string{
 	NavPortfolio: {English: "Portfolio", Chinese: "持仓"},
 	NavWallet:    {English: "Wallet", Chinese: "钱包"},
 	NavApps:      {English: "Apps", Chinese: "应用"},
-	NavPlugins:   {English: "Plugins", Chinese: "插件"},
+	NavDapp:      {English: "DApp", Chinese: "DApp"},
 	NavSettings:  {English: "Settings", Chinese: "设置"},
 
 	AppsSubtitle:       {English: "Web apps, signed by the local wallet", Chinese: "由本地钱包签名的网页应用"},
@@ -606,25 +617,33 @@ var messages = map[Key]map[string]string{
 	Seconds: {English: "%ds", Chinese: "%d 秒"},
 	Minutes: {English: "%dm", Chinese: "%d 分钟"},
 
-	PluginCount:         {English: "%d installed · %d on", Chinese: "%d 个已安装 · %d 个已启用"},
+	PluginCount:         {English: "%d apps · %d on", Chinese: "%d 个应用 · %d 个已启用"},
 	PluginInstall:       {English: "Install from folder…", Chinese: "从文件夹安装…"},
-	PluginInstallTitle:  {English: "Choose a plugin folder", Chinese: "选择插件文件夹"},
+	PluginInstallTitle:  {English: "Choose an app folder", Chinese: "选择应用文件夹"},
 	PluginInstalled:     {English: "Installed %s.", Chinese: "已安装 %s。"},
 	PluginInstallFailed: {English: "Install failed: %s", Chinese: "安装失败：%s"},
-	PluginEmpty:         {English: "No plugins installed", Chinese: "还没有安装插件"},
-	PluginEmptyWhy:      {English: "A plugin is a folder with plugin.json and a JavaScript file. Install one from a folder, or browse the store.", Chinese: "插件是包含 plugin.json 和 JavaScript 文件的文件夹。可以从文件夹安装，也可以去商店看看。"},
+	PluginEmpty:         {English: "No apps yet", Chinese: "还没有应用"},
+	PluginEmptyWhy:      {English: "An app is a plugin: a folder with plugin.json and a JavaScript file. Install one from a folder, a zip, or the store.", Chinese: "应用就是插件：包含 plugin.json 和 JavaScript 文件的文件夹。可以从文件夹、zip 或商店安装。"},
 	PluginOpenStore:     {English: "Open store", Chinese: "打开商店"},
 	PluginUnsigned:      {English: "Unsigned", Chinese: "未签名"},
 	PluginLogs:          {English: "Logs", Chinese: "日志"},
 	PluginLogsEmpty:     {English: "Nothing logged yet.", Chinese: "还没有日志。"},
-	PluginRemoveTitle:   {English: "Remove plugin?", Chinese: "移除插件？"},
+	PluginRemoveTitle:   {English: "Remove app?", Chinese: "移除应用？"},
 	PluginRemoveBody:    {English: "Remove %s? Its folder and saved settings are deleted.", Chinese: "移除 %s？它的文件夹和已保存的设置都会被删除。"},
 	PluginRemoved:       {English: "Removed %s.", Chinese: "已移除 %s。"},
 	PluginRestarted:     {English: "Restarted %d×", Chinese: "已重启 %d 次"},
 	PluginSettingsSaved: {English: "Settings saved.", Chinese: "设置已保存。"},
 	PluginSave:          {English: "Save", Chinese: "保存"},
 	PluginBack:          {English: "Back", Chinese: "返回"},
-	PluginDisabled:      {English: "This plugin is turned off.", Chinese: "该插件已停用。"},
+	PluginDisabled:      {English: "This app is turned off.", Chinese: "该应用已停用。"},
+	AppOpen:             {English: "Open", Chinese: "打开"},
+	AppSettings:         {English: "App settings", Chinese: "应用设置"},
+	AppAll:              {English: "All apps", Chinese: "全部应用"},
+	AppOff:              {English: "Off", Chinese: "已关闭"},
+	AppNoPages:          {English: "This app has no page to open.", Chinese: "这个应用没有可打开的页面。"},
+	AppBroken:           {English: "This app could not be loaded.", Chinese: "这个应用无法加载。"},
+	AppZip:              {English: "Install from zip…", Chinese: "从 zip 安装…"},
+	AppZipTitle:         {English: "Choose an app zip", Chinese: "选择应用 zip 文件"},
 	Cancel:              {English: "Cancel", Chinese: "取消"},
 
 	InstalledTab:       {English: "Installed", Chinese: "已安装"},
@@ -640,6 +659,9 @@ var messages = map[Key]map[string]string{
 	StoreOpenSettings:  {English: "Open Settings", Chinese: "打开设置"},
 	StoreSource:        {English: "Registry: %s", Chinese: "插件源：%s"},
 	StoreSourceFolder:  {English: "a folder", Chinese: "本地文件夹"},
+	StoreSourceZip:     {English: "a zip file", Chinese: "本地 zip 文件"},
+	StoreSearch:        {English: "Search apps…", Chinese: "搜索应用…"},
+	StoreNoMatches:     {English: "No app matches “%s”.", Chinese: "没有匹配“%s”的应用。"},
 	StoreBy:            {English: "by %s", Chinese: "作者 %s"},
 	StoreInstall:       {English: "Install", Chinese: "安装"},
 	StoreUpdate:        {English: "Update", Chinese: "更新"},

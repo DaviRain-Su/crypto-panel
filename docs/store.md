@@ -1,8 +1,10 @@
 # The plugin store
 
-The app's Plugins page has two tabs: **Installed** and **Store**. The store
-reads a *registry* — one static JSON file that lists signed plugins — and
-installs an entry with one click, after showing what the plugin may do.
+The app's Apps page has two tabs: **Installed** (the launcher) and **Store**.
+The store reads a *registry* — one static JSON file that lists signed plugins
+— and installs an entry with one click, after showing what the plugin may do.
+A plugin can also be installed from a local folder or zip; those installs are
+unsigned and the permission prompt says so.
 
 The app ships no catalog of its own: until a registry is set, the Store tab
 says so and points at Settings. A registry is one HTTPS URL in

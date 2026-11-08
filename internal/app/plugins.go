@@ -154,6 +154,81 @@ func (a *App) installPlugin() {
 	})
 }
 
+// installPluginZip asks for an archive, unpacks it, shows what it may do,
+// and installs it as a local, unsigned app.
+func (a *App) installPluginZip() {
+	if a.plugins == nil {
+		return
+	}
+	paths, err := mygo.Dialog.Open(mygo.OpenDialogOptions{
+		Title:       a.t(i18n.AppZipTitle),
+		ButtonLabel: a.t(i18n.StoreInstall),
+		Filters:     []mygo.FileFilter{{Name: "zip", Extensions: []string{"zip"}}},
+	})
+	if err != nil {
+		a.pluginNotice = a.t(i18n.PluginInstallFailed, err.Error())
+		a.invalidate()
+		return
+	}
+	if len(paths) == 0 {
+		return
+	}
+	data, err := os.ReadFile(paths[0])
+	if err != nil {
+		a.pluginNotice = a.t(i18n.PluginInstallFailed, err.Error())
+		a.invalidate()
+		return
+	}
+	dir, m, err := a.plugins.UnpackLocal(data)
+	if err != nil {
+		a.pluginNotice = a.t(i18n.PluginInstallFailed, err.Error())
+		a.invalidate()
+		return
+	}
+	a.confirmInstall(m, installRequest{unsigned: true, source: a.t(i18n.StoreSourceZip)}, func(ok bool) {
+		defer a.plugins.DiscardUnpacked(dir)
+		if !ok {
+			return
+		}
+		m, err := a.plugins.Install(dir)
+		if err != nil {
+			a.pluginNotice = a.t(i18n.PluginInstallFailed, err.Error())
+			a.invalidate()
+			return
+		}
+		a.pluginNotice = a.t(i18n.PluginInstalled, m.Name)
+		a.refreshPlugins()
+		a.invalidate()
+	})
+}
+
+// removeBrokenPlugin deletes a folder the store could not read.
+func (a *App) removeBrokenPlugin(dir string) {
+	if a.plugins == nil {
+		return
+	}
+	name := filepath.Base(dir)
+	res, err := mygo.Dialog.Message(mygo.MessageOptions{
+		Type:               mygo.MessageWarning,
+		Title:              a.t(i18n.PluginRemoveTitle),
+		Message:            a.t(i18n.PluginRemoveBody, name),
+		Buttons:            []string{a.t(i18n.Remove), a.t(i18n.Cancel)},
+		CancelButton:       1,
+		DestructiveButtons: []int{0},
+	})
+	if err != nil || res.Button != 0 {
+		return
+	}
+	if err := a.plugins.RemoveAt(dir); err != nil {
+		a.pluginNotice = err.Error()
+		a.invalidate()
+		return
+	}
+	a.pluginNotice = a.t(i18n.PluginRemoved, name)
+	a.refreshPlugins()
+	a.invalidate()
+}
+
 // removePlugin asks, then deletes the plugin's folder and its secrets.
 func (a *App) removePlugin(id string) {
 	if a.plugins == nil {
@@ -267,14 +342,56 @@ func (a *App) openPluginPage(id, page string) {
 	a.loadPluginPage()
 }
 
-// closePluginPage leaves a plugin page for the manager, dropping the page
-// it held.
+// closePluginPage leaves an app for the launcher, dropping the page it
+// held.
 func (a *App) closePluginPage() {
 	a.pluginGen++
 	a.pluginView = pluginPageState{}
+	a.pluginDetail = ""
 	if a.route.kind == "plugin" {
 		a.route = routePlugins
 	}
+	a.invalidate()
+}
+
+// openPluginApp opens an app at its first page, as a desktop opens an app.
+// An app with nothing to open shows its settings instead.
+func (a *App) openPluginApp(id string) {
+	inst, ok := a.installedPlugin(id)
+	if !ok || inst.Err != "" || !inst.Enabled {
+		a.openPluginDetail(id)
+		return
+	}
+	if len(inst.Manifest.Navigation) == 0 {
+		a.pluginDetail = id
+		a.pluginNotice = a.t(i18n.AppNoPages)
+		a.invalidate()
+		return
+	}
+	a.pluginDetail = ""
+	a.openPluginPage(id, inst.Manifest.Navigation[0].Page)
+}
+
+// openPluginDetail shows one app's settings on the Apps page.
+func (a *App) openPluginDetail(id string) {
+	a.pluginDetail = id
+	a.pluginTab = "installed"
+	a.route = routePlugins
+	a.invalidate()
+}
+
+// closePluginDetail goes back to the launcher.
+func (a *App) closePluginDetail() {
+	a.pluginDetail = ""
+	a.invalidate()
+}
+
+// openApps selects the Apps page at its launcher, whatever it showed
+// before.
+func (a *App) openApps() {
+	a.pluginDetail = ""
+	a.pluginTab = "installed"
+	a.goTo(routePlugins)
 	a.invalidate()
 }
 

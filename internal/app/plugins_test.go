@@ -18,7 +18,7 @@ func TestPluginsEmptyView(t *testing.T) {
 	a := newTestApp(t)
 	a.route = routePlugins
 	tt := ui.NewTester(a.view, windowWidth, windowHeight)
-	for _, want := range []string{"Install from folder…", "No plugins installed", "plugin.json"} {
+	for _, want := range []string{"No apps yet", "Install from folder…", "Install from zip…", "plugin.json"} {
 		if !tt.HasText(want) {
 			t.Errorf("missing %q in %q", want, tt.Texts())
 		}
@@ -36,15 +36,39 @@ func installExamplePlugin(t *testing.T, a *App, name string) string {
 	return m.ID
 }
 
-func TestPluginsManagerShowsInstalled(t *testing.T) {
+func TestPluginsLauncherShowsInstalled(t *testing.T) {
 	a := newTestApp(t)
-	id := installExamplePlugin(t, a, "gas")
+	installExamplePlugin(t, a, "gas")
 	a.route = routePlugins
 	tt := ui.NewTester(a.view, windowWidth, windowHeight)
-	for _, want := range []string{"Gas", "Unsigned", "v1.0.0", id, "Remove", "Logs"} {
+	for _, want := range []string{"Gas", "Unsigned", "v1.0.0", "Open", "App settings"} {
 		if !tt.HasText(want) {
 			t.Errorf("missing %q in %q", want, tt.Texts())
 		}
+	}
+	if err := tt.Click("Open"); err != nil {
+		t.Fatal(err)
+	}
+	if a.route.kind != "plugin" || a.route.page != "overview" {
+		t.Fatalf("Open went to %+v", a.route)
+	}
+}
+
+func TestPluginsAppDetail(t *testing.T) {
+	a := newTestApp(t)
+	id := installExamplePlugin(t, a, "gas")
+	a.openPluginDetail(id)
+	tt := ui.NewTester(a.view, windowWidth, windowHeight)
+	for _, want := range []string{"All apps", id, "Remove", "Logs", "Gas"} {
+		if !tt.HasText(want) {
+			t.Errorf("missing %q in %q", want, tt.Texts())
+		}
+	}
+	if err := tt.Click("All apps"); err != nil {
+		t.Fatal(err)
+	}
+	if a.pluginDetail != "" {
+		t.Fatalf("All apps left the detail open: %q", a.pluginDetail)
 	}
 }
 
@@ -186,7 +210,7 @@ func TestPluginDisabledPage(t *testing.T) {
 	}
 	a.refreshPlugins()
 	a.openPluginPage(id, "overview")
-	if a.pluginView.err != "This plugin is turned off." {
+	if a.pluginView.err != "This app is turned off." {
 		t.Fatalf("err = %q", a.pluginView.err)
 	}
 }

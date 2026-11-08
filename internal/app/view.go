@@ -65,16 +65,13 @@ func (a *App) sidebar(c *ui.Context) {
 				a.navItem(c, a.t(i18n.NavWallet), iconWallet, a.route == routeWallet, func() {
 					a.goTo(routeWallet)
 				})
-				a.navItem(c, a.t(i18n.NavApps), iconGlobe, a.route.kind == "apps", func() {
-					a.goTo(routeApps)
-				})
+				a.navItem(c, a.t(i18n.NavApps), iconGrid, a.route.kind == "plugins", a.openApps)
 				a.navItem(c, a.t(i18n.NavIntents), iconSwap, a.route == routeIntents, func() {
 					a.goTo(routeIntents)
 				})
-				a.navItem(c, a.t(i18n.NavPlugins), iconGrid, a.route.kind == "plugins", func() {
-					a.goTo(routePlugins)
+				a.navItem(c, a.t(i18n.NavDapp), iconGlobe, a.route.kind == "apps", func() {
+					a.goTo(routeApps)
 				})
-				a.pluginNav(c)
 			})
 		})
 		a.sidebarFooter(c)
@@ -105,31 +102,6 @@ func (a *App) navItem(c *ui.Context, label string, icon *ui.SVG, selected bool, 
 	})
 	if b.Clicked() {
 		onClick()
-	}
-}
-
-// pluginNav lists the pages enabled plugins added, under the shell's own.
-func (a *App) pluginNav(c *ui.Context) {
-	p := a.pal
-	first := true
-	for _, item := range a.pluginItems {
-		if item.Err != "" || !item.Enabled || len(item.Manifest.Navigation) == 0 {
-			continue
-		}
-		if first {
-			ui.Text(c, strings.ToUpper(a.t(i18n.NavPlugins))).FontSize(9.5).FontWeight(700).
-				TextColor(p.faint).LetterSpacing(0.9).Margin(16, 10, 5, 11).MaxLines(1)
-			first = false
-		}
-		if len(item.Manifest.Navigation) > 1 {
-			ui.Text(c, item.Manifest.Name).FontSize(10.5).FontWeight(600).TextColor(p.faint).
-				LetterSpacing(0.3).Margin(11, 10, 3, 11).MaxLines(1)
-		}
-		for _, nav := range item.Manifest.Navigation {
-			r := route{kind: "plugin", id: item.Manifest.ID, page: nav.Page}
-			id, page := r.id, r.page
-			a.navItem(c, nav.Title, iconSparkle, a.route == r, func() { a.openPluginPage(id, page) })
-		}
 	}
 }
 
@@ -176,6 +148,9 @@ func (a *App) pageHeader(c *ui.Context) {
 	p := a.pal
 	title, subtitle := a.pageTitle()
 	ui.Row(c).Padding(28, 44, 18, 44).AlignItems(ui.End).Gap(12).DragWindow().Children(func() {
+		if a.route.kind == "plugin" {
+			a.backButton(c, a.t(i18n.AppAll), a.closePluginPage)
+		}
 		ui.Column(c).Grow(1).Gap(5).Children(func() {
 			if subtitle != "" {
 				ui.Text(c, strings.ToUpper(subtitle)).FontSize(10.5).FontWeight(700).
@@ -192,7 +167,12 @@ func (a *App) pageHeader(c *ui.Context) {
 			ui.Spinner(c).Size(16, 16)
 		}
 		switch a.route.kind {
-		case "", "plugin":
+		case "":
+			a.iconButton(c, iconRefresh, a.t(i18n.Refresh), a.requestRefresh)
+		case "plugin":
+			a.iconButton(c, iconGear, a.t(i18n.AppSettings), func() {
+				a.openPluginDetail(a.route.id)
+			})
 			a.iconButton(c, iconRefresh, a.t(i18n.Refresh), a.requestRefresh)
 		case "wallet":
 			if a.walletUnlocked() > 0 {
@@ -206,8 +186,6 @@ func (a *App) pageHeader(c *ui.Context) {
 		case "plugins":
 			if a.pluginTab == "store" {
 				a.iconButton(c, iconRefresh, a.t(i18n.StoreRefresh), a.loadStore)
-			} else {
-				a.primaryButton(c, a.t(i18n.PluginInstall), nil, false, a.installPlugin)
 			}
 		case "apps":
 			if a.dappView != nil {
@@ -229,6 +207,26 @@ func (a *App) iconButton(c *ui.Context, icon *ui.SVG, label string, onClick func
 	}
 	b.Background(b.AnimateColor("bg", bg, ui.Animation{Duration: 120 * time.Millisecond}))
 	b.Children(func() { ui.Icon(c, icon).Size(16, 16).TextColor(p.muted) })
+	if b.Clicked() {
+		onClick()
+	}
+}
+
+// backButton is a small button with a left chevron, for leaving a page for
+// the one above it.
+func (a *App) backButton(c *ui.Context, label string, onClick func()) {
+	p := a.pal
+	b := ui.ButtonBase(c).Height(30).PaddingX(8).Gap(5).Radius(8).
+		AlignItems(ui.Center).FocusRing(false)
+	bg := ui.Transparent
+	if b.Hovered() {
+		bg = p.hover
+	}
+	b.Background(bg)
+	b.Children(func() {
+		ui.Icon(c, iconChevron).Size(14, 14).TextColor(p.muted).Rotate(180)
+		ui.Text(c, label).FontSize(12).FontWeight(500).TextColor(p.muted)
+	})
 	if b.Clicked() {
 		onClick()
 	}
@@ -288,11 +286,11 @@ func (a *App) pageTitle() (title, subtitle string) {
 	case "wallet":
 		return a.t(i18n.NavWallet), a.walletSummary()
 	case "apps":
-		return a.t(i18n.NavApps), a.dappSubtitle()
+		return a.t(i18n.NavDapp), a.dappSubtitle()
 	case "intents":
 		return a.t(i18n.NavIntents), a.t(i18n.IntentsSubtitle)
 	case "plugins":
-		return a.t(i18n.NavPlugins), a.pluginSummary()
+		return a.t(i18n.NavApps), a.pluginSummary()
 	case "settings":
 		return a.t(i18n.NavSettings), ""
 	case "plugin":

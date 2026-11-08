@@ -13,21 +13,6 @@ import (
 	"github.com/davirain-su/crypto-panel/internal/plugin"
 )
 
-// pluginTabs switches the Plugins page between the installed plugins and
-// the store, as a segmented control.
-func (a *App) pluginTabs(c *ui.Context) {
-	p := a.pal
-	ui.Row(c).Gap(2).Padding(3).Radius(10).Background(p.inset).
-		Border(1, p.hairline).Margin(0, 0, 16, 0).Children(func() {
-		a.tabButton(c, a.t(i18n.InstalledTab), a.pluginTab != "store", func() {
-			a.setPluginTab("installed")
-		})
-		a.tabButton(c, a.t(i18n.StoreTab), a.pluginTab == "store", func() {
-			a.setPluginTab("store")
-		})
-	})
-}
-
 func (a *App) tabButton(c *ui.Context, label string, selected bool, onClick func()) {
 	p := a.pal
 	b := ui.ButtonBase(c).Height(28).PaddingX(14).Radius(7).AlignItems(ui.Center).FocusRing(false)
@@ -58,6 +43,11 @@ func (a *App) storeView(c *ui.Context) {
 		a.noRegistryStore(c)
 		return
 	}
+	if a.storeErr == "" && len(a.storeItems) > 0 {
+		ui.SearchField(c, &a.storeQuery).Label(a.t(i18n.StoreSearch)).
+			Placeholder(a.t(i18n.StoreSearch)).Width(280).Margin(0, 0, 12, 0)
+	}
+	entries := a.filteredStoreItems()
 	switch {
 	case a.storeErr != "":
 		ui.Column(c).Gap(8).Padding(20).Radius(12).Background(p.card).
@@ -74,9 +64,12 @@ func (a *App) storeView(c *ui.Context) {
 		ui.Text(c, a.t(i18n.StoreLoading)).FontSize(12).TextColor(p.muted)
 	case len(a.storeItems) == 0:
 		a.emptyStore(c)
+	case len(entries) == 0:
+		ui.Text(c, a.t(i18n.StoreNoMatches, strings.TrimSpace(a.storeQuery))).
+			FontSize(12).TextColor(p.muted).MaxLines(2)
 	default:
 		ui.Column(c).Gap(10).Children(func() {
-			for _, entry := range a.storeItems {
+			for _, entry := range entries {
 				a.storeCard(c, entry)
 			}
 		})
@@ -85,6 +78,23 @@ func (a *App) storeView(c *ui.Context) {
 		ui.Text(c, a.t(i18n.StoreSource, a.storeSourceName())).FontSize(11).
 			TextColor(p.faint).MaxLines(1).Margin(14, 0, 0, 0)
 	}
+}
+
+// filteredStoreItems narrows the catalog to what the search box asks for:
+// a name, an id, an author or a word of the description.
+func (a *App) filteredStoreItems() []plugin.RegistryEntry {
+	q := strings.ToLower(strings.TrimSpace(a.storeQuery))
+	if q == "" {
+		return a.storeItems
+	}
+	out := make([]plugin.RegistryEntry, 0, len(a.storeItems))
+	for _, entry := range a.storeItems {
+		hay := strings.ToLower(entry.Name + " " + entry.ID + " " + entry.Author + " " + entry.Description)
+		if strings.Contains(hay, q) {
+			out = append(out, entry)
+		}
+	}
+	return out
 }
 
 // noRegistryStore is the store before a registry is set: the app ships no
