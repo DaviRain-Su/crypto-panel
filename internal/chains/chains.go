@@ -5,12 +5,13 @@ import (
 
 	"github.com/davirain-su/crypto-panel/internal/chain"
 	"github.com/davirain-su/crypto-panel/internal/chain/evm"
+	"github.com/davirain-su/crypto-panel/internal/chain/near"
 	"github.com/davirain-su/crypto-panel/internal/chain/solana"
 )
 
 // All lists the presets, in the order the settings offer them.
 func All() []chain.Network {
-	return []chain.Network{Ethereum, Base, SolanaMainnet}
+	return []chain.Network{Ethereum, Base, NearTestnet, NearMainnet, SolanaMainnet}
 }
 
 // Default is the network a fresh install watches.
@@ -28,7 +29,7 @@ func ByID(id string) (chain.Network, bool) {
 
 // Families lists the chain families the panel speaks, in display order.
 func Families() []chain.Family {
-	return []chain.Family{chain.EVM, chain.Solana}
+	return []chain.Family{chain.EVM, chain.Near, chain.Solana}
 }
 
 // NetworksOf lists the presets of one family.
@@ -48,6 +49,8 @@ func NewReader(network chain.Network, rpcURL string) (chain.Reader, error) {
 	switch network.Family {
 	case chain.EVM:
 		return evm.NewClient(network, rpcURL), nil
+	case chain.Near:
+		return near.NewClient(network, rpcURL), nil
 	case chain.Solana:
 		return solana.NewClient(network, rpcURL), nil
 	}

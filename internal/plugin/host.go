@@ -55,10 +55,12 @@ type HostDeps struct {
 	KV       *KV
 	RPC      func(chain, method string, params any) (json.RawMessage, error)
 	Accounts func() []Account
-	// Sign prepares, shows and signs a transaction, blocking while the
+	// Sign prepares, shows and signs an EVM transaction, blocking while the
 	// approval window is open. It returns only when the user approved and
 	// the transaction was broadcast, or with an error.
-	Sign      func(SignRequest) (SignResult, error)
+	Sign func(SignRequest) (SignResult, error)
+	// NearSign is the same for a NEAR transaction, decoded by the shell.
+	NearSign  func(NearSignRequest) (SignResult, error)
 	Log       func(level, msg string)
 	Locale    func() string
 	Translate func(key string, args []any) string
@@ -93,13 +95,14 @@ func (h *Host) Namespace() map[string]any {
 			"put":    moejs.NativeFunc(h.kvPut),
 			"delete": moejs.NativeFunc(h.kvDelete),
 		},
-		"fetch":       moejs.NativeFunc(h.fetch),
-		"rpc":         moejs.NativeFunc(h.rpc),
-		"accounts":    moejs.NativeFunc(h.accounts),
-		"requestSign": moejs.NativeFunc(h.requestSign),
-		"log":         moejs.NativeFunc(h.log),
-		"i18n":        moejs.NativeFunc(h.i18n),
-		"render":      moejs.NativeFunc(h.render),
+		"fetch":           moejs.NativeFunc(h.fetch),
+		"rpc":             moejs.NativeFunc(h.rpc),
+		"accounts":        moejs.NativeFunc(h.accounts),
+		"requestSign":     moejs.NativeFunc(h.requestSign),
+		"requestNearSign": moejs.NativeFunc(h.requestNearSign),
+		"log":             moejs.NativeFunc(h.log),
+		"i18n":            moejs.NativeFunc(h.i18n),
+		"render":          moejs.NativeFunc(h.render),
 	}
 }
 
@@ -479,6 +482,38 @@ func (h *Host) requestSign(r *moejs.Realm, _ moejs.Value, args []moejs.Value) (m
 	}
 	if err != nil {
 		h.logf("warn", "requestSign: %v", err)
+		return moejs.Undefined(), err
+	}
+	return r.FromGo(res)
+}
+
+// requestNearSign is the NEAR counterpart of requestSign. The manifest must
+// hold the sign permission and name the NEAR chain; the chain id in the
+// request is checked against that list, so a plugin permitted on Ethereum
+// cannot reach a NEAR account.
+func (h *Host) requestNearSign(r *moejs.Realm, _ moejs.Value, args []moejs.Value) (moejs.Value, error) {
+	if !h.deps.Manifest.Permissions.Sign {
+		return moejs.Undefined(), errors.New("requestNearSign: the plugin does not have the sign permission")
+	}
+	req, err := parseNearSignRequest(r, moejs.Arg(args, 0))
+	if err != nil {
+		return moejs.Undefined(), err
+	}
+	if !slicesContains(h.deps.Manifest.Permissions.Chains, req.ChainID) {
+		return moejs.Undefined(), fmt.Errorf("requestNearSign: chain %q is not in the plugin's permissions", req.ChainID)
+	}
+	if h.deps.NearSign == nil {
+		return moejs.Undefined(), errors.New("requestNearSign is not available")
+	}
+	if h.pauseWatch != nil {
+		h.pauseWatch()
+	}
+	res, err := h.deps.NearSign(req)
+	if h.resumeWatch != nil {
+		h.resumeWatch()
+	}
+	if err != nil {
+		h.logf("warn", "requestNearSign: %v", err)
 		return moejs.Undefined(), err
 	}
 	return r.FromGo(res)

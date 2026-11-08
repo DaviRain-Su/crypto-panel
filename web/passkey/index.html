@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src data:; base-uri 'none'; form-action 'none'">
+  <title>Crypto Panel · Passkey</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main class="card">
+    <div class="brand">
+      <span class="mark" aria-hidden="true">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 3l7 3v5c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6l7-3z"/>
+          <path d="M9 12l2 2 4-4"/>
+        </svg>
+      </span>
+      <div>
+        <p class="eyebrow">Crypto Panel</p>
+        <h1 id="title">Passkey</h1>
+      </div>
+    </div>
+    <p id="lead" class="lead"></p>
+    <p id="site" class="site"></p>
+    <p id="status" class="status" role="status" aria-live="polite"></p>
+    <div class="actions">
+      <button id="continue" class="primary" type="button">Continue</button>
+      <button id="cancel" class="secondary" type="button">Cancel</button>
+    </div>
+    <p class="fine">Your passkey stays with your device or password manager. Crypto Panel never sees its private key.</p>
+  </main>
+  <script src="ceremony.js"></script>
+</body>
+</html>

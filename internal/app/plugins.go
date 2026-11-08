@@ -420,6 +420,9 @@ func (a *App) pluginHostDeps(m plugin.Manifest) plugin.HostDeps {
 		Sign: func(req plugin.SignRequest) (plugin.SignResult, error) {
 			return a.signForPlugin(m, readers, req)
 		},
+		NearSign: func(req plugin.NearSignRequest) (plugin.SignResult, error) {
+			return a.signNearForPlugin(m, readers, req)
+		},
 		Log:    logs.Add,
 		Locale: func() string { return locale },
 		Translate: func(key string, args []any) string {

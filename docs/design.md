@@ -266,6 +266,19 @@ account ends the request with an error the plugin sees. The signed transaction i
 broadcast through the pinned broker, and the plugin gets its hash. A node that
 reports a hash other than the signed transaction's is refused.
 
+### Passkey accounts (in progress)
+
+A passkey cannot sign a secp256k1 transaction. The account that owns a
+passkey is therefore an ERC-4337 smart account that verifies P-256 on chain.
+`internal/webauthn` parses and verifies the two ceremonies (an
+attestationObject into a P-256 public key, an assertion into
+authenticatorData/clientDataJSON/signature) and checks the challenge, origin
+and relying party. `internal/smartaccount` builds the counterfactual address,
+the v0.7 user operation hash, the `WebAuthnAuth` signature the account
+verifies, and the bundler calls. The browser ceremony page, the app's account
+UI and the testnet integration are the next steps; they need a relying-party
+domain and a bundler.
+
 ## 7. UI model
 
 A page is data. The shell renders it with native UI, in the app's theme, so a plugin
@@ -368,6 +381,8 @@ crypto-panel/
   internal/plugin/testdata/examples/  example plugins used by the tests
   internal/pages/         declarative page tree → ui
   internal/passkey/       the system check: LocalAuthentication via purego
+  internal/webauthn/      WebAuthn registration and assertion verification
+  internal/smartaccount/  ERC-4337 user operations, WebAuthn signatures, bundler
   internal/chain/         chain vocabulary: Family, Network, Token, Reader, formatting
   internal/chain/rpc/     shared JSON-RPC broker: cache, spacing, size cap, audit
   internal/chain/evm/     eip155 reader: chain-id pin, ERC-20 balances

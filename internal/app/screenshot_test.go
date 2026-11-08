@@ -15,6 +15,7 @@ import (
 	"github.com/davirain-su/crypto-panel/internal/chains"
 	"github.com/davirain-su/crypto-panel/internal/evmtx"
 	"github.com/davirain-su/crypto-panel/internal/i18n"
+	"github.com/davirain-su/crypto-panel/internal/intents"
 	"github.com/davirain-su/crypto-panel/internal/passkey"
 	"github.com/davirain-su/crypto-panel/internal/plugin"
 	"github.com/davirain-su/crypto-panel/internal/wallet"
@@ -116,6 +117,12 @@ func TestScreenshots(t *testing.T) {
 	a.settings.Language = i18n.Chinese
 	save(t, ui.NewTester(a.view, windowWidth, windowHeight), "new-wallet-zh")
 
+	a, _, _ = newDappApp(t)
+	a.route = routeWallet
+	a.nearSendHash = "CbSQfoTGYCie6fwFyvZe2upMFbHvvCnfKZGeKKru3MMu"
+	a.nearSendNotice = i18n.T(i18n.English, i18n.WalletNearSendSent, a.nearSendHash)
+	save(t, ui.NewTester(a.view, windowWidth, windowHeight), "new-wallet-near")
+
 	a = newTestApp(t)
 	a.route = routePlugins
 	save(t, ui.NewTester(a.view, windowWidth, windowHeight), "new-plugins-empty")
@@ -130,6 +137,44 @@ func TestScreenshots(t *testing.T) {
 	tt = ui.NewTester(a.view, windowWidth, windowHeight)
 	tt.SetDark(true)
 	save(t, tt, "new-settings-dark")
+
+	a = intentsTestApp(t)
+	a.route = routeIntents
+	save(t, ui.NewTester(a.view, windowWidth, windowHeight), "new-intents-light")
+	tt = ui.NewTester(a.view, windowWidth, windowHeight)
+	tt.SetDark(true)
+	save(t, tt, "new-intents-dark")
+	a.intentsQuote = &intents.Quote{
+		AmountIn:      "1000000000000000000000000",
+		AmountInText:  "1",
+		AmountOut:     "10000000",
+		AmountOutText: "10",
+		MinAmountOut:  "9900000",
+		Deadline:      time.Date(2026, 11, 9, 20, 30, 0, 0, time.UTC),
+		CorrelationID: "quote-1",
+		Request: intents.QuoteRequest{
+			OriginAsset:      testOriginAsset,
+			DestinationAsset: testDestAsset,
+			RefundTo:         "alice.testnet",
+			Recipient:        testRecipient,
+		},
+	}
+	a.intentsNotice = i18n.T(i18n.English, i18n.IntentsAccepted)
+	save(t, ui.NewTester(a.view, windowWidth, windowHeight), "new-intents-quote")
+
+	origin, _ := a.intentsToken(testOriginAsset)
+	destination, _ := a.intentsToken(testDestAsset)
+	apIntents := &intentsApproval{
+		t: func(k i18n.Key, args ...any) string { return i18n.T(i18n.English, k, args...) },
+		req: intentsApprovalRequest{
+			quote:       *a.intentsQuote,
+			origin:      origin,
+			destination: destination,
+			refundTo:    "alice.testnet",
+			recipient:   testRecipient,
+		},
+	}
+	save(t, ui.NewTester(apIntents.view, 480, 620), "new-intents-approval")
 
 	a = newTestApp(t)
 	a.passkeyKind = passkey.KindTouchID

@@ -9,6 +9,7 @@ import (
 
 	"github.com/davirain-su/crypto-panel/internal/chain"
 	"github.com/davirain-su/crypto-panel/internal/chain/evm"
+	"github.com/davirain-su/crypto-panel/internal/chain/near"
 	"github.com/davirain-su/crypto-panel/internal/chain/solana"
 	"github.com/davirain-su/crypto-panel/internal/wallet"
 )
@@ -24,8 +25,11 @@ func TestPresetsAreComplete(t *testing.T) {
 		}
 		// CAIP-2 names the EVM namespace eip155, not evm.
 		namespace := "eip155"
-		if n.Family == chain.Solana {
+		switch n.Family {
+		case chain.Solana:
 			namespace = "solana"
+		case chain.Near:
+			namespace = "near"
 		}
 		if !strings.HasPrefix(n.ID, namespace+":") {
 			t.Errorf("%s: id %q does not start with %q", n.Name, n.ID, namespace)
@@ -38,6 +42,12 @@ func TestPresetsAreComplete(t *testing.T) {
 		case chain.Solana:
 			if n.Genesis == "" || n.ChainID != 0 {
 				t.Errorf("%s: Solana pins by genesis, got %+v", n.Name, n)
+			}
+		case chain.Near:
+			// NEAR has no numeric chain id; the RPC's chain_id string names
+			// the network and is checked when the client starts.
+			if n.ChainName == "" || n.ChainID != 0 {
+				t.Errorf("%s: NEAR pins by chain name, got %+v", n.Name, n)
 			}
 		default:
 			t.Errorf("%s: unknown family %q", n.Name, n.Family)
@@ -119,7 +129,11 @@ func TestNetworksOf(t *testing.T) {
 	if len(sol) != 1 || sol[0].ID != SolanaMainnet.ID {
 		t.Fatalf("Solana networks = %+v", sol)
 	}
-	if len(Families()) != 2 {
+	near := NetworksOf(chain.Near)
+	if len(near) != 2 || near[0].ID != NearTestnet.ID || near[1].ID != NearMainnet.ID {
+		t.Fatalf("NEAR networks = %+v", near)
+	}
+	if len(Families()) != 3 {
 		t.Fatalf("families = %v", Families())
 	}
 }
@@ -138,6 +152,13 @@ func TestNewReader(t *testing.T) {
 	}
 	if _, ok := reader.(*solana.Client); !ok {
 		t.Fatalf("Solana reader = %T", reader)
+	}
+	reader, err = NewReader(NearTestnet, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := reader.(*near.Client); !ok {
+		t.Fatalf("NEAR reader = %T", reader)
 	}
 	if _, err := NewReader(chain.Network{Family: "cosmos"}, ""); err == nil {
 		t.Error("an unknown family must fail")
@@ -193,4 +214,21 @@ func TestLiveReaders(t *testing.T) {
 	for _, w := range solAcct.Warnings {
 		t.Logf("  warning: %s", w)
 	}
+
+	nearReader, err := NewReader(NearTestnet, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	nearAcct, err := nearReader.Account(ctx, "testnet")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if nearAcct.Native.Sign() <= 0 {
+		t.Fatalf("NEAR native = %s", nearAcct.Native)
+	}
+	height, err := nearReader.Block(ctx)
+	if err != nil || height == 0 {
+		t.Fatalf("NEAR height = %d, %v", height, err)
+	}
+	t.Logf("NEAR testnet: %s yoctoNEAR, height %d", nearAcct.Native, height)
 }

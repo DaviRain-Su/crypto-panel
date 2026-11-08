@@ -24,8 +24,23 @@ const (
 	WatchOnly    Key = "watchOnly"
 	NavPortfolio Key = "navPortfolio"
 	NavWallet    Key = "navWallet"
+	NavApps      Key = "navApps"
 	NavPlugins   Key = "navPlugins"
 	NavSettings  Key = "navSettings"
+
+	AppsSubtitle       Key = "appsSubtitle"
+	DappURLLabel       Key = "dappURLLabel"
+	DappURLPlaceholder Key = "dappURLPlaceholder"
+	DappOpen           Key = "dappOpen"
+	DappClose          Key = "dappClose"
+	DappEmpty          Key = "dappEmpty"
+	DappEmptyWhy       Key = "dappEmptyWhy"
+	DappInvalidURL     Key = "dappInvalidURL"
+	DappConnectTitle   Key = "dappConnectTitle"
+	DappConnectBody    Key = "dappConnectBody"
+	DappConnect        Key = "dappConnect"
+	DappNearOnly       Key = "dappNearOnly"
+	DappSwitchNear     Key = "dappSwitchNear"
 
 	Refresh    Key = "refresh"
 	Refreshing Key = "refreshing"
@@ -55,44 +70,71 @@ const (
 	DuplicateAddress Key = "duplicateAddress"
 	SaveFailed       Key = "saveFailed"
 
-	WalletSummary        Key = "walletSummary"
-	WalletSummaryOne     Key = "walletSummaryOne"
-	WalletEmptySummary   Key = "walletEmptySummary"
-	WalletNew            Key = "walletNew"
-	WalletSecurityTitle  Key = "walletSecurityTitle"
-	WalletSecurityBody   Key = "walletSecurityBody"
-	WalletEmpty          Key = "walletEmpty"
-	WalletEmptyWhy       Key = "walletEmptyWhy"
-	WalletUnlocked       Key = "walletUnlocked"
-	WalletLocked         Key = "walletLocked"
-	WalletLock           Key = "walletLock"
-	WalletUnlock         Key = "walletUnlock"
-	WalletLockAll        Key = "walletLockAll"
-	WalletReveal         Key = "walletReveal"
-	WalletImport         Key = "walletImport"
-	WalletImportButton   Key = "walletImportButton"
-	WalletKeyLabel       Key = "walletKeyLabel"
-	WalletKeyPlaceholder Key = "walletKeyPlaceholder"
-	WalletImportNote     Key = "walletImportNote"
-	WalletNewTitle       Key = "walletNewTitle"
-	WalletRevealTitle    Key = "walletRevealTitle"
-	WalletKeyWarning     Key = "walletKeyWarning"
-	WalletRevealWarning  Key = "walletRevealWarning"
-	WalletCopy           Key = "walletCopy"
-	WalletHide           Key = "walletHide"
-	WalletCopied         Key = "walletCopied"
-	WalletCreated        Key = "walletCreated"
-	WalletImported       Key = "walletImported"
-	WalletRemoved        Key = "walletRemoved"
-	WalletRemoveTitle    Key = "walletRemoveTitle"
-	WalletRemoveBody     Key = "walletRemoveBody"
-	WalletInvalidKey     Key = "walletInvalidKey"
-	WalletDuplicate      Key = "walletDuplicate"
-	WalletNoAccount      Key = "walletNoAccount"
-	WalletKeychainFailed Key = "walletKeychainFailed"
-	WalletUnavailable    Key = "walletUnavailable"
-	WalletBadge          Key = "walletBadge"
-	WalletEVMOnly        Key = "walletEVMOnly"
+	WalletSummary                Key = "walletSummary"
+	WalletSummaryOne             Key = "walletSummaryOne"
+	WalletEmptySummary           Key = "walletEmptySummary"
+	WalletNew                    Key = "walletNew"
+	WalletSecurityTitle          Key = "walletSecurityTitle"
+	WalletSecurityBody           Key = "walletSecurityBody"
+	WalletEmpty                  Key = "walletEmpty"
+	WalletEmptyWhy               Key = "walletEmptyWhy"
+	WalletUnlocked               Key = "walletUnlocked"
+	WalletLocked                 Key = "walletLocked"
+	WalletLock                   Key = "walletLock"
+	WalletUnlock                 Key = "walletUnlock"
+	WalletLockAll                Key = "walletLockAll"
+	WalletReveal                 Key = "walletReveal"
+	WalletImport                 Key = "walletImport"
+	WalletImportButton           Key = "walletImportButton"
+	WalletKeyLabel               Key = "walletKeyLabel"
+	WalletKeyPlaceholder         Key = "walletKeyPlaceholder"
+	WalletImportNote             Key = "walletImportNote"
+	WalletNewTitle               Key = "walletNewTitle"
+	WalletRevealTitle            Key = "walletRevealTitle"
+	WalletKeyWarning             Key = "walletKeyWarning"
+	WalletRevealWarning          Key = "walletRevealWarning"
+	WalletCopy                   Key = "walletCopy"
+	WalletHide                   Key = "walletHide"
+	WalletCopied                 Key = "walletCopied"
+	WalletCreated                Key = "walletCreated"
+	WalletImported               Key = "walletImported"
+	WalletRemoved                Key = "walletRemoved"
+	WalletRemoveTitle            Key = "walletRemoveTitle"
+	WalletRemoveBody             Key = "walletRemoveBody"
+	WalletInvalidKey             Key = "walletInvalidKey"
+	WalletDuplicate              Key = "walletDuplicate"
+	WalletNoAccount              Key = "walletNoAccount"
+	WalletKeychainFailed         Key = "walletKeychainFailed"
+	WalletUnavailable            Key = "walletUnavailable"
+	WalletBadge                  Key = "walletBadge"
+	WalletEVMOnly                Key = "walletEVMOnly"
+	WalletEVMSection             Key = "walletEVMSection"
+	WalletNearSection            Key = "walletNearSection"
+	WalletNearNew                Key = "walletNearNew"
+	WalletNearBadge              Key = "walletNearBadge"
+	WalletNearImport             Key = "walletNearImport"
+	WalletNearKeyLabel           Key = "walletNearKeyLabel"
+	WalletNearKeyPlaceholder     Key = "walletNearKeyPlaceholder"
+	WalletNearAccountLabel       Key = "walletNearAccountLabel"
+	WalletNearAccountPlaceholder Key = "walletNearAccountPlaceholder"
+	WalletNearImportNote         Key = "walletNearImportNote"
+	WalletNearCreated            Key = "walletNearCreated"
+	WalletNearImported           Key = "walletNearImported"
+	WalletNearSendTitle          Key = "walletNearSendTitle"
+	WalletNearSendFrom           Key = "walletNearSendFrom"
+	WalletNearSendTo             Key = "walletNearSendTo"
+	WalletNearSendToPlaceholder  Key = "walletNearSendToPlaceholder"
+	WalletNearSendAmount         Key = "walletNearSendAmount"
+	WalletNearSendAmountHolder   Key = "walletNearSendAmountHolder"
+	WalletNearSend               Key = "walletNearSend"
+	WalletNearSendNoNetwork      Key = "walletNearSendNoNetwork"
+	WalletNearSendNoAccount      Key = "walletNearSendNoAccount"
+	WalletNearSendLocked         Key = "walletNearSendLocked"
+	WalletNearSendInvalidTo      Key = "walletNearSendInvalidTo"
+	WalletNearSendInvalidAmount  Key = "walletNearSendInvalidAmount"
+	WalletNearSendSent           Key = "walletNearSendSent"
+	WalletNearSendView           Key = "walletNearSendView"
+	ApproveWalletWarning         Key = "approveWalletWarning"
 
 	AuthTouchID      Key = "authTouchID"
 	AuthFaceID       Key = "authFaceID"
@@ -127,6 +169,93 @@ const (
 	ApproveWarning        Key = "approveWarning"
 	ApproveReject         Key = "approveReject"
 	ApproveSign           Key = "approveSign"
+	ApproveDappKicker     Key = "approveDappKicker"
+	ApproveSiteSays       Key = "approveSiteSays"
+	ApproveSiteWords      Key = "approveSiteWords"
+	ApproveDappWarning    Key = "approveDappWarning"
+
+	ApproveReceiver           Key = "approveReceiver"
+	ApproveSigningKey         Key = "approveSigningKey"
+	ApproveKeyLimit           Key = "approveKeyLimit"
+	ApproveAmount             Key = "approveAmount"
+	ApproveYocto              Key = "approveYocto"
+	ApproveAction             Key = "approveAction"
+	ApproveActionCall         Key = "approveActionCall"
+	ApproveActionAddKey       Key = "approveActionAddKey"
+	ApproveActionDeleteKey    Key = "approveActionDeleteKey"
+	ApproveMethod             Key = "approveMethod"
+	ApproveArgs               Key = "approveArgs"
+	ApproveDeposit            Key = "approveDeposit"
+	ApproveGas                Key = "approveGas"
+	ApproveKey                Key = "approveKey"
+	ApproveKeyContract        Key = "approveKeyContract"
+	ApproveKeyMethods         Key = "approveKeyMethods"
+	ApproveKeyAllowance       Key = "approveKeyAllowance"
+	ApproveKeyPermission      Key = "approveKeyPermission"
+	ApproveFullAccess         Key = "approveFullAccess"
+	ApproveFullAccessKey      Key = "approveFullAccessKey"
+	ApproveAllowanceOf        Key = "approveAllowanceOf"
+	ApproveAnyMethod          Key = "approveAnyMethod"
+	ApproveNoAllowance        Key = "approveNoAllowance"
+	ApproveNearCallTitle      Key = "approveNearCallTitle"
+	ApproveNearKeyTitle       Key = "approveNearKeyTitle"
+	ApproveNearDeleteKeyTitle Key = "approveNearDeleteKeyTitle"
+	ApproveNearTxTitle        Key = "approveNearTxTitle"
+
+	NavIntents Key = "navIntents"
+
+	IntentsSubtitle             Key = "intentsSubtitle"
+	IntentsPayWith              Key = "intentsPayWith"
+	IntentsReceive              Key = "intentsReceive"
+	IntentsAmount               Key = "intentsAmount"
+	IntentsAmountPlaceholder    Key = "intentsAmountPlaceholder"
+	IntentsRecipient            Key = "intentsRecipient"
+	IntentsRecipientPlaceholder Key = "intentsRecipientPlaceholder"
+	IntentsRefund               Key = "intentsRefund"
+	IntentsRefundPlaceholder    Key = "intentsRefundPlaceholder"
+	IntentsQuote                Key = "intentsQuote"
+	IntentsQuoting              Key = "intentsQuoting"
+	IntentsLoadAssets           Key = "intentsLoadAssets"
+	IntentsLoadingAssets        Key = "intentsLoadingAssets"
+	IntentsAssetsNote           Key = "intentsAssetsNote"
+	IntentsNoAssets             Key = "intentsNoAssets"
+	IntentsPickAssets           Key = "intentsPickAssets"
+	IntentsAmountInvalid        Key = "intentsAmountInvalid"
+	IntentsRecipientRequired    Key = "intentsRecipientRequired"
+	IntentsRefundRequired       Key = "intentsRefundRequired"
+	IntentsNoClient             Key = "intentsNoClient"
+	IntentsRetry                Key = "intentsRetry"
+	IntentsQuoteTitle           Key = "intentsQuoteTitle"
+	IntentsDryBadge             Key = "intentsDryBadge"
+	IntentsYouPay               Key = "intentsYouPay"
+	IntentsYouReceive           Key = "intentsYouReceive"
+	IntentsEstimated            Key = "intentsEstimated"
+	IntentsDeadline             Key = "intentsDeadline"
+	IntentsDepositAddress       Key = "intentsDepositAddress"
+	IntentsNoDeposit            Key = "intentsNoDeposit"
+	IntentsNoDeadline           Key = "intentsNoDeadline"
+	IntentsRefundRow            Key = "intentsRefundRow"
+	IntentsRecipientRow         Key = "intentsRecipientRow"
+	IntentsReview               Key = "intentsReview"
+	IntentsRejected             Key = "intentsRejected"
+	IntentsAccepted             Key = "intentsAccepted"
+	IntentsQuotedBy             Key = "intentsQuotedBy"
+
+	IntentsApproveWindowTitle Key = "intentsApproveWindowTitle"
+	IntentsApproveKicker      Key = "intentsApproveKicker"
+	IntentsApproveTitle       Key = "intentsApproveTitle"
+	IntentsApprovePay         Key = "intentsApprovePay"
+	IntentsApproveReceive     Key = "intentsApproveReceive"
+	IntentsApproveDeadline    Key = "intentsApproveDeadline"
+	IntentsApproveDeposit     Key = "intentsApproveDeposit"
+	IntentsApproveIntent      Key = "intentsApproveIntent"
+	IntentsApproveRefund      Key = "intentsApproveRefund"
+	IntentsApproveRecipient   Key = "intentsApproveRecipient"
+	IntentsApproveSource      Key = "intentsApproveSource"
+	IntentsApproveSourceValue Key = "intentsApproveSourceValue"
+	IntentsApproveWarning     Key = "intentsApproveWarning"
+	IntentsApproveAccept      Key = "intentsApproveAccept"
+	IntentsIntentText         Key = "intentsIntentText"
 
 	FamilyLabel    Key = "familyLabel"
 	ChainLabel     Key = "chainLabel"
@@ -222,8 +351,23 @@ var messages = map[Key]map[string]string{
 	WatchOnly:    {English: "Wallet & watch", Chinese: "钱包与只读"},
 	NavPortfolio: {English: "Portfolio", Chinese: "持仓"},
 	NavWallet:    {English: "Wallet", Chinese: "钱包"},
+	NavApps:      {English: "Apps", Chinese: "应用"},
 	NavPlugins:   {English: "Plugins", Chinese: "插件"},
 	NavSettings:  {English: "Settings", Chinese: "设置"},
+
+	AppsSubtitle:       {English: "Web apps, signed by the local wallet", Chinese: "由本地钱包签名的网页应用"},
+	DappURLLabel:       {English: "DApp URL", Chinese: "DApp 地址"},
+	DappURLPlaceholder: {English: "https://app.testnet.near.org", Chinese: "https://app.testnet.near.org"},
+	DappOpen:           {English: "Open", Chinese: "打开"},
+	DappClose:          {English: "Close", Chinese: "关闭"},
+	DappEmpty:          {English: "Open a web app", Chinese: "打开一个网页应用"},
+	DappEmptyWhy:       {English: "The page runs isolated: it cannot read your keys, files or the app's internals. Every signature it asks for is decoded and approved by the shell.", Chinese: "页面在隔离环境中运行：它读不到你的私钥、文件或应用内部。它请求的每一次签名都由本应用解码并由你确认。"},
+	DappInvalidURL:     {English: "Enter an https URL.", Chinese: "请输入 https 地址。"},
+	DappConnectTitle:   {English: "Connect this site?", Chinese: "连接该网站？"},
+	DappConnectBody:    {English: "%s wants to see your NEAR accounts and ask you to sign. It never sees a key.", Chinese: "%s 想查看你的 NEAR 账户并请求签名。它永远看不到私钥。"},
+	DappConnect:        {English: "Connect", Chinese: "连接"},
+	DappNearOnly:       {English: "DApp signing works on a NEAR network. The page can still be opened, but it cannot connect.", Chinese: "DApp 签名需要 NEAR 网络。页面仍可打开，但无法连接钱包。"},
+	DappSwitchNear:     {English: "Use NEAR Testnet", Chinese: "切换到 NEAR 测试网"},
 
 	Refresh:    {English: "Refresh", Chinese: "刷新"},
 	Refreshing: {English: "Refreshing…", Chinese: "刷新中…"},
@@ -253,44 +397,71 @@ var messages = map[Key]map[string]string{
 	DuplicateAddress: {English: "That address is already watched.", Chinese: "该地址已在列表中。"},
 	SaveFailed:       {English: "Could not save settings.", Chinese: "无法保存设置。"},
 
-	WalletSummary:        {English: "%d accounts · %d unlocked", Chinese: "%d 个账户 · %d 个已解锁"},
-	WalletSummaryOne:     {English: "1 account · %d unlocked", Chinese: "1 个账户 · %d 个已解锁"},
-	WalletEmptySummary:   {English: "No accounts yet", Chinese: "还没有账户"},
-	WalletNew:            {English: "New account", Chinese: "新建账户"},
-	WalletSecurityTitle:  {English: "Keys stay in the system keychain", Chinese: "密钥保存在系统钥匙串中"},
-	WalletSecurityBody:   {English: "Plugins never see a key. Every signature is decoded by the shell and approved by you.", Chinese: "插件永远看不到密钥。每一笔签名都由本应用解码，并由你确认。"},
-	WalletEmpty:          {English: "No accounts in the wallet", Chinese: "钱包里还没有账户"},
-	WalletEmptyWhy:       {English: "Create an account or import a private key. Its key goes to the system keychain, never to settings.json.", Chinese: "新建一个账户，或导入私钥。私钥会存入系统钥匙串，绝不会写进 settings.json。"},
-	WalletUnlocked:       {English: "Unlocked", Chinese: "已解锁"},
-	WalletLocked:         {English: "Locked", Chinese: "已锁定"},
-	WalletLock:           {English: "Lock", Chinese: "锁定"},
-	WalletUnlock:         {English: "Unlock", Chinese: "解锁"},
-	WalletLockAll:        {English: "Lock all", Chinese: "全部锁定"},
-	WalletReveal:         {English: "Reveal key", Chinese: "查看私钥"},
-	WalletImport:         {English: "Import a private key", Chinese: "导入私钥"},
-	WalletImportButton:   {English: "Import", Chinese: "导入"},
-	WalletKeyLabel:       {English: "Private key", Chinese: "私钥"},
-	WalletKeyPlaceholder: {English: "64 hex characters", Chinese: "64 位十六进制字符"},
-	WalletImportNote:     {English: "The key is written to the system keychain, never to settings.json.", Chinese: "私钥会写入系统钥匙串，绝不会写进 settings.json。"},
-	WalletNewTitle:       {English: "Save this private key", Chinese: "请保存这个私钥"},
-	WalletRevealTitle:    {English: "Private key for %s", Chinese: "%s 的私钥"},
-	WalletKeyWarning:     {English: "Save it now. Anyone who has it controls the account.", Chinese: "请立即保存。任何拿到它的人都能控制这个账户。"},
-	WalletRevealWarning:  {English: "Anyone who sees this key controls the account.", Chinese: "任何看到这个私钥的人都能控制这个账户。"},
-	WalletCopy:           {English: "Copy", Chinese: "复制"},
-	WalletHide:           {English: "Done", Chinese: "完成"},
-	WalletCopied:         {English: "Copied to the clipboard.", Chinese: "已复制到剪贴板。"},
-	WalletCreated:        {English: "Created %s.", Chinese: "已创建 %s。"},
-	WalletImported:       {English: "Imported %s.", Chinese: "已导入 %s。"},
-	WalletRemoved:        {English: "Removed %s.", Chinese: "已移除 %s。"},
-	WalletRemoveTitle:    {English: "Remove wallet account?", Chinese: "移除钱包账户？"},
-	WalletRemoveBody:     {English: "Remove %s? Its key is deleted from the keychain and the address stops being watched.", Chinese: "移除 %s？它的私钥会从钥匙串中删除，地址也不再被监视。"},
-	WalletInvalidKey:     {English: "That is not a valid private key.", Chinese: "这不是有效的私钥。"},
-	WalletDuplicate:      {English: "That account is already in the wallet.", Chinese: "该账户已在钱包中。"},
-	WalletNoAccount:      {English: "That account is not in the wallet.", Chinese: "该账户不在钱包中。"},
-	WalletKeychainFailed: {English: "The system keychain refused: %s", Chinese: "系统钥匙串出错：%s"},
-	WalletUnavailable:    {English: "The wallet is unavailable.", Chinese: "钱包不可用。"},
-	WalletBadge:          {English: "Wallet", Chinese: "钱包"},
-	WalletEVMOnly:        {English: "Wallet accounts are EVM accounts. Switch to an EVM network to read their balances.", Chinese: "钱包账户是 EVM 账户，切换到 EVM 网络才能读取余额。"},
+	WalletSummary:                {English: "%d accounts · %d unlocked", Chinese: "%d 个账户 · %d 个已解锁"},
+	WalletSummaryOne:             {English: "1 account · %d unlocked", Chinese: "1 个账户 · %d 个已解锁"},
+	WalletEmptySummary:           {English: "No accounts yet", Chinese: "还没有账户"},
+	WalletNew:                    {English: "New account", Chinese: "新建账户"},
+	WalletSecurityTitle:          {English: "Keys stay in the system keychain", Chinese: "密钥保存在系统钥匙串中"},
+	WalletSecurityBody:           {English: "Plugins never see a key. Every signature is decoded by the shell and approved by you.", Chinese: "插件永远看不到密钥。每一笔签名都由本应用解码，并由你确认。"},
+	WalletEmpty:                  {English: "No accounts in the wallet", Chinese: "钱包里还没有账户"},
+	WalletEmptyWhy:               {English: "Create an account or import a private key. Its key goes to the system keychain, never to settings.json.", Chinese: "新建一个账户，或导入私钥。私钥会存入系统钥匙串，绝不会写进 settings.json。"},
+	WalletUnlocked:               {English: "Unlocked", Chinese: "已解锁"},
+	WalletLocked:                 {English: "Locked", Chinese: "已锁定"},
+	WalletLock:                   {English: "Lock", Chinese: "锁定"},
+	WalletUnlock:                 {English: "Unlock", Chinese: "解锁"},
+	WalletLockAll:                {English: "Lock all", Chinese: "全部锁定"},
+	WalletReveal:                 {English: "Reveal key", Chinese: "查看私钥"},
+	WalletImport:                 {English: "Import a private key", Chinese: "导入私钥"},
+	WalletImportButton:           {English: "Import", Chinese: "导入"},
+	WalletKeyLabel:               {English: "Private key", Chinese: "私钥"},
+	WalletKeyPlaceholder:         {English: "64 hex characters", Chinese: "64 位十六进制字符"},
+	WalletImportNote:             {English: "The key is written to the system keychain, never to settings.json.", Chinese: "私钥会写入系统钥匙串，绝不会写进 settings.json。"},
+	WalletNewTitle:               {English: "Save this private key", Chinese: "请保存这个私钥"},
+	WalletRevealTitle:            {English: "Private key for %s", Chinese: "%s 的私钥"},
+	WalletKeyWarning:             {English: "Save it now. Anyone who has it controls the account.", Chinese: "请立即保存。任何拿到它的人都能控制这个账户。"},
+	WalletRevealWarning:          {English: "Anyone who sees this key controls the account.", Chinese: "任何看到这个私钥的人都能控制这个账户。"},
+	WalletCopy:                   {English: "Copy", Chinese: "复制"},
+	WalletHide:                   {English: "Done", Chinese: "完成"},
+	WalletCopied:                 {English: "Copied to the clipboard.", Chinese: "已复制到剪贴板。"},
+	WalletCreated:                {English: "Created %s.", Chinese: "已创建 %s。"},
+	WalletImported:               {English: "Imported %s.", Chinese: "已导入 %s。"},
+	WalletRemoved:                {English: "Removed %s.", Chinese: "已移除 %s。"},
+	WalletRemoveTitle:            {English: "Remove wallet account?", Chinese: "移除钱包账户？"},
+	WalletRemoveBody:             {English: "Remove %s? Its key is deleted from the keychain and the address stops being watched.", Chinese: "移除 %s？它的私钥会从钥匙串中删除，地址也不再被监视。"},
+	WalletInvalidKey:             {English: "That is not a valid private key.", Chinese: "这不是有效的私钥。"},
+	WalletDuplicate:              {English: "That account is already in the wallet.", Chinese: "该账户已在钱包中。"},
+	WalletNoAccount:              {English: "That account is not in the wallet.", Chinese: "该账户不在钱包中。"},
+	WalletKeychainFailed:         {English: "The system keychain refused: %s", Chinese: "系统钥匙串出错：%s"},
+	WalletUnavailable:            {English: "The wallet is unavailable.", Chinese: "钱包不可用。"},
+	WalletBadge:                  {English: "Wallet", Chinese: "钱包"},
+	WalletEVMOnly:                {English: "Wallet accounts are EVM and NEAR accounts. Switch to an EVM or NEAR network to read their balances.", Chinese: "钱包账户是 EVM 与 NEAR 账户，切换到 EVM 或 NEAR 网络才能读取余额。"},
+	WalletEVMSection:             {English: "EVM accounts", Chinese: "EVM 账户"},
+	WalletNearSection:            {English: "NEAR accounts", Chinese: "NEAR 账户"},
+	WalletNearNew:                {English: "New NEAR account", Chinese: "新建 NEAR 账户"},
+	WalletNearBadge:              {English: "NEAR", Chinese: "NEAR"},
+	WalletNearImport:             {English: "Import a NEAR key", Chinese: "导入 NEAR 私钥"},
+	WalletNearKeyLabel:           {English: "ed25519 private key", Chinese: "ed25519 私钥"},
+	WalletNearKeyPlaceholder:     {English: "ed25519:… or 64 hex characters", Chinese: "ed25519:… 或 64 位十六进制字符"},
+	WalletNearAccountLabel:       {English: "Account ID (optional)", Chinese: "账户 ID（可选）"},
+	WalletNearAccountPlaceholder: {English: "alice.testnet, or empty for an implicit account", Chinese: "alice.testnet；留空则使用隐式账户"},
+	WalletNearImportNote:         {English: "An implicit account's id is its public key. A named account must be typed; the key alone does not name it.", Chinese: "隐式账户的 ID 就是公钥。命名账户必须手动填写，仅凭私钥无法确定它属于哪个账户。"},
+	WalletNearCreated:            {English: "Created NEAR account %s. Fund it to activate it on chain.", Chinese: "已创建 NEAR 账户 %s。为其充值后才会在链上激活。"},
+	WalletNearImported:           {English: "Imported NEAR account %s.", Chinese: "已导入 NEAR 账户 %s。"},
+	WalletNearSendTitle:          {English: "Send NEAR", Chinese: "发送 NEAR"},
+	WalletNearSendFrom:           {English: "From", Chinese: "从"},
+	WalletNearSendTo:             {English: "Recipient", Chinese: "收款账户"},
+	WalletNearSendToPlaceholder:  {English: "alice.testnet or a 64-hex account", Chinese: "alice.testnet 或 64 位十六进制账户"},
+	WalletNearSendAmount:         {English: "Amount (NEAR)", Chinese: "数量（NEAR）"},
+	WalletNearSendAmountHolder:   {English: "0.1", Chinese: "0.1"},
+	WalletNearSend:               {English: "Review and send", Chinese: "检查并发送"},
+	WalletNearSendNoNetwork:      {English: "Switch to a NEAR network to send.", Chinese: "切换到 NEAR 网络后才能发送。"},
+	WalletNearSendNoAccount:      {English: "Add a NEAR account first.", Chinese: "请先添加一个 NEAR 账户。"},
+	WalletNearSendLocked:         {English: "Unlock the account first.", Chinese: "请先解锁账户。"},
+	WalletNearSendInvalidTo:      {English: "That is not a NEAR account ID.", Chinese: "这不是有效的 NEAR 账户 ID。"},
+	WalletNearSendInvalidAmount:  {English: "Enter an amount of NEAR.", Chinese: "请输入 NEAR 数量。"},
+	WalletNearSendSent:           {English: "Sent. Transaction %s", Chinese: "已发送。交易 %s"},
+	WalletNearSendView:           {English: "View transaction", Chinese: "查看交易"},
+	ApproveWalletWarning:         {English: "This transfer comes from your own wallet. Check the recipient and the amount before you approve.", Chinese: "这笔转账来自你自己的钱包。批准前请核对收款账户和金额。"},
 
 	AuthTouchID:      {English: "Touch ID", Chinese: "触控 ID"},
 	AuthFaceID:       {English: "Face ID", Chinese: "面容 ID"},
@@ -325,6 +496,93 @@ var messages = map[Key]map[string]string{
 	ApproveWarning:        {English: "Only approve if you trust this plugin and recognize this transaction.", Chinese: "只有在你信任该插件并认得这笔交易时才确认。"},
 	ApproveReject:         {English: "Reject", Chinese: "拒绝"},
 	ApproveSign:           {English: "Approve and sign", Chinese: "确认并签名"},
+	ApproveDappKicker:     {English: "DApp · %s", Chinese: "DApp · %s"},
+	ApproveSiteSays:       {English: "The site says", Chinese: "网站说"},
+	ApproveSiteWords:      {English: "The site's words are not verified. The shell's decode above is what gets signed.", Chinese: "网站的话未经核实。上方由本应用解码的内容才是将要签名的内容。"},
+	ApproveDappWarning:    {English: "Only approve if you trust this site and recognize this transaction.", Chinese: "只有在你信任该网站并认得这笔交易时才确认。"},
+
+	ApproveReceiver:           {English: "Receiver", Chinese: "接收方"},
+	ApproveSigningKey:         {English: "Signing key", Chinese: "签名密钥"},
+	ApproveKeyLimit:           {English: "Key limit", Chinese: "密钥限额"},
+	ApproveAmount:             {English: "Amount", Chinese: "金额"},
+	ApproveYocto:              {English: "YoctoNEAR", Chinese: "YoctoNEAR"},
+	ApproveAction:             {English: "Action", Chinese: "操作"},
+	ApproveActionCall:         {English: "Function call", Chinese: "合约调用"},
+	ApproveActionAddKey:       {English: "Add key", Chinese: "添加密钥"},
+	ApproveActionDeleteKey:    {English: "Delete key", Chinese: "删除密钥"},
+	ApproveMethod:             {English: "Method", Chinese: "方法"},
+	ApproveArgs:               {English: "Args", Chinese: "参数"},
+	ApproveDeposit:            {English: "Deposit", Chinese: "附带押金"},
+	ApproveGas:                {English: "Gas", Chinese: "Gas"},
+	ApproveKey:                {English: "Key", Chinese: "密钥"},
+	ApproveKeyContract:        {English: "Contract", Chinese: "合约"},
+	ApproveKeyMethods:         {English: "Methods", Chinese: "方法"},
+	ApproveKeyAllowance:       {English: "Allowance", Chinese: "额度"},
+	ApproveKeyPermission:      {English: "Permission", Chinese: "权限"},
+	ApproveFullAccess:         {English: "Full access", Chinese: "完全访问"},
+	ApproveFullAccessKey:      {English: "Full access — no on-chain limit", Chinese: "完全访问 —— 链上无限制"},
+	ApproveAllowanceOf:        {English: "up to %s", Chinese: "最多 %s"},
+	ApproveAnyMethod:          {English: "any method", Chinese: "任意方法"},
+	ApproveNoAllowance:        {English: "No limit", Chinese: "无上限"},
+	ApproveNearCallTitle:      {English: "Call a contract?", Chinese: "调用合约？"},
+	ApproveNearKeyTitle:       {English: "Add a key to this account?", Chinese: "为该账户添加密钥？"},
+	ApproveNearDeleteKeyTitle: {English: "Delete a key?", Chinese: "删除密钥？"},
+	ApproveNearTxTitle:        {English: "Sign this NEAR transaction?", Chinese: "签署这笔 NEAR 交易？"},
+
+	NavIntents: {English: "Intents", Chinese: "跨链兑换"},
+
+	IntentsSubtitle:             {English: "Cross-chain swaps, quoted by 1Click", Chinese: "由 1Click 报价的跨链兑换"},
+	IntentsPayWith:              {English: "Pay with", Chinese: "付出"},
+	IntentsReceive:              {English: "Receive", Chinese: "换回"},
+	IntentsAmount:               {English: "Amount", Chinese: "数量"},
+	IntentsAmountPlaceholder:    {English: "1.5", Chinese: "1.5"},
+	IntentsRecipient:            {English: "Recipient", Chinese: "收款地址"},
+	IntentsRecipientPlaceholder: {English: "An address on the destination chain", Chinese: "目标链上的地址"},
+	IntentsRefund:               {English: "Refund to", Chinese: "退款到"},
+	IntentsRefundPlaceholder:    {English: "An address on the origin chain", Chinese: "原链上的地址"},
+	IntentsQuote:                {English: "Get a dry quote", Chinese: "获取 dry 报价"},
+	IntentsQuoting:              {English: "Asking 1Click for a dry quote…", Chinese: "正在向 1Click 询价（dry）…"},
+	IntentsLoadAssets:           {English: "Load supported assets", Chinese: "加载支持的资产"},
+	IntentsLoadingAssets:        {English: "Loading the assets 1Click supports…", Chinese: "正在加载 1Click 支持的资产…"},
+	IntentsAssetsNote:           {English: "%d assets from 1Click. A dry quote prices the swap and issues no deposit address: no funds move and nothing is signed.", Chinese: "1Click 支持 %d 种资产。dry 报价只给出价格，不生成存款地址：资金不会移动，也不会签名。"},
+	IntentsNoAssets:             {English: "No assets are loaded yet.", Chinese: "尚未加载资产。"},
+	IntentsPickAssets:           {English: "Choose the two assets first.", Chinese: "请先选择两种资产。"},
+	IntentsAmountInvalid:        {English: "Enter an amount with at most %d decimals.", Chinese: "请输入最多 %d 位小数的数量。"},
+	IntentsRecipientRequired:    {English: "Enter the address that should receive the swap.", Chinese: "请输入接收兑换的地址。"},
+	IntentsRefundRequired:       {English: "Enter a refund address, or add a NEAR account to the wallet.", Chinese: "请输入退款地址，或在钱包里添加一个 NEAR 账户。"},
+	IntentsNoClient:             {English: "The 1Click client is unavailable.", Chinese: "1Click 客户端不可用。"},
+	IntentsRetry:                {English: "Try again", Chinese: "重试"},
+	IntentsQuoteTitle:           {English: "Your dry quote", Chinese: "dry 报价"},
+	IntentsDryBadge:             {English: "DRY RUN", Chinese: "DRY RUN"},
+	IntentsYouPay:               {English: "You pay", Chinese: "你付出"},
+	IntentsYouReceive:           {English: "You receive at least", Chinese: "至少换回"},
+	IntentsEstimated:            {English: "Estimated receive", Chinese: "预计换回"},
+	IntentsDeadline:             {English: "Deadline", Chinese: "期限"},
+	IntentsDepositAddress:       {English: "Deposit address", Chinese: "存款地址"},
+	IntentsNoDeposit:            {English: "None — a dry quote issues no deposit address", Chinese: "无 —— dry 报价不生成存款地址"},
+	IntentsNoDeadline:           {English: "Not issued in a dry quote", Chinese: "dry 报价不生成期限"},
+	IntentsRefundRow:            {English: "Refund to", Chinese: "退款到"},
+	IntentsRecipientRow:         {English: "Recipient", Chinese: "收款地址"},
+	IntentsReview:               {English: "Review in the approval window", Chinese: "在批准窗中查看"},
+	IntentsRejected:             {English: "The quote was rejected. Nothing was signed or sent.", Chinese: "报价已被拒绝。没有签名，也没有发送任何东西。"},
+	IntentsAccepted:             {English: "Dry run accepted. Nothing was signed or sent.", Chinese: "已接受 dry 报价。没有签名，也没有发送任何东西。"},
+	IntentsQuotedBy:             {English: "Quoted by 1Click · %s", Chinese: "由 1Click 报价 · %s"},
+
+	IntentsApproveWindowTitle: {English: "NEAR Intents", Chinese: "NEAR Intents"},
+	IntentsApproveKicker:      {English: "NEAR INTENTS · DRY RUN", Chinese: "NEAR INTENTS · DRY RUN"},
+	IntentsApproveTitle:       {English: "Swap via NEAR Intents?", Chinese: "通过 NEAR Intents 兑换？"},
+	IntentsApprovePay:         {English: "You pay", Chinese: "你付出"},
+	IntentsApproveReceive:     {English: "You receive at least", Chinese: "至少换回"},
+	IntentsApproveDeadline:    {English: "Deadline", Chinese: "期限"},
+	IntentsApproveDeposit:     {English: "Deposit", Chinese: "存款"},
+	IntentsApproveIntent:      {English: "Intent", Chinese: "意图"},
+	IntentsApproveRefund:      {English: "Refund to", Chinese: "退款到"},
+	IntentsApproveRecipient:   {English: "Recipient", Chinese: "收款地址"},
+	IntentsApproveSource:      {English: "Requested by", Chinese: "请求来自"},
+	IntentsApproveSourceValue: {English: "Crypto Panel · dry run", Chinese: "Crypto Panel · dry 运行"},
+	IntentsApproveWarning:     {English: "This is a dry quote: no funds move and nothing is signed. A real swap would need your explicit consent.", Chinese: "这是 dry 报价：资金不会移动，也不会签名。真正成交需要你明确同意。"},
+	IntentsApproveAccept:      {English: "Accept quote", Chinese: "接受报价"},
+	IntentsIntentText:         {English: "Swap %s %s on %s for at least %s %s on %s; refund to %s.", Chinese: "用 %s %s（%s）换至少 %s %s（%s）；退款到 %s。"},
 
 	FamilyLabel:    {English: "Chain type", Chinese: "链类型"},
 	ChainLabel:     {English: "Chain", Chinese: "网络"},

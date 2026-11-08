@@ -60,6 +60,39 @@ func TestFormatAmount(t *testing.T) {
 	}
 }
 
+func TestParseUnits(t *testing.T) {
+	for _, tc := range []struct {
+		s        string
+		decimals int
+		want     string
+		ok       bool
+	}{
+		{"1", 24, "1000000000000000000000000", true},
+		{"1.5", 6, "1500000", true},
+		{"0.000001", 6, "1", true},
+		{".5", 6, "500000", true},
+		{"1.", 6, "1000000", true},
+		{" 1.25 ", 2, "125", true},
+		{"0", 6, "0", true},
+		{"1.2345678", 6, "", false},
+		{"1.2.3", 6, "", false},
+		{"-1", 6, "", false},
+		{"1e6", 6, "", false},
+		{"", 6, "", false},
+		{".", 6, "", false},
+		{"1", -1, "", false},
+	} {
+		got, ok := ParseUnits(tc.s, tc.decimals)
+		if ok != tc.ok {
+			t.Errorf("ParseUnits(%q, %d) ok = %v, want %v", tc.s, tc.decimals, ok, tc.ok)
+			continue
+		}
+		if ok && got.String() != tc.want {
+			t.Errorf("ParseUnits(%q, %d) = %s, want %s", tc.s, tc.decimals, got, tc.want)
+		}
+	}
+}
+
 func TestDisplayFrac(t *testing.T) {
 	for _, tc := range []struct {
 		decimals int

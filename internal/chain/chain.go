@@ -11,12 +11,13 @@ import (
 )
 
 // Family is a kind of chain with its own address format, RPC dialect and
-// token standard. EVM covers every eip155 network; Solana is the other
-// family the panel speaks for now.
+// token standard. EVM covers every eip155 network; NEAR and Solana are the
+// other families the panel speaks.
 type Family string
 
 const (
 	EVM    Family = "evm"
+	Near   Family = "near"
 	Solana Family = "solana"
 )
 
@@ -35,8 +36,11 @@ type Network struct {
 	ChainID uint64 `json:"chainId,omitempty"`
 	// Genesis pins a Solana network: the endpoint must report this
 	// getGenesisHash. Empty for EVM, whose chain id is the pin.
-	Genesis string  `json:"genesis,omitempty"`
-	Tokens  []Token `json:"tokens"`
+	Genesis string `json:"genesis,omitempty"`
+	// ChainName pins a NEAR network: the endpoint must report this chain_id
+	// ("testnet", "mainnet"). Empty for the other families.
+	ChainName string  `json:"chainName,omitempty"`
+	Tokens    []Token `json:"tokens"`
 }
 
 // Token is a token the panel shows by default. Address is an ERC-20

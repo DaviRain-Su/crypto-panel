@@ -19,6 +19,7 @@ import (
 
 	"github.com/davirain-su/crypto-panel/internal/chain"
 	"github.com/davirain-su/crypto-panel/internal/i18n"
+	"github.com/davirain-su/crypto-panel/internal/intents"
 	"github.com/davirain-su/crypto-panel/internal/passkey"
 	"github.com/davirain-su/crypto-panel/internal/plugin"
 	"github.com/davirain-su/crypto-panel/internal/wallet"
@@ -46,6 +47,8 @@ type route struct {
 var (
 	routePortfolio = route{}
 	routeWallet    = route{kind: "wallet"}
+	routeApps      = route{kind: "apps"}
+	routeIntents   = route{kind: "intents"}
 	routePlugins   = route{kind: "plugins"}
 	routeSettings  = route{kind: "settings"}
 )
@@ -76,6 +79,21 @@ type App struct {
 	draftWalletLabel string
 	walletErr        string
 	walletNotice     string
+	// nearKeyring holds the wallet's NEAR accounts and their ed25519 keys.
+	nearKeyring      *wallet.NearKeyring
+	draftNearKey     string
+	draftNearAccount string
+	draftNearLabel   string
+	nearErr          string
+	// The wallet's own NEAR transfer: the account it leaves, the form, and
+	// the last transaction's hash.
+	nearSendFrom   string
+	nearSendTo     string
+	nearSendAmount string
+	nearSendErr    string
+	nearSendNotice string
+	nearSendHash   string
+	nearSendBusy   bool
 	// newKey is a key just created, shown once so the user can save it;
 	// revealedKey is a key the user asked to see. Both are cleared as soon as
 	// they are no longer on screen.
@@ -138,10 +156,41 @@ type App struct {
 	confirmInstall func(plugin.Manifest, installRequest, func(bool))
 	// installOpen is set while the permission prompt is on screen.
 	installOpen bool
+	// confirmConnect asks the user to let a DApp see the NEAR accounts, and
+	// approve shows a transaction's decode. Tests replace both.
+	confirmConnect func(origin string) bool
+	approve        func(approvalRequest) bool
 
 	// approvalMu shows one approval window at a time, however many plugins
-	// ask at once.
+	// or pages ask at once.
 	approvalMu sync.Mutex
+
+	// The DApp page: its untrusted web view, the URL bar, and the origins
+	// the user connected. A page that is not connected cannot sign.
+	dappView      *mygo.WebView
+	dappURLDraft  string
+	dappErr       string
+	dappConnected map[string]bool
+
+	// The Intents page: the assets 1Click supports, the swap the user is
+	// asking about, and the last dry quote. approveIntents shows a quote's
+	// conditions; tests replace it.
+	intentsClient        *intents.Client
+	intentsTokens        []intents.Token
+	intentsTokensErr     string
+	intentsTokensLoading bool
+	intentsTokensLoaded  bool
+	intentsOrigin        string
+	intentsDestination   string
+	intentsAmount        string
+	intentsRecipient     string
+	intentsRefund        string
+	intentsErr           string
+	intentsBusy          bool
+	intentsQuote         *intents.Quote
+	intentsAccepted      bool
+	intentsNotice        string
+	approveIntents       func(intentsApprovalRequest) bool
 }
 
 // New loads the settings and returns the shell, before the app is ready.
@@ -161,14 +210,20 @@ func New() (*App, error) {
 		systemLocale:  i18n.English,
 		rpcDraft:      settings.RPCURL,
 		storeURLDraft: settings.PluginStoreURL,
+		dappConnected: map[string]bool{},
 	}
 	a.newReader()
 	a.initPlugins(dir)
 	a.keyring = wallet.NewKeyring(mygo.Secrets.Service("crypto-panel-wallet"), settings.Wallet)
+	a.nearKeyring = wallet.NewNearKeyring(mygo.Secrets.Service("crypto-panel-wallet"), settings.NearWallet)
+	a.intentsClient = intents.New()
 	a.startRefresh = a.fetch
 	a.runOnMain = mygo.RunOnMain
 	a.goAsync = func(fn func()) { go fn() }
 	a.confirmInstall = a.askInstall
+	a.confirmConnect = a.askConnect
+	a.approve = a.askApproval
+	a.approveIntents = a.askIntentsApproval
 	a.passkeyKind = passkey.Check()
 	a.authenticate = passkey.Authenticate
 	return a, nil
@@ -198,6 +253,7 @@ func (a *App) Ready() {
 		a.systemLocale = prefs[0]
 	}
 	a.applyLocale()
+	a.registerDappScheme()
 	a.createWindow()
 	// The Dock icon, or launching the app again, brings the window back.
 	mygo.App.OnActivate(func(bool) { a.showWindow() })
@@ -270,6 +326,7 @@ func (a *App) Settings() Settings {
 	s := a.settings
 	s.Accounts = append([]wallet.Address(nil), a.settings.Accounts...)
 	s.Wallet = append([]wallet.Account(nil), a.settings.Wallet...)
+	s.NearWallet = append([]wallet.NearAccount(nil), a.settings.NearWallet...)
 	return s
 }
 
@@ -302,6 +359,9 @@ func (a *App) goTo(r route) {
 		a.walletNotice = ""
 	}
 	a.route = r
+	if r == routeIntents && !a.intentsTokensLoaded && !a.intentsTokensLoading {
+		a.loadIntentsTokens()
+	}
 	a.invalidate()
 }
 

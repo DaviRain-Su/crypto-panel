@@ -16,6 +16,7 @@ import (
 	"github.com/davirain-su/crypto-panel/internal/chains"
 	"github.com/davirain-su/crypto-panel/internal/evmtx"
 	"github.com/davirain-su/crypto-panel/internal/i18n"
+	"github.com/davirain-su/crypto-panel/internal/neartx"
 	"github.com/davirain-su/crypto-panel/internal/plugin"
 	"github.com/davirain-su/crypto-panel/internal/wallet"
 )
@@ -181,9 +182,11 @@ func (a *App) signKey(addr string) (*ecdsa.PrivateKey, bool) {
 // approvalRequest is everything the approval window shows.
 type approvalRequest struct {
 	pluginName  string
+	sourceKind  string // "" for a plugin, "dapp" for a web page
 	description string
 	network     chain.Network
 	summary     *evmtx.Summary
+	near        *neartx.Summary
 	fromAddr    string
 	fromLabel   string
 }
@@ -204,9 +207,11 @@ func (a *App) askApproval(req approvalRequest) bool {
 		ap := &approval{
 			t:            a.t,
 			pluginName:   req.pluginName,
+			sourceKind:   req.sourceKind,
 			description:  req.description,
 			network:      req.network,
 			summary:      req.summary,
+			near:         req.near,
 			fromAddr:     req.fromAddr,
 			fromLabel:    req.fromLabel,
 			authRequired: a.presenceRequired(),

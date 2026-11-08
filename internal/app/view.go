@@ -65,6 +65,12 @@ func (a *App) sidebar(c *ui.Context) {
 				a.navItem(c, a.t(i18n.NavWallet), iconWallet, a.route == routeWallet, func() {
 					a.goTo(routeWallet)
 				})
+				a.navItem(c, a.t(i18n.NavApps), iconGlobe, a.route.kind == "apps", func() {
+					a.goTo(routeApps)
+				})
+				a.navItem(c, a.t(i18n.NavIntents), iconSwap, a.route == routeIntents, func() {
+					a.goTo(routeIntents)
+				})
 				a.navItem(c, a.t(i18n.NavPlugins), iconGrid, a.route.kind == "plugins", func() {
 					a.goTo(routePlugins)
 				})
@@ -152,6 +158,12 @@ func (a *App) content(c *ui.Context) {
 	p := a.pal
 	ui.Column(c).Grow(1).FillHeight().Background(p.bg).Children(func() {
 		a.pageHeader(c)
+		if a.route.kind == "apps" {
+			// The DApp page fills its height: a web view does not scroll
+			// with the shell's page.
+			a.dappBody(c)
+			return
+		}
 		ui.Scroll(c.Key("page")).Grow(1).Children(func() {
 			ui.Column(c).Padding(0, 44, 56, 44).MaxWidth(920).Children(func() {
 				a.pageBody(c)
@@ -186,12 +198,21 @@ func (a *App) pageHeader(c *ui.Context) {
 			if a.walletUnlocked() > 0 {
 				a.softButton(c, a.t(i18n.WalletLockAll), iconLock, p.muted, a.lockAll)
 			}
-			a.primaryButton(c, a.t(i18n.WalletNew), nil, false, a.createWalletAccount)
+			if a.network().Family == chain.Near {
+				a.primaryButton(c, a.t(i18n.WalletNearNew), nil, false, a.createNearAccount)
+			} else {
+				a.primaryButton(c, a.t(i18n.WalletNew), nil, false, a.createWalletAccount)
+			}
 		case "plugins":
 			if a.pluginTab == "store" {
 				a.iconButton(c, iconRefresh, a.t(i18n.StoreRefresh), a.loadStore)
 			} else {
 				a.primaryButton(c, a.t(i18n.PluginInstall), nil, false, a.installPlugin)
+			}
+		case "apps":
+			if a.dappView != nil {
+				a.iconButton(c, iconRefresh, a.t(i18n.Refresh), func() { a.dappView.Page().Reload() })
+				a.iconButton(c, iconClose, a.t(i18n.DappClose), a.closeDapp)
 			}
 		}
 	})
@@ -266,6 +287,10 @@ func (a *App) pageTitle() (title, subtitle string) {
 	switch a.route.kind {
 	case "wallet":
 		return a.t(i18n.NavWallet), a.walletSummary()
+	case "apps":
+		return a.t(i18n.NavApps), a.dappSubtitle()
+	case "intents":
+		return a.t(i18n.NavIntents), a.t(i18n.IntentsSubtitle)
 	case "plugins":
 		return a.t(i18n.NavPlugins), a.pluginSummary()
 	case "settings":
@@ -314,6 +339,10 @@ func (a *App) pageBody(c *ui.Context) {
 	switch a.route.kind {
 	case "wallet":
 		a.walletView(c)
+	case "apps":
+		a.dappBody(c)
+	case "intents":
+		a.intentsBody(c)
 	case "plugins":
 		a.pluginsView(c)
 	case "settings":
@@ -410,7 +439,7 @@ func (a *App) accountCard(c *ui.Context, acc wallet.Address) {
 				}
 				ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
 					ui.Text(c, name).FontSize(13.5).FontWeight(600).MaxLines(1)
-					if a.settings.IsWallet(acc.Addr) {
+					if a.settings.IsWalletAccount(acc.Addr) {
 						ui.Text(c, a.t(i18n.WalletBadge)).FontSize(9.5).FontWeight(700).
 							TextColor(p.accent).Padding(3, 6).Radius(99).Background(p.accentSoft)
 					}
@@ -423,7 +452,7 @@ func (a *App) accountCard(c *ui.Context, acc wallet.Address) {
 				ui.Text(c, a.network().Symbol).FontSize(10).TextColor(p.faint)
 			})
 			// A wallet account is removed on its own page, with its key.
-			if !a.settings.IsWallet(acc.Addr) {
+			if !a.settings.IsWalletAccount(acc.Addr) {
 				a.iconButton(c, iconTrash, a.t(i18n.Remove), func() {
 					a.removeAccount(acc.Addr)
 				})

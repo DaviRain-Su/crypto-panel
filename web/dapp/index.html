@@ -1,0 +1,270 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Test DApp · Crypto Panel</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+      --bg: #f6f4ef;
+      --card: #fffdf8;
+      --text: #1c1e1b;
+      --muted: #6d7169;
+      --faint: #9a9e95;
+      --line: #e4e1d8;
+      --accent: #3f6b4f;
+      --accent-soft: #e4eee6;
+      --danger: #a33d33;
+      --danger-soft: #f7e7e4;
+      --mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #141513;
+        --card: #1c1e1b;
+        --text: #ecebe6;
+        --muted: #a4a89f;
+        --faint: #757a71;
+        --line: #2c2f2a;
+        --accent: #8fbf9d;
+        --accent-soft: #223026;
+        --danger: #e08a80;
+        --danger-soft: #33211f;
+      }
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      padding: 40px 24px 64px;
+      background: var(--bg);
+      color: var(--text);
+      font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    main { max-width: 720px; margin: 0 auto; }
+    header { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; }
+    .mark {
+      width: 38px; height: 38px; border-radius: 11px; display: grid; place-items: center;
+      background: linear-gradient(135deg, #2c342b, #151713); color: var(--accent);
+    }
+    h1 { margin: 0; font-size: 22px; letter-spacing: -0.4px; }
+    .kicker { margin: 0 0 2px; font-size: 10.5px; font-weight: 700; letter-spacing: 0.8px; color: var(--muted); text-transform: uppercase; }
+    .lead { margin: 6px 0 24px; color: var(--muted); }
+    .card {
+      background: var(--card); border: 1px solid var(--line); border-radius: 14px;
+      padding: 18px; margin-bottom: 14px; box-shadow: 0 1px 2px rgba(20, 21, 19, 0.05);
+    }
+    h2 { margin: 0 0 12px; font-size: 14px; }
+    label { display: block; margin: 10px 0 4px; font-size: 11px; font-weight: 600; color: var(--muted); }
+    input {
+      width: 100%; padding: 9px 11px; border-radius: 8px; border: 1px solid var(--line);
+      background: var(--bg); color: var(--text); font: inherit;
+    }
+    input:focus { outline: 2px solid var(--accent-soft); border-color: var(--accent); }
+    .row { display: flex; gap: 10px; flex-wrap: wrap; }
+    .row > div { flex: 1 1 180px; }
+    button {
+      margin-top: 14px; padding: 9px 14px; border: 0; border-radius: 8px;
+      background: var(--accent); color: var(--card); font: inherit; font-weight: 600;
+      cursor: pointer;
+    }
+    button.secondary {
+      background: transparent; color: var(--text); border: 1px solid var(--line);
+    }
+    button:disabled { opacity: 0.5; cursor: default; }
+    .actions { display: flex; gap: 8px; flex-wrap: wrap; }
+    .status {
+      margin-top: 12px; padding: 10px 12px; border-radius: 8px; font-size: 12.5px;
+      background: var(--accent-soft); color: var(--accent); word-break: break-all;
+    }
+    .status.error { background: var(--danger-soft); color: var(--danger); }
+    .status:empty { display: none; }
+    .mono { font-family: var(--mono); font-size: 11.5px; }
+    .fine { color: var(--faint); font-size: 11.5px; margin: 0; }
+    .account { margin: 4px 0 0; font-family: var(--mono); font-size: 12px; word-break: break-all; }
+    a { color: var(--accent); }
+  </style>
+</head>
+<body>
+<main>
+  <header>
+    <span class="mark" aria-hidden="true">
+      <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M3 12h4l2-5 4 10 2-5h6"/>
+      </svg>
+    </span>
+    <div>
+      <p class="kicker">Crypto Panel · test DApp</p>
+      <h1>Ask the local wallet to sign</h1>
+    </div>
+  </header>
+  <p class="lead">
+    This page runs in Crypto Panel's isolated web view. It can ask the wallet to
+    connect and to sign; it never sees a key, and every request opens the shell's
+    own approval window.
+  </p>
+
+  <section class="card">
+    <h2>1 · Connect</h2>
+    <div class="actions">
+      <button id="connect">Connect wallet</button>
+      <button id="network" class="secondary">Network</button>
+      <button id="accounts" class="secondary">Accounts</button>
+    </div>
+    <p id="account" class="account"></p>
+    <div id="connect-status" class="status"></div>
+  </section>
+
+  <section class="card">
+    <h2>2 · Send NEAR</h2>
+    <div class="row">
+      <div>
+        <label for="receiver">Recipient</label>
+        <input id="receiver" placeholder="alice.testnet" autocomplete="off">
+      </div>
+      <div>
+        <label for="amount">Amount (NEAR)</label>
+        <input id="amount" value="0.01" autocomplete="off">
+      </div>
+    </div>
+    <button id="send">Review and send</button>
+    <div id="send-status" class="status"></div>
+  </section>
+
+  <section class="card">
+    <h2>3 · Add a function-call key</h2>
+    <p class="fine">
+      The key is limited to one contract, a method list and an allowance. The
+      approval window shows the limit before the account signs it.
+    </p>
+    <label for="public-key">Public key</label>
+    <input id="public-key" placeholder="ed25519:…" autocomplete="off">
+    <div class="row">
+      <div>
+        <label for="contract">Contract</label>
+        <input id="contract" placeholder="contract.testnet" autocomplete="off">
+      </div>
+      <div>
+        <label for="methods">Methods (comma separated, empty for any)</label>
+        <input id="methods" placeholder="donate" autocomplete="off">
+      </div>
+      <div>
+        <label for="allowance">Allowance (NEAR)</label>
+        <input id="allowance" value="0.25" autocomplete="off">
+      </div>
+    </div>
+    <button id="add-key">Review and add key</button>
+    <div id="key-status" class="status"></div>
+  </section>
+
+  <p class="fine">
+    The page is served from <span class="mono" id="origin"></span>. Crypto Panel
+    accepts a DApp origin over HTTPS, or HTTP on localhost, and reads the origin
+    from the web view's own URL — never from this page's request.
+  </p>
+</main>
+<script>
+(() => {
+  "use strict";
+  const $ = (id) => document.getElementById(id);
+  $("origin").textContent = location.origin;
+
+  function show(id, text, isError) {
+    const el = $(id);
+    el.textContent = text;
+    el.classList.toggle("error", !!isError);
+  }
+
+  function wallet() {
+    if (!window.nearWallet) {
+      throw new Error("The Crypto Panel wallet bridge is not injected. Open this page from Crypto Panel's Apps page.");
+    }
+    return window.nearWallet;
+  }
+
+  function toYocto(value) {
+    const s = String(value).trim();
+    if (!/^\d+(\.\d+)?$/.test(s)) throw new Error("Enter a NEAR amount, such as 0.01.");
+    const parts = s.split(".");
+    const whole = parts[0];
+    const frac = parts[1] || "";
+    if (frac.length > 24) throw new Error("At most 24 decimals.");
+    const out = (whole + frac.padEnd(24, "0")).replace(/^0+(?=\d)/, "");
+    if (out === "0") throw new Error("The amount must be above zero.");
+    return out;
+  }
+
+  function hashLine(hash) {
+    return "Transaction " + hash;
+  }
+
+  $("connect").addEventListener("click", async () => {
+    try {
+      const res = await wallet().connect();
+      const accounts = res.accounts || [];
+      $("account").textContent = accounts.map((a) => a.accountId).join("\n");
+      show("connect-status", accounts.length ? "Connected." : "The wallet has no NEAR account.");
+    } catch (err) {
+      show("connect-status", err.message || String(err), true);
+    }
+  });
+
+  $("network").addEventListener("click", async () => {
+    try {
+      const res = await wallet().getNetwork();
+      show("connect-status", "Network " + res.networkId + " (" + res.chainId + ")");
+    } catch (err) {
+      show("connect-status", err.message || String(err), true);
+    }
+  });
+
+  $("accounts").addEventListener("click", async () => {
+    try {
+      const accounts = await wallet().getAccounts();
+      $("account").textContent = accounts.map((a) => a.accountId).join("\n");
+      show("connect-status", accounts.length + " account(s).");
+    } catch (err) {
+      show("connect-status", err.message || String(err), true);
+    }
+  });
+
+  $("send").addEventListener("click", async () => {
+    try {
+      const receiverId = $("receiver").value.trim();
+      if (!receiverId) throw new Error("Enter the recipient's account id.");
+      const amount = toYocto($("amount").value);
+      show("send-status", "Waiting for the approval window…");
+      const res = await wallet().signAndSendTransaction({
+        receiverId: receiverId,
+        description: "Send " + $("amount").value.trim() + " NEAR to " + receiverId,
+        actions: [{ type: "Transfer", params: { deposit: amount } }],
+      });
+      show("send-status", hashLine(res.hash));
+    } catch (err) {
+      show("send-status", err.message || String(err), true);
+    }
+  });
+
+  $("add-key").addEventListener("click", async () => {
+    try {
+      const publicKey = $("public-key").value.trim();
+      const contractId = $("contract").value.trim();
+      if (!publicKey || !contractId) throw new Error("Enter the public key and the contract.");
+      const methods = $("methods").value.split(",").map((s) => s.trim()).filter(Boolean);
+      const allowance = toYocto($("allowance").value);
+      show("key-status", "Waiting for the approval window…");
+      const res = await wallet().addFunctionCallKey({
+        publicKey: publicKey,
+        contractId: contractId,
+        methodNames: methods,
+        allowance: allowance,
+      });
+      show("key-status", hashLine(res.hash));
+    } catch (err) {
+      show("key-status", err.message || String(err), true);
+    }
+  });
+})();
+</script>
+</body>
+</html>

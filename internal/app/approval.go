@@ -3,6 +3,7 @@ package app
 import (
 	"errors"
 	"math/big"
+	"strconv"
 	"strings"
 
 	"github.com/egoist/mygo"
@@ -11,6 +12,7 @@ import (
 	"github.com/davirain-su/crypto-panel/internal/chain"
 	"github.com/davirain-su/crypto-panel/internal/evmtx"
 	"github.com/davirain-su/crypto-panel/internal/i18n"
+	"github.com/davirain-su/crypto-panel/internal/neartx"
 	"github.com/davirain-su/crypto-panel/internal/passkey"
 	"github.com/davirain-su/crypto-panel/internal/wallet"
 )
@@ -22,9 +24,11 @@ import (
 type approval struct {
 	t           func(i18n.Key, ...any) string
 	pluginName  string
+	sourceKind  string // "" or "plugin" for a plugin, "dapp" for a web page
 	description string
 	network     chain.Network
 	summary     *evmtx.Summary
+	near        *neartx.Summary
 	fromAddr    string
 	fromLabel   string
 
@@ -103,35 +107,34 @@ func (ap *approval) view(c *ui.Context) {
 				ui.Icon(c, iconShield).Size(18, 18).TextColor(p.accent)
 			})
 			ui.Column(c).Gap(2).Children(func() {
-				ui.Text(c, strings.ToUpper(ap.pluginName)).FontSize(10.5).FontWeight(700).
+				ui.Text(c, ap.kicker()).FontSize(10.5).FontWeight(700).
 					TextColor(p.accent).LetterSpacing(0.8).MaxLines(1)
 				ui.Text(c, ap.title()).FontSize(21).FontWeight(700).LetterSpacing(-0.4).MaxLines(2)
 			})
 		})
 		ui.Column(c).Gap(9).Padding(16).Radius(12).Background(p.card).
 			Border(1, p.hairline).Children(func() {
-			ap.row(c, p, ap.t(i18n.ApproveFrom), ap.fromFull())
-			ap.row(c, p, ap.t(i18n.ApproveTo), ap.summary.To.Hex())
-			if ap.summary.Call != "" {
-				ap.row(c, p, ap.t(i18n.ApproveCall), ap.summary.Call)
+			for _, row := range ap.rows() {
+				ap.row(c, p, row.label, row.value)
 			}
-			ap.row(c, p, ap.t(i18n.ApproveValue), ap.amount(ap.summary.Value))
-			ap.row(c, p, ap.t(i18n.ApproveNetwork), ap.network.Name)
-			ap.row(c, p, ap.t(i18n.ApproveFee), ap.amount(ap.summary.Fee))
 		})
 		if ap.description != "" {
+			heading, note := i18n.ApprovePluginSays, i18n.ApprovePluginWords
+			if ap.sourceKind == "dapp" {
+				heading, note = i18n.ApproveSiteSays, i18n.ApproveSiteWords
+			}
 			ui.Column(c).Gap(3).Children(func() {
-				ui.Text(c, ap.t(i18n.ApprovePluginSays)).FontSize(10.5).FontWeight(700).
+				ui.Text(c, ap.t(heading)).FontSize(10.5).FontWeight(700).
 					TextColor(p.muted).LetterSpacing(0.4)
 				ui.Text(c, ap.description).FontSize(12).MaxLines(3)
-				ui.Text(c, ap.t(i18n.ApprovePluginWords)).FontSize(10.5).
+				ui.Text(c, ap.t(note)).FontSize(10.5).
 					TextColor(p.faint).MaxLines(2)
 			})
 		}
 		ui.Row(c).Gap(8).Padding(10, 12).Radius(9).
 			Background(p.dangerSoft).AlignItems(ui.Start).Children(func() {
 			ui.Icon(c, iconLock).Size(14, 14).TextColor(p.danger)
-			ui.Text(c, ap.t(i18n.ApproveWarning)).FontSize(11).TextColor(p.danger).
+			ui.Text(c, ap.warning()).FontSize(11).TextColor(p.danger).
 				Grow(1).MaxLines(2)
 		})
 		if ap.authErr != "" {
@@ -190,8 +193,144 @@ func (ap *approval) row(c *ui.Context, p palette, label, value string) {
 	})
 }
 
+// kicker names where the request came from: a plugin, or a DApp's origin.
+func (ap *approval) kicker() string {
+	if ap.sourceKind == "dapp" {
+		return ap.t(i18n.ApproveDappKicker, ap.pluginName)
+	}
+	return strings.ToUpper(ap.pluginName)
+}
+
+// warning is the sentence above the buttons. A web page's words are worth
+// no more than a plugin's; a transfer the wallet itself started has no
+// source words at all.
+func (ap *approval) warning() string {
+	switch ap.sourceKind {
+	case "dapp":
+		return ap.t(i18n.ApproveDappWarning)
+	case "wallet":
+		return ap.t(i18n.ApproveWalletWarning)
+	}
+	return ap.t(i18n.ApproveWarning)
+}
+
+// approvalRow is one label and value of the shell's decode.
+type approvalRow struct{ label, value string }
+
+// rows is the shell's own decode of the request: the EVM transaction or the
+// NEAR actions, never the source's description.
+func (ap *approval) rows() []approvalRow {
+	if ap.near != nil {
+		return ap.nearRows()
+	}
+	rows := []approvalRow{
+		{ap.t(i18n.ApproveFrom), ap.fromFull()},
+		{ap.t(i18n.ApproveTo), ap.summary.To.Hex()},
+	}
+	if ap.summary.Call != "" {
+		rows = append(rows, approvalRow{ap.t(i18n.ApproveCall), ap.summary.Call})
+	}
+	rows = append(rows,
+		approvalRow{ap.t(i18n.ApproveValue), ap.amount(ap.summary.Value)},
+		approvalRow{ap.t(i18n.ApproveNetwork), ap.network.Name},
+		approvalRow{ap.t(i18n.ApproveFee), ap.amount(ap.summary.Fee)},
+	)
+	return rows
+}
+
+// nearRows decodes each NEAR action: receiver, amount in NEAR and yoctoNEAR,
+// method and arguments, and the signing key's own on-chain limit.
+func (ap *approval) nearRows() []approvalRow {
+	rows := []approvalRow{
+		{ap.t(i18n.ApproveFrom), ap.fromFull()},
+		{ap.t(i18n.ApproveNetwork), ap.network.Name},
+		{ap.t(i18n.ApproveReceiver), ap.near.ReceiverID},
+		{ap.t(i18n.ApproveSigningKey), ap.near.PublicKey},
+	}
+	if kp := ap.near.KeyPermission; kp != nil {
+		rows = append(rows, approvalRow{ap.t(i18n.ApproveKeyLimit), ap.keyLimit(kp)})
+	}
+	for _, action := range ap.near.Actions {
+		switch action.Kind {
+		case neartx.ActionTransfer:
+			rows = append(rows,
+				approvalRow{ap.t(i18n.ApproveAmount), ap.nearAmount(action.Amount)},
+				approvalRow{ap.t(i18n.ApproveYocto), yoctoString(action.Amount)},
+			)
+		case neartx.ActionFunctionCall:
+			args := action.ArgsText
+			if args == "" {
+				args = "—"
+			}
+			rows = append(rows,
+				approvalRow{ap.t(i18n.ApproveAction), ap.t(i18n.ApproveActionCall)},
+				approvalRow{ap.t(i18n.ApproveMethod), action.MethodName},
+				approvalRow{ap.t(i18n.ApproveArgs), args},
+				approvalRow{ap.t(i18n.ApproveDeposit), ap.nearAmount(action.Amount)},
+				approvalRow{ap.t(i18n.ApproveYocto), yoctoString(action.Amount)},
+				approvalRow{ap.t(i18n.ApproveGas), tgas(action.Gas)},
+			)
+		case neartx.ActionAddKey:
+			rows = append(rows,
+				approvalRow{ap.t(i18n.ApproveAction), ap.t(i18n.ApproveActionAddKey)},
+				approvalRow{ap.t(i18n.ApproveKey), action.PublicKey},
+			)
+			if action.KeyReceiver != "" {
+				rows = append(rows,
+					approvalRow{ap.t(i18n.ApproveKeyContract), action.KeyReceiver},
+					approvalRow{ap.t(i18n.ApproveKeyMethods), ap.methods(action.MethodNames)},
+					approvalRow{ap.t(i18n.ApproveKeyAllowance), ap.allowance(action.Allowance)},
+				)
+			} else {
+				rows = append(rows, approvalRow{ap.t(i18n.ApproveKeyPermission), ap.t(i18n.ApproveFullAccess)})
+			}
+		case neartx.ActionDeleteKey:
+			rows = append(rows,
+				approvalRow{ap.t(i18n.ApproveAction), ap.t(i18n.ApproveActionDeleteKey)},
+				approvalRow{ap.t(i18n.ApproveKey), action.PublicKey},
+			)
+		default:
+			rows = append(rows, approvalRow{ap.t(i18n.ApproveAction), action.Kind.String()})
+		}
+	}
+	return rows
+}
+
+// keyLimit says what the signer's access key may do on chain.
+func (ap *approval) keyLimit(kp *neartx.KeyPermissionSummary) string {
+	if kp.FullAccess {
+		return ap.t(i18n.ApproveFullAccessKey)
+	}
+	parts := []string{}
+	if kp.Allowance != nil {
+		parts = append(parts, ap.t(i18n.ApproveAllowanceOf, ap.nearAmount(kp.Allowance)))
+	}
+	if kp.ReceiverID != "" {
+		parts = append(parts, kp.ReceiverID)
+	}
+	parts = append(parts, ap.methods(kp.MethodNames))
+	return strings.Join(parts, " · ")
+}
+
+func (ap *approval) methods(names []string) string {
+	if len(names) == 0 {
+		return ap.t(i18n.ApproveAnyMethod)
+	}
+	return strings.Join(names, ", ")
+}
+
+func (ap *approval) allowance(v *big.Int) string {
+	if v == nil {
+		return ap.t(i18n.ApproveNoAllowance)
+	}
+	return ap.nearAmount(v)
+}
+
 // title says what the transaction does, in the shell's words.
 func (ap *approval) title() string {
+	if ap.near != nil {
+		return ap.nearTitle()
+	}
 	switch {
 	case strings.HasPrefix(ap.summary.Call, "Transfer"):
 		return ap.t(i18n.ApproveTransferTitle)
@@ -202,6 +341,22 @@ func (ap *approval) title() string {
 	default:
 		return ap.t(i18n.ApproveTxTitle)
 	}
+}
+
+func (ap *approval) nearTitle() string {
+	if len(ap.near.Actions) == 1 {
+		switch ap.near.Actions[0].Kind {
+		case neartx.ActionTransfer:
+			return ap.t(i18n.ApproveSendTitle, ap.network.Symbol)
+		case neartx.ActionFunctionCall:
+			return ap.t(i18n.ApproveNearCallTitle)
+		case neartx.ActionAddKey:
+			return ap.t(i18n.ApproveNearKeyTitle)
+		case neartx.ActionDeleteKey:
+			return ap.t(i18n.ApproveNearDeleteKeyTitle)
+		}
+	}
+	return ap.t(i18n.ApproveNearTxTitle)
 }
 
 // from names the account briefly, for the system prompt's reason.
@@ -224,4 +379,24 @@ func (ap *approval) fromFull() string {
 
 func (ap *approval) amount(v *big.Int) string {
 	return chain.FormatAmount(v, ap.network.Decimals, 6) + " " + ap.network.Symbol
+}
+
+// nearAmount formats yoctoNEAR as NEAR. The exact yoctoNEAR value is shown
+// on its own row, so a small amount is never rounded away unseen.
+func (ap *approval) nearAmount(v *big.Int) string {
+	if v == nil {
+		v = new(big.Int)
+	}
+	return chain.FormatAmount(v, nearDecimals, 6) + " NEAR"
+}
+
+func yoctoString(v *big.Int) string {
+	if v == nil {
+		return "0"
+	}
+	return v.String()
+}
+
+func tgas(gas uint64) string {
+	return strconv.FormatFloat(float64(gas)/1e12, 'f', 1, 64) + " TGas"
 }

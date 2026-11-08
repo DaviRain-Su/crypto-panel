@@ -3,3 +3,10 @@
 .mygo/
 node_modules/
 .DS_Store
+
+# Secrets stay out of the repository: keys live in the OS keychain, and a
+# paid RPC token or a test key may live in a local .env only.
+.env
+.env.*
+*.key
+

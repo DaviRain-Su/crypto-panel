@@ -24,9 +24,12 @@ func (a *App) walletAccounts() []wallet.Account {
 // walletAddresses lists the wallet's accounts as watched addresses, for
 // host.accounts.
 func (a *App) walletAddresses() []wallet.Address {
-	out := make([]wallet.Address, 0, len(a.settings.Wallet))
+	out := make([]wallet.Address, 0, len(a.settings.Wallet)+len(a.settings.NearWallet))
 	for _, acc := range a.settings.Wallet {
 		out = append(out, wallet.Address{Addr: acc.Addr, Label: acc.Label})
+	}
+	for _, acc := range a.settings.NearWallet {
+		out = append(out, wallet.Address{Addr: acc.AccountID, Label: acc.Label})
 	}
 	return out
 }
@@ -44,13 +47,19 @@ func (a *App) walletName(addr string) string {
 
 // walletUnlocked counts the accounts whose keys are in memory.
 func (a *App) walletUnlocked() int {
-	if a.keyring == nil {
-		return 0
-	}
 	n := 0
-	for _, acc := range a.settings.Wallet {
-		if a.keyring.Unlocked(acc.Addr) {
-			n++
+	if a.keyring != nil {
+		for _, acc := range a.settings.Wallet {
+			if a.keyring.Unlocked(acc.Addr) {
+				n++
+			}
+		}
+	}
+	if a.nearKeyring != nil {
+		for _, acc := range a.settings.NearWallet {
+			if a.nearKeyring.Unlocked(acc.AccountID) {
+				n++
+			}
 		}
 	}
 	return n
@@ -58,7 +67,7 @@ func (a *App) walletUnlocked() int {
 
 // walletSummary heads the wallet page.
 func (a *App) walletSummary() string {
-	n := len(a.settings.Wallet)
+	n := len(a.settings.Wallet) + len(a.settings.NearWallet)
 	switch n {
 	case 0:
 		return a.t(i18n.WalletEmptySummary)
@@ -74,6 +83,8 @@ func (a *App) walletFailure(err error) string {
 	switch {
 	case errors.Is(err, wallet.ErrInvalidKey):
 		return a.t(i18n.WalletInvalidKey)
+	case errors.Is(err, wallet.ErrInvalidAddress):
+		return a.t(i18n.InvalidAddress)
 	case errors.Is(err, wallet.ErrDuplicateKey):
 		return a.t(i18n.WalletDuplicate)
 	case errors.Is(err, wallet.ErrNoAccount):
@@ -228,10 +239,12 @@ func (a *App) lockAccount(addr string) {
 
 // lockAll forgets every key in memory.
 func (a *App) lockAll() {
-	if a.keyring == nil {
-		return
+	if a.keyring != nil {
+		a.keyring.Lock()
 	}
-	a.keyring.Lock()
+	if a.nearKeyring != nil {
+		a.nearKeyring.Lock()
+	}
 	a.authBusy = ""
 	a.revealedKey, a.revealedAddr = "", ""
 	a.newKey, a.newKeyAddr = "", ""

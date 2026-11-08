@@ -10,6 +10,8 @@ import (
 	"strings"
 
 	"golang.org/x/crypto/sha3"
+
+	"github.com/davirain-su/crypto-panel/internal/nearid"
 )
 
 // Kind is an address format, one per chain family.
@@ -17,6 +19,7 @@ type Kind string
 
 const (
 	EVM    Kind = "evm"
+	Near   Kind = "near"
 	Solana Kind = "solana"
 )
 
@@ -33,11 +36,20 @@ type Address struct {
 }
 
 // KindOf infers an address's family from its shape: 0x and 40 hex digits is
-// EVM, a base58 string that decodes to 32 bytes is Solana.
+// EVM; 64 hex digits or a dotted lowercase name is NEAR; a base58 string
+// that decodes to 32 bytes is Solana.
 func KindOf(s string) (Kind, bool) {
 	s = strings.TrimSpace(s)
 	if isEVMLike(s) {
 		return EVM, true
+	}
+	if nearid.IsImplicit(s) {
+		return Near, true
+	}
+	if strings.Contains(s, ".") {
+		if _, err := nearid.ParseAccountID(s); err == nil {
+			return Near, true
+		}
 	}
 	if _, err := decodeBase58(s); err == nil {
 		return Solana, true
@@ -54,6 +66,12 @@ func Normalize(kind Kind, s string) (string, error) {
 	switch kind {
 	case EVM:
 		return normalizeEVM(s)
+	case Near:
+		addr, err := nearid.ParseAccountID(s)
+		if err != nil {
+			return "", fmt.Errorf("%w: %v", ErrInvalidAddress, err)
+		}
+		return addr, nil
 	case Solana:
 		if _, err := decodeBase58(s); err != nil {
 			return "", fmt.Errorf("%w: %v", ErrInvalidAddress, err)

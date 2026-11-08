@@ -1,0 +1,152 @@
+:root {
+  color-scheme: light dark;
+  --bg: #f6f4ef;
+  --card: #fffefa;
+  --text: #1b1c18;
+  --muted: #6b6f66;
+  --faint: #989c91;
+  --line: #e2ded3;
+  --accent: #4e6b52;
+  --accent-soft: #e6ece2;
+  --danger: #a34a3a;
+  --shadow: rgba(27, 28, 24, 0.08);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #141513;
+    --card: #1f211d;
+    --text: #eceae3;
+    --muted: #a3a79c;
+    --faint: #7d8177;
+    --line: #2e312b;
+    --accent: #9db89a;
+    --accent-soft: #2a332a;
+    --danger: #d98a76;
+    --shadow: rgba(0, 0, 0, 0.35);
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: var(--bg);
+  color: var(--text);
+  font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+}
+
+.card {
+  width: min(420px, 100%);
+  padding: 28px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: var(--card);
+  box-shadow: 0 12px 40px var(--shadow);
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.mark {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.eyebrow {
+  margin: 0;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+
+h1 {
+  margin: 2px 0 0;
+  font-size: 22px;
+  letter-spacing: -0.02em;
+}
+
+.lead {
+  margin: 20px 0 6px;
+  color: var(--muted);
+}
+
+.site {
+  margin: 0 0 18px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  color: var(--faint);
+}
+
+.status {
+  min-height: 22px;
+  margin: 0 0 18px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.status.error {
+  color: var(--danger);
+}
+
+.actions {
+  display: flex;
+  gap: 10px;
+}
+
+button {
+  font: inherit;
+  border-radius: 10px;
+  padding: 10px 16px;
+  cursor: pointer;
+  border: 1px solid transparent;
+}
+
+button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+button:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.primary {
+  flex: 1;
+  background: var(--accent);
+  color: var(--bg);
+  font-weight: 650;
+}
+
+.secondary {
+  background: transparent;
+  color: var(--muted);
+  border-color: var(--line);
+}
+
+.fine {
+  margin: 18px 0 0;
+  font-size: 11.5px;
+  color: var(--faint);
+}

@@ -31,10 +31,14 @@ func newTestApp(t *testing.T) *App {
 	a.newReader()
 	a.initPlugins(t.TempDir())
 	a.keyring = wallet.NewKeyring(memStore{}, nil)
+	a.nearKeyring = wallet.NewNearKeyring(memStore{}, nil)
 	a.startRefresh = func(int, chain.Reader, []string) {}
 	a.runOnMain = func(fn func()) { fn() }
 	a.goAsync = func(fn func()) { fn() }
 	a.confirmInstall = func(_ plugin.Manifest, _ installRequest, done func(bool)) { done(true) }
+	a.confirmConnect = func(string) bool { return true }
+	a.approve = func(approvalRequest) bool { return true }
+	a.dappConnected = map[string]bool{}
 	return a
 }
 

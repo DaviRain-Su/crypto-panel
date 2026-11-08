@@ -26,5 +26,8 @@ var (
 	iconCopy        = strokeIcon(`<rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V6a2 2 0 0 1 2-2h9"/>`)
 	iconLockOpen    = strokeIcon(`<rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 7.5-2"/>`)
 	iconChevron     = strokeIcon(`<path d="m9 6 6 6-6 6"/>`)
+	iconGlobe       = strokeIcon(`<circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3c2.5 2.5 4 5.6 4 9s-1.5 6.5-4 9c-2.5-2.5-4-5.6-4-9s1.5-6.5 4-9z"/>`)
+	iconClose       = strokeIcon(`<path d="m6 6 12 12"/><path d="m18 6-12 12"/>`)
+	iconSwap        = strokeIcon(`<path d="M4 8h13"/><path d="m14 5 3 3-3 3"/><path d="M20 16H7"/><path d="m10 13-3 3 3 3"/>`)
 	iconFingerprint = strokeIcon(`<path d="M12 11a2 2 0 0 0-2 2c0 2.5-.5 4.5-1.5 6"/><path d="M8.5 6.5A6 6 0 0 1 18 12c0 1.5-.2 3-.6 4.3"/><path d="M5.5 9A6 6 0 0 0 5 12c0 2.5-.4 4.6-1.2 6.5"/><path d="M12 7a5 5 0 0 0-5 5c0 2.2-.4 4.2-1.2 6"/><path d="M15.5 12c0 2.8-.4 5.2-1.2 7.2"/>`)
 )

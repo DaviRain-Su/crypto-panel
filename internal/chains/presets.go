@@ -42,6 +42,32 @@ var Base = chain.Network{
 	},
 }
 
+// NearTestnet is the NEAR family's first network, the one the wallet creates
+// accounts on and the hackathon demo uses.
+var NearTestnet = chain.Network{
+	ID:        "near:testnet",
+	Family:    chain.Near,
+	Name:      "NEAR Testnet",
+	Symbol:    "NEAR",
+	Decimals:  24,
+	RPCURL:    "https://rpc.testnet.near.org",
+	Explorer:  "https://testnet.nearblocks.io",
+	ChainName: "testnet",
+}
+
+// NearMainnet is NEAR's mainnet, read-only until the user imports a funded
+// key.
+var NearMainnet = chain.Network{
+	ID:        "near:mainnet",
+	Family:    chain.Near,
+	Name:      "NEAR",
+	Symbol:    "NEAR",
+	Decimals:  24,
+	RPCURL:    "https://rpc.mainnet.near.org",
+	Explorer:  "https://nearblocks.io",
+	ChainName: "mainnet",
+}
+
 // SolanaMainnet is the Solana family's first network. Its ID's reference is
 // the genesis hash, which is also what the endpoint is pinned to.
 var SolanaMainnet = chain.Network{

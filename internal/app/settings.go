@@ -13,6 +13,7 @@ import (
 	"github.com/davirain-su/crypto-panel/internal/chain"
 	"github.com/davirain-su/crypto-panel/internal/chains"
 	"github.com/davirain-su/crypto-panel/internal/i18n"
+	"github.com/davirain-su/crypto-panel/internal/neartx"
 	"github.com/davirain-su/crypto-panel/internal/plugin"
 	"github.com/davirain-su/crypto-panel/internal/wallet"
 )
@@ -37,6 +38,9 @@ type Settings struct {
 	// Wallet is the native wallet's accounts: addresses and labels only. The
 	// keys are in the OS keychain, never in this file.
 	Wallet []wallet.Account `json:"wallet,omitempty"`
+	// NearWallet is the wallet's NEAR accounts. Their ed25519 keys are in the
+	// keychain under near:key:<accountId>, never in this file.
+	NearWallet []wallet.NearAccount `json:"nearWallet,omitempty"`
 }
 
 const (
@@ -172,15 +176,34 @@ func (s Settings) Validate() Settings {
 		seenWallet[addr] = true
 		walletAccounts = append(walletAccounts, wallet.Account{Addr: addr, Label: trimLabel(a.Label)})
 	}
+	seenNear := make(map[string]bool, len(s.NearWallet))
+	nearAccounts := make([]wallet.NearAccount, 0, len(s.NearWallet))
+	for _, a := range s.NearWallet {
+		accountID, err := wallet.Normalize(wallet.Near, a.AccountID)
+		if err != nil || seenNear[accountID] {
+			continue
+		}
+		publicKey, err := neartx.ParsePublicKey(a.PublicKey)
+		if err != nil {
+			continue
+		}
+		seenNear[accountID] = true
+		nearAccounts = append(nearAccounts, wallet.NearAccount{
+			AccountID: accountID,
+			PublicKey: publicKey.String(),
+			Label:     trimLabel(a.Label),
+		})
+	}
 	kept := accounts[:0]
 	for _, a := range accounts {
-		if seenWallet[a.Addr] {
+		if seenWallet[a.Addr] || seenNear[a.Addr] {
 			continue
 		}
 		kept = append(kept, a)
 	}
 	s.Accounts = kept
 	s.Wallet = walletAccounts
+	s.NearWallet = nearAccounts
 	return s
 }
 
@@ -241,23 +264,46 @@ func (s Settings) IsWallet(addr string) bool {
 	return false
 }
 
+// IsNearWallet reports whether accountID is a NEAR account of the wallet.
+func (s Settings) IsNearWallet(accountID string) bool {
+	for _, a := range s.NearWallet {
+		if a.AccountID == accountID {
+			return true
+		}
+	}
+	return false
+}
+
+// IsWalletAccount reports whether addr is an account of the wallet, of
+// either family.
+func (s Settings) IsWalletAccount(addr string) bool {
+	return s.IsWallet(addr) || s.IsNearWallet(addr)
+}
+
 // WatchedOf lists every address of one family the app reads: the watch list
-// and, on EVM, the wallet's own accounts.
+// and the wallet's own accounts of that family.
 func (s Settings) WatchedOf(family chain.Family) []wallet.Address {
 	out := s.AccountsOf(family)
-	if family != chain.EVM {
-		return out
-	}
-	seen := make(map[string]bool, len(out)+len(s.Wallet))
+	seen := make(map[string]bool, len(out)+len(s.Wallet)+len(s.NearWallet))
 	for _, a := range out {
 		seen[a.Addr] = true
 	}
-	for _, a := range s.Wallet {
-		if seen[a.Addr] {
-			continue
+	add := func(addr, label string) {
+		if seen[addr] {
+			return
 		}
-		seen[a.Addr] = true
-		out = append(out, wallet.Address{Addr: a.Addr, Label: a.Label})
+		seen[addr] = true
+		out = append(out, wallet.Address{Addr: addr, Label: label})
+	}
+	switch family {
+	case chain.EVM:
+		for _, a := range s.Wallet {
+			add(a.Addr, a.Label)
+		}
+	case chain.Near:
+		for _, a := range s.NearWallet {
+			add(a.AccountID, a.Label)
+		}
 	}
 	return out
 }
@@ -282,6 +328,8 @@ func addressFamily(addr string) (chain.Family, bool) {
 	switch kind {
 	case wallet.EVM:
 		return chain.EVM, true
+	case wallet.Near:
+		return chain.Near, true
 	case wallet.Solana:
 		return chain.Solana, true
 	}

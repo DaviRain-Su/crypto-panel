@@ -84,6 +84,9 @@ type Error struct {
 }
 
 func (e *Error) Error() string {
+	if len(e.Data) > 0 && string(e.Data) != "null" {
+		return fmt.Sprintf("RPC error %d: %s: %s", e.Code, e.Message, e.Data)
+	}
 	return fmt.Sprintf("RPC error %d: %s", e.Code, e.Message)
 }
 
@@ -121,6 +124,13 @@ func NewBroker(opts Options) *Broker {
 // Call makes one JSON-RPC call to the endpoint at rawURL. Answers are
 // cached for CacheTTL.
 func (b *Broker) Call(ctx context.Context, rawURL, method string, params any) (json.RawMessage, error) {
+	return b.CallWithTimeout(ctx, rawURL, method, params, 0)
+}
+
+// CallWithTimeout is Call with its own timeout, for a method that waits on
+// the chain, such as a transaction broadcast. A zero timeout uses the
+// broker's.
+func (b *Broker) CallWithTimeout(ctx context.Context, rawURL, method string, params any, timeout time.Duration) (json.RawMessage, error) {
 	if result, ok := b.cached(rawURL, method, params); ok {
 		return result, nil
 	}
@@ -128,7 +138,7 @@ func (b *Broker) Call(ctx context.Context, rawURL, method string, params any) (j
 		return nil, err
 	}
 	start := b.opts.Now()
-	result, err := b.do(ctx, rawURL, method, params)
+	result, err := b.do(ctx, rawURL, method, params, timeout)
 	b.record(rawURL, method, b.opts.Now().Sub(start), err)
 	if err != nil {
 		return nil, err
@@ -160,7 +170,7 @@ type response struct {
 	Error   *Error          `json:"error"`
 }
 
-func (b *Broker) do(ctx context.Context, rawURL, method string, params any) (json.RawMessage, error) {
+func (b *Broker) do(ctx context.Context, rawURL, method string, params any, timeout time.Duration) (json.RawMessage, error) {
 	if params == nil {
 		params = []any{}
 	}
@@ -168,7 +178,10 @@ func (b *Broker) do(ctx context.Context, rawURL, method string, params any) (jso
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", method, err)
 	}
-	reqCtx, cancel := context.WithTimeout(ctx, b.opts.Timeout)
+	if timeout <= 0 {
+		timeout = b.opts.Timeout
+	}
+	reqCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	req, err := http.NewRequestWithContext(reqCtx, http.MethodPost, rawURL, bytes.NewReader(payload))
 	if err != nil {
