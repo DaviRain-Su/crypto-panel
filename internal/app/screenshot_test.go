@@ -146,6 +146,10 @@ func TestScreenshots(t *testing.T) {
 	tt = ui.NewTester(a.view, windowWidth, windowHeight)
 	tt.SetDark(true)
 	save(t, tt, "new-settings-dark")
+	a.settings.AgentEnabled = true
+	a.agentAddr = "127.0.0.1:8765"
+	a.agentToken = "Zk3n0Qe8Vt7bY2mR5cLx9WpA4sD6fGhJ1uKiO0aXeQw"
+	save(t, ui.NewTester(a.view, windowWidth, windowHeight), "new-settings-agent")
 
 	a = intentsTestApp(t)
 	a.route = routeIntents

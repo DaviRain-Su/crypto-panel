@@ -58,6 +58,9 @@ no auto-approval. The Touch ID prompt is a system check, **not** a Passkey.
 - **The wallet is native.** EVM and NEAR accounts are created or imported on
   the Wallet page; their keys live in the OS keychain and never reach a plugin
   or a web page. Signing is only ever the shell's own decoded approval.
+- **A read-only local API** (opt-in): a loopback HTTP server with a bearer
+  token, so a local agent can read the portfolio and the installed apps. It
+  cannot sign, approve or install.
 
 ## What works now
 
@@ -170,6 +173,28 @@ An app installs three ways:
 
 Local installs are unsigned and the app says so. See
 [`docs/store.md`](docs/store.md) for the registry format and signing.
+
+### Local agent API
+
+Settings → **Local API** turns on a read-only HTTP API on loopback, for a
+local agent to read the app. It listens on `127.0.0.1` only, requires a
+bearer token (kept in the OS keychain, rotatable in Settings), and refuses
+requests that carry a browser `Origin`:
+
+```
+GET  /v0/portfolio            → network, block, accounts and token balances
+GET  /v0/plugins              → installed apps and their permissions
+POST /v0/plugins/{id}/refresh → asks an app for its first page, as data
+```
+
+```sh
+curl -H "Authorization: Bearer <token>" http://127.0.0.1:8765/v0/portfolio
+```
+
+Amounts are decimal strings in the smallest unit, with the symbol and
+decimals beside them. The API cannot sign, approve, install or reach a key:
+an app's `requestSign` is refused over the API before any approval window
+can open. There is no prices endpoint, because the app has no fiat prices.
 
 ### NEAR Intents (dry quote)
 
@@ -356,8 +381,8 @@ Other useful tests: `TestDappOrigin` (https / loopback only),
   key; a device-bound passkey can be lost, and a passkey cannot be exported.
 - **macOS-first.** The system check is macOS-only; the app builds elsewhere
   but the presence check is unavailable.
-- **No hardware wallet, menu bar panel, fiat prices or agent API.** Those are
-  later milestones.
+- **No hardware wallet, menu bar panel or fiat prices.** Those are later
+  milestones.
 
 ## Security model
 
@@ -402,7 +427,8 @@ key is shown once, so save it.
 | **M2** | Plugin store: signed registry installs, permission prompts, update guards, the malicious-plugin test suite — **done** |
 | **M3** | Native wallet: hot wallet in the OS keychain, decoded approvals, `host.requestSign` — **done** |
 | **Hackathon** | NEAR wallet and approvals, function-call key limits, DApp web view and bridge, plugin NEAR requests, Intents dry quote — **this slice** |
-| **Next** | Passkey account (WebAuthn + ERC-4337), hardware wallet, agent API, menu bar panel |
+| **M4 (part)** | Read-only local agent API: loopback HTTP, bearer token in the keychain, `/v0/portfolio`, `/v0/plugins`, `POST /v0/plugins/{id}/refresh` — **done** |
+| **Next** | Passkey account (WebAuthn + ERC-4337), hardware wallet, menu bar panel |
 
 ## License
 

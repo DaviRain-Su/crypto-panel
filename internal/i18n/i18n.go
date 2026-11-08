@@ -333,6 +333,16 @@ const (
 	StoreFailed        Key = "storeFailed"
 	StoreCanceled      Key = "storeCanceled"
 
+	AgentSection     Key = "agentSection"
+	AgentTitle       Key = "agentTitle"
+	AgentBody        Key = "agentBody"
+	AgentPort        Key = "agentPort"
+	AgentPortInvalid Key = "agentPortInvalid"
+	AgentListening   Key = "agentListening"
+	AgentToken       Key = "agentToken"
+	AgentRotate      Key = "agentRotate"
+	AgentCurl        Key = "agentCurl"
+
 	StoreKickerInstall   Key = "storeKickerInstall"
 	StoreKickerUpdate    Key = "storeKickerUpdate"
 	StoreInstallTitle    Key = "storeInstallTitle"
@@ -670,6 +680,16 @@ var messages = map[Key]map[string]string{
 	StoreUpdated:       {English: "Updated %s to v%s.", Chinese: "已将 %s 更新到 v%s。"},
 	StoreFailed:        {English: "Install failed: %s", Chinese: "安装失败：%s"},
 	StoreCanceled:      {English: "Install canceled.", Chinese: "已取消安装。"},
+
+	AgentSection:     {English: "Local API", Chinese: "本地 API"},
+	AgentTitle:       {English: "Local agent API", Chinese: "本地 Agent API"},
+	AgentBody:        {English: "A read-only API on this machine for a local agent: the portfolio and the installed apps. It cannot sign or approve, and it listens on loopback only.", Chinese: "供本机 Agent 读取的只读接口：持仓和已安装应用。不能签名或批准，且只监听本机回环地址。"},
+	AgentPort:        {English: "Port", Chinese: "端口"},
+	AgentPortInvalid: {English: "The port must be 1 to 65535.", Chinese: "端口必须是 1 到 65535。"},
+	AgentListening:   {English: "Listening on http://%s", Chinese: "正在监听 http://%s"},
+	AgentToken:       {English: "Bearer token", Chinese: "访问令牌"},
+	AgentRotate:      {English: "Rotate token", Chinese: "更换令牌"},
+	AgentCurl:        {English: "curl -H \"Authorization: Bearer <token>\" http://%s/v0/portfolio", Chinese: "curl -H \"Authorization: Bearer <token>\" http://%s/v0/portfolio"},
 
 	StoreKickerInstall:   {English: "Plugin store", Chinese: "插件商店"},
 	StoreKickerUpdate:    {English: "Plugin update", Chinese: "插件更新"},

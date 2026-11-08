@@ -344,18 +344,18 @@ Key custody:
   sidebar and page header. A menu bar item showing the headline number, opening
   the window on click, is an M4 entry point; the plugin that provides the
   headline is a setting (`navigation` + `headline: true` in the manifest).
-- **Agent API**: `localhost` HTTP with a bearer token the user can rotate:
+- **Agent API** (implemented): `localhost` HTTP with a bearer token the user
+  can rotate:
 
   ```
   GET  /v0/portfolio            → totals, tokens, chains
   GET  /v0/plugins              → installed plugins and their permissions
   POST /v0/plugins/{id}/refresh → asks a plugin for new data
-  GET  /v0/prices?ids=eth,usdc
   ```
 
   Read-only by construction: no endpoint signs, and `requestSign` is not reachable
   over the API. An agent can prepare a transaction *description* to show the user,
-  not approve one.
+  not approve one. `/v0/prices` is not implemented: the app has no fiat prices.
 
 ## 10. Changes this repository would carry
 
@@ -405,7 +405,7 @@ crypto-panel/
 | **M1** | Plugin runtime: manifest, moejs realm, limits, `setting`/`kv`/`fetch`/`rpc`/`render`, manager UI (install from folder, enable, disable, logs), two example fixtures — **done** | A third-party plugin added by hand shows a page; a plugin that fetches outside its allowlist is refused and the refusal is visible |
 | **M2** | Install from GitHub/zip, signature + hash, permission prompts, restart-on-abuse, the malicious-plugin suite — **done** | All §13 fixtures behave as specified; an unsigned network install is refused |
 | **M3** | Native wallet: decoded approval UI; hot wallet in the OS keychain; the system check on unlock, reveal and sign; `host.requestSign` behind `sign: true` — **done** | A signing plugin cannot get a signature without an explicit, decoded approval and, when enabled, the system check |
-| **M4** | Hardware wallet; agent API; menu bar headline, screen-edge panel and global shortcut | An agent reads the portfolio over the API; a Ledger signs a transfer the user approved |
+| **M4** | Hardware wallet; agent API (**done**); menu bar headline, screen-edge panel and global shortcut | An agent reads the portfolio over the API; a Ledger signs a transfer the user approved |
 
 ## 13. Testing
 

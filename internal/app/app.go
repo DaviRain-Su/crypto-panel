@@ -10,6 +10,7 @@ import (
 	"log"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -17,6 +18,7 @@ import (
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
 
+	"github.com/davirain-su/crypto-panel/internal/agent"
 	"github.com/davirain-su/crypto-panel/internal/chain"
 	"github.com/davirain-su/crypto-panel/internal/i18n"
 	"github.com/davirain-su/crypto-panel/internal/intents"
@@ -175,6 +177,18 @@ type App struct {
 	dappErr       string
 	dappConnected map[string]bool
 
+	// The read-only local API for agents: its listener, the keychain the
+	// bearer token lives in, the token shown in Settings, and the port form.
+	agentSecrets   wallet.SecretStore
+	agentSrv       *agent.Server
+	agentErr       string
+	agentAddr      string
+	agentToken     string
+	agentPortDraft string
+	// agentRefreshMu runs one API refresh at a time, so a local agent cannot
+	// start a runtime per request.
+	agentRefreshMu sync.Mutex
+
 	// The Intents page: the assets 1Click supports, the swap the user is
 	// asking about, and the last dry quote. approveIntents shows a quote's
 	// conditions; tests replace it.
@@ -208,15 +222,17 @@ func New() (*App, error) {
 		log.Printf("crypto-panel: %v", loadErr)
 	}
 	a := &App{
-		settings:      settings,
-		settingsPath:  path,
-		systemLocale:  i18n.English,
-		rpcDraft:      settings.RPCURL,
-		storeURLDraft: settings.PluginStoreURL,
-		dappConnected: map[string]bool{},
+		settings:       settings,
+		settingsPath:   path,
+		systemLocale:   i18n.English,
+		rpcDraft:       settings.RPCURL,
+		storeURLDraft:  settings.PluginStoreURL,
+		agentPortDraft: strconv.Itoa(settings.AgentPort),
+		dappConnected:  map[string]bool{},
 	}
 	a.newReader()
 	a.initPlugins(dir)
+	a.agentSecrets = mygo.Secrets.Service("crypto-panel-agent")
 	a.keyring = wallet.NewKeyring(mygo.Secrets.Service("crypto-panel-wallet"), settings.Wallet)
 	a.nearKeyring = wallet.NewNearKeyring(mygo.Secrets.Service("crypto-panel-wallet"), settings.NearWallet)
 	a.intentsClient = intents.New()
@@ -258,11 +274,13 @@ func (a *App) Ready() {
 	a.applyLocale()
 	a.registerDappScheme()
 	a.createWindow()
+	a.startAgent()
 	// The Dock icon, or launching the app again, brings the window back.
 	mygo.App.OnActivate(func(bool) { a.showWindow() })
 	mygo.App.OnSecondInstance(func([]string, string) { a.showWindow() })
 	mygo.App.OnBeforeQuit(func(*mygo.QuitEvent) {
 		a.quitting = true
+		a.stopAgent()
 		a.stopAllRunners()
 	})
 	// A locked screen is a locked wallet.

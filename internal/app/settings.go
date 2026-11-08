@@ -30,6 +30,12 @@ type Settings struct {
 	RefreshSeconds int    `json:"refreshSeconds,omitempty"`
 	// PluginStoreURL is the registry the store reads. Empty means no store.
 	PluginStoreURL string `json:"pluginStoreUrl,omitempty"`
+	// AgentEnabled turns on the read-only local API. Its bearer token lives
+	// in the OS keychain, never in this file.
+	AgentEnabled bool `json:"agentEnabled,omitempty"`
+	// AgentPort is the loopback port the local API listens on. Zero, as in an
+	// old settings file, is replaced by the default.
+	AgentPort int `json:"agentPort,omitempty"`
 	// DisablePresence turns off the system's confirmation before unlocking,
 	// revealing a key or signing. The check is on by default where the
 	// platform offers one.
@@ -50,6 +56,8 @@ const (
 	MinRefreshSeconds = 15
 	// MaxRefreshSeconds is the slowest the settings offer.
 	MaxRefreshSeconds = 3600
+	// DefaultAgentPort is the local API's port until the user picks another.
+	DefaultAgentPort = 8765
 )
 
 // DefaultSettings is the state before the user changes anything.
@@ -57,6 +65,7 @@ func DefaultSettings() Settings {
 	return Settings{
 		NetworkID:      chains.Default().ID,
 		RefreshSeconds: DefaultRefreshSeconds,
+		AgentPort:      DefaultAgentPort,
 	}
 }
 
@@ -150,6 +159,9 @@ func (s Settings) Validate() Settings {
 	}
 	if s.RefreshSeconds < MinRefreshSeconds || s.RefreshSeconds > MaxRefreshSeconds {
 		s.RefreshSeconds = DefaultRefreshSeconds
+	}
+	if s.AgentPort <= 0 || s.AgentPort > 65535 {
+		s.AgentPort = DefaultAgentPort
 	}
 	seen := make(map[string]bool, len(s.Accounts))
 	accounts := make([]wallet.Address, 0, len(s.Accounts))
