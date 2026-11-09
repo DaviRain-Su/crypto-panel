@@ -213,6 +213,9 @@ func (ar *Archive) Install() (Manifest, error) {
 	} else if err := os.Rename(ar.dir, dest); err != nil {
 		return Manifest{}, err
 	}
+	if err := ar.store.rememberInstall(ar.Manifest.ID, info, dest); err != nil {
+		return Manifest{}, err
+	}
 	ar.done = true
 	ar.dir = ""
 	return ar.Manifest, nil
@@ -241,58 +244,70 @@ type installInfo struct {
 	PackageHash  string `json:"packageHash,omitempty"`
 }
 
+var errInstallNotRegular = errors.New("install record is not a regular file")
+
 func loadInstallInfo(dir string) (installInfo, error) {
-	data, err := os.ReadFile(filepath.Join(dir, "install.json"))
-	if errors.Is(err, fs.ErrNotExist) {
+	record, _, err := readInstallBytes(dir)
+	// A missing or non-regular record does not make Get fail. Host provenance
+	// decides whether the API may treat the app as unsigned. Opening a FIFO
+	// here would block.
+	if errors.Is(err, fs.ErrNotExist) || errors.Is(err, errInstallNotRegular) {
 		return installInfo{}, nil
 	}
-	if err != nil {
-		return installInfo{}, err
-	}
-	var info installInfo
-	if err := json.Unmarshal(data, &info); err != nil {
-		return installInfo{}, err
-	}
-	return info, nil
+	return record, err
 }
 
 // readInstallInfoNoFollow 只接受普通 install.json。缺失、符号链接、目录和其他
 // 非普通文件都是错误，而且不会打开链接目标。
 func readInstallInfoNoFollow(dir string) (installInfo, error) {
-	path := filepath.Join(dir, "install.json")
-	info, err := os.Lstat(path)
+	record, _, err := readInstallBytes(dir)
+	return record, err
+}
+
+// readInstallBytes rejects anything that is not a regular file before opening
+// it, so a FIFO cannot block the caller. The unix opener is also non-blocking.
+func readInstallBytes(dir string) (installInfo, []byte, error) {
+	recordPath := filepath.Join(dir, "install.json")
+	info, err := os.Lstat(recordPath)
 	if err != nil {
-		return installInfo{}, err
+		return installInfo{}, nil, err
 	}
 	if info.Mode()&fs.ModeSymlink != 0 || !info.Mode().IsRegular() {
-		return installInfo{}, errors.New("install record is not a regular file")
+		return installInfo{}, nil, errInstallNotRegular
 	}
-	f, err := openInstallRecord(path)
+	f, err := openInstallRecord(recordPath)
 	if err != nil {
-		return installInfo{}, err
+		return installInfo{}, nil, err
 	}
 	defer f.Close()
 	opened, err := f.Stat()
 	if err != nil || !opened.Mode().IsRegular() || !os.SameFile(info, opened) {
-		return installInfo{}, errors.New("install record changed")
+		return installInfo{}, nil, errors.New("install record changed")
 	}
 	data, err := io.ReadAll(io.LimitReader(f, 1<<20))
 	if err != nil {
-		return installInfo{}, err
+		return installInfo{}, nil, err
 	}
 	var record installInfo
 	if err := json.Unmarshal(data, &record); err != nil {
-		return installInfo{}, err
+		return installInfo{}, nil, err
 	}
-	return record, nil
+	return record, data, nil
+}
+
+func marshalInstallInfo(info installInfo) ([]byte, error) {
+	data, err := json.MarshalIndent(info, "", "  ")
+	if err != nil {
+		return nil, err
+	}
+	return append(data, '\n'), nil
 }
 
 func saveInstallInfo(dir string, info installInfo) error {
-	data, err := json.MarshalIndent(info, "", "  ")
+	data, err := marshalInstallInfo(info)
 	if err != nil {
 		return err
 	}
-	data = append(data, '\n')
 	return writeFileAtomic(filepath.Join(dir, "install.json"), data, 0o600)
 }
 

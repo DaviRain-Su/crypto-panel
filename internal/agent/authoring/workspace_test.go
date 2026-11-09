@@ -31,20 +31,18 @@ func TestUpdateCopiesCompleteCodeWithoutStateOrSecrets(t *testing.T) {
 	probe := &secretProbe{}
 	s, p, _, store := harnessSecrets(t, probe)
 	// 使用现有的本地文件夹安装接口准备旧版，不调用 Decide。
+	// 包内容必须在安装时就位，宿主才会记下与磁盘一致的来源；之后只追加
+	// 不参与包摘要的状态和凭据文件，不能改写 install.json。
 	storeWithSecrets := store
 	old := t.TempDir()
 	if err := writeApp(old, "local.personal.existing", "1.0.0", testCode); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := storeWithSecrets.Install(old); err != nil {
-		t.Fatal(err)
-	}
-	existing := filepath.Join(store.Dir(), "local.personal.existing")
-	if err := os.MkdirAll(filepath.Join(existing, "src", "lib"), 0700); err != nil {
+	if err := os.MkdirAll(filepath.Join(old, "src", "lib"), 0700); err != nil {
 		t.Fatal(err)
 	}
 	for name, value := range map[string]string{"src/main.mjs": testCode, "src/lib/helper.js": "export const helper = 1;", "asset.txt": "non-secret resource"} {
-		if err := os.WriteFile(filepath.Join(existing, filepath.FromSlash(name)), []byte(value), 0600); err != nil {
+		if err := os.WriteFile(filepath.Join(old, filepath.FromSlash(name)), []byte(value), 0600); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -57,11 +55,7 @@ func TestUpdateCopiesCompleteCodeWithoutStateOrSecrets(t *testing.T) {
 	meta.Permissions.StorageKb = 4
 	meta.Settings = []plugin.SettingField{{Key: "apiKey", Label: "凭据", Secret: true}}
 	data, _ := json.Marshal(meta)
-	if err := os.WriteFile(filepath.Join(existing, "plugin.json"), data, 0600); err != nil {
-		t.Fatal(err)
-	}
-	baseline, err := storeWithSecrets.PackageHash(meta.ID)
-	if err != nil {
+	if err := os.WriteFile(filepath.Join(old, "plugin.json"), data, 0600); err != nil {
 		t.Fatal(err)
 	}
 	random := make([]byte, 16)
@@ -69,30 +63,30 @@ func TestUpdateCopiesCompleteCodeWithoutStateOrSecrets(t *testing.T) {
 		t.Fatal(err)
 	}
 	secret := hex.EncodeToString(random)
-	for _, name := range []string{"state.json", "kv.json", "install.json", "settings.json", "secrets.json", "credentials.json", ".seeded-official", ".env", ".env.local", "private.key", "src/state.json"} {
-		if err := os.WriteFile(filepath.Join(existing, filepath.FromSlash(name)), []byte(secret), 0600); err != nil {
+	for _, name := range []string{"settings.json", "secrets.json", "credentials.json", ".seeded-official", ".env", ".env.local", "private.key", "src/state.json"} {
+		if err := os.WriteFile(filepath.Join(old, filepath.FromSlash(name)), []byte(secret), 0600); err != nil {
 			t.Fatal(err)
 		}
 	}
 	for _, name := range []string{"settings", "credentials", ".git", ".ssh"} {
-		if err := os.Mkdir(filepath.Join(existing, name), 0700); err != nil {
+		if err := os.Mkdir(filepath.Join(old, name), 0700); err != nil {
 			t.Fatal(err)
 		}
-		if err := os.WriteFile(filepath.Join(existing, name, "private"), []byte(secret), 0600); err != nil {
+		if err := os.WriteFile(filepath.Join(old, name, "private"), []byte(secret), 0600); err != nil {
 			t.Fatal(err)
 		}
 	}
-	// 安装记录使用合法的空记录，避免测试夹具破坏 Manager 的来源检查。
-	if err := os.Remove(filepath.Join(existing, "install.json")); err != nil {
+	if _, err := storeWithSecrets.Install(old); err != nil {
 		t.Fatal(err)
 	}
+	existing := filepath.Join(store.Dir(), "local.personal.existing")
 	if err := os.WriteFile(filepath.Join(existing, "state.json"), []byte(`{"enabled":true,"settings":{"label":"`+secret+`"}}`), 0600); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(existing, "kv.json"), []byte(`{"data":"`+secret+`"}`), 0600); err != nil {
 		t.Fatal(err)
 	}
-	baseline, err = storeWithSecrets.PackageHash(meta.ID)
+	baseline, err := storeWithSecrets.PackageHash(meta.ID)
 	if err != nil {
 		t.Fatal(err)
 	}

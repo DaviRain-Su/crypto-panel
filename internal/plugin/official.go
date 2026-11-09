@@ -226,6 +226,10 @@ func (s *Store) installOfficial(id string) error {
 		return err
 	}
 	cleanup = false
+	if err := s.rememberInstall(id, info, dest); err != nil {
+		_ = os.RemoveAll(dest)
+		return err
+	}
 	return nil
 }
 

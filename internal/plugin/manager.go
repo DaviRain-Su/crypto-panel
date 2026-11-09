@@ -56,6 +56,9 @@ func NewManager(store *Store) (*Manager, error) {
 	if err := m.recoverTransactions(); err != nil {
 		return nil, err
 	}
+	if err := store.migrateProvenance(); err != nil {
+		return nil, managementError("STORE_UNAVAILABLE", "无法建立安装来源记录", 503)
+	}
 	entries, err := os.ReadDir(m.pendingDir)
 	if err != nil {
 		return nil, managementError("STORE_UNAVAILABLE", "无法清理旧候选", 503)
@@ -260,12 +263,13 @@ func (m *Manager) Decide(id string, allow bool) (Installation, error) {
 // beforeProposalCommit 仅测试设置。它在候选通过校验、写入任务表之前运行。
 var beforeProposalCommit func()
 
-// APIMayMutate 只放行带有可读普通 install.json 的未签名 local.* 个人应用。
-// 官方、已签名，以及安装记录缺失、为链接或无法解析的应用仍由原生界面卸载和改设置。
+// APIMayMutate 只放行宿主安装记录与磁盘一致的未签名 local.* 个人应用。
+// 记录在应用目录之外。缺失、不匹配，或 install.json 被替换、硬链接、链接、
+// 管道化或无法解析时一律拒绝。原生界面卸载不经过这里。
 // 应用目录本身不存在时不在这里报错，因此删除一个已经不存在的 local.* 应用保持幂等。
 func (m *Manager) APIMayMutate(id string) error {
 	if !strings.HasPrefix(id, "local.") {
-		return managementError("API_MUTATION_FORBIDDEN", "本机 API 只能卸载或修改未签名的 local.* 个人应用", 403)
+		return apiMutationForbidden()
 	}
 	inst, err := m.store.Get(id)
 	if errors.Is(err, ErrNotInstalled) {
@@ -274,14 +278,7 @@ func (m *Manager) APIMayMutate(id string) error {
 	if err != nil {
 		return installedError(err)
 	}
-	if inst.Official || inst.Signed || !strings.HasPrefix(inst.Manifest.ID, "local.") {
-		return managementError("API_MUTATION_FORBIDDEN", "本机 API 只能卸载或修改未签名的 local.* 个人应用", 403)
-	}
-	info, err := readInstallInfoNoFollow(inst.Dir)
-	if err != nil || info.Official || info.Hash != "" || info.Publisher != "" || info.Signature != "" {
-		return managementError("API_MUTATION_FORBIDDEN", "安装记录缺失、不是普通文件或无法确认是未签名个人应用，本机 API 不能卸载或修改", 403)
-	}
-	return nil
+	return m.store.authorizeAPIMutation(inst)
 }
 
 // Cancel 仅取消 pending，不能宣称撤销正在提交的安装。

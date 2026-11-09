@@ -36,9 +36,9 @@ Lintel 的个人应用仍是沙箱 JS 与原生页面数据。编码 agent 负�
 | `PUT /v0/plugins/{id}` | 同 id 更新提议，附 expectedHash，202 + pending |
 | `GET /v0/installations/{requestId}` | 查询安装状态 |
 | `DELETE /v0/installations/{requestId}` | 取消本机 API 的 pending。ACP 任务返回 403 `INSTALLATION_ORIGIN_FORBIDDEN`，列表和查询不暴露其 requestId |
-| `PUT /v0/plugins/{id}/settings` | 部分更新带有可读普通 `install.json` 的未签名 `local.*` 应用的已声明设置。其他应用，以及记录缺失、为符号链接或无法解析的 `local.*` 应用，返回 403 `API_MUTATION_FORBIDDEN` |
+| `PUT /v0/plugins/{id}/settings` | 部分更新未签名 `local.*` 应用的已声明设置。宿主在应用目录外保存安装来源（`<数据目录>/.plugins-provenance.json`，与 `settings.json` 相邻）。该记录必须存在且与磁盘上的包摘要和 `install.json` 一致。记录缺失、摘要不一致，或 `install.json` 被替换成普通伪造文件、硬链接、符号链接、目录、管道或无法解析时，返回 403 `API_MUTATION_FORBIDDEN`，凭据保持不变 |
 | `POST /v0/plugins/{id}/refresh` | 执行已安装应用的一个声明页面 |
-| `DELETE /v0/plugins/{id}` | 卸载带有可读普通 `install.json` 的未签名 `local.*` 应用与宿主状态。其他应用，以及记录缺失、为符号链接、目录或无法解析的 `local.*` 应用，返回 403 `API_MUTATION_FORBIDDEN` |
+| `DELETE /v0/plugins/{id}` | 卸载未签名 `local.*` 应用与宿主状态。条件与设置接口相同：必须有匹配的宿主安装记录。伪造的普通 `install.json`、硬链接或不匹配同样返回 403 `API_MUTATION_FORBIDDEN`。升级前已安装、且当时的 `install.json` 不是可解析普通文件的应用，会被记为未签名并允许本机 API 修改；原生界面卸载不依赖这份记录 |
 
 没有 HTTP approve、钱包签名、广播或密钥接口。refresh 禁用 EVM / NEAR 签名，但声明范围内的 host.fetch 和 KV 写入仍可能产生副作用，不能代替静态 validate。
 

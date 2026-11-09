@@ -51,8 +51,9 @@ type Installed struct {
 // plugin.json, its source, and state.json. The folder is the install unit;
 // removing it removes the plugin.
 type Store struct {
-	dir     string
-	secrets Secrets
+	dir          string
+	secrets      Secrets
+	provenanceMu sync.Mutex
 }
 
 // NewStore returns a store rooted at dir, which is created on first write.
@@ -218,10 +219,15 @@ func (s *Store) Install(src string) (Manifest, error) {
 	if filepath.Dir(filepath.Clean(src)) == filepath.Clean(s.dir) && strings.HasPrefix(filepath.Base(src), ".local-") {
 		via = "zip"
 	}
-	if err := saveInstallInfo(tmp, installInfo{InstalledVia: via}); err != nil {
+	info := installInfo{InstalledVia: via}
+	if err := saveInstallInfo(tmp, info); err != nil {
 		return Manifest{}, err
 	}
 	if err := os.Rename(tmp, dest); err != nil {
+		return Manifest{}, err
+	}
+	if err := s.rememberInstall(m.ID, info, dest); err != nil {
+		_ = os.RemoveAll(dest)
 		return Manifest{}, err
 	}
 	return m, nil
@@ -254,6 +260,9 @@ func (s *Store) remove(id string) error {
 	lock.Lock()
 	defer lock.Unlock()
 	if _, err := os.Lstat(dir); errors.Is(err, fs.ErrNotExist) {
+		if ferr := s.forgetProvenance(id); ferr != nil {
+			return managementError("REMOVE_FAILED", "无法更新安装来源记录", 500)
+		}
 		return nil
 	} else if err != nil {
 		return managementError("REMOVE_FAILED", "无法读取应用目录", 500)
@@ -273,6 +282,9 @@ func (s *Store) remove(id string) error {
 	}
 	if os.RemoveAll(dir) != nil {
 		return managementError("REMOVE_FAILED", "无法删除应用目录", 500)
+	}
+	if err := s.forgetProvenance(id); err != nil {
+		return managementError("REMOVE_FAILED", "应用已删除，但无法更新安装来源记录", 500)
 	}
 	return nil
 }

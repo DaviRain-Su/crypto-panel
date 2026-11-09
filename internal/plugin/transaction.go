@@ -22,12 +22,11 @@ func (m *Manager) checkTarget(manifest Manifest, operation, expectedHash string)
 		return nil, nil
 	}
 	inst, err := m.store.Get(manifest.ID)
-	if err != nil || inst.Err != "" {
+	if err != nil {
 		return nil, managementError("BASE_CHANGED", "已安装内容发生变化，请重新读取后提议更新", 409)
 	}
-	info, err := loadInstallInfo(inst.Dir)
-	if err != nil || inst.Official || inst.Signed || info.Official || info.Hash != "" || info.Publisher != "" || info.Signature != "" {
-		return nil, managementError("SOURCE_NOT_ALLOWED", "只能更新个人 Unsigned 应用", 422)
+	if err := m.store.authorizeUpdate(inst); err != nil {
+		return nil, err
 	}
 	hash, err := m.store.PackageHash(manifest.ID)
 	if err != nil || hash != expectedHash {
@@ -195,6 +194,13 @@ func (m *Manager) commit(task *installationTask) error {
 		if m.rename(dest, next) != nil {
 			cleanup = false
 			return managementError("RECOVERY_REQUIRED", "目录切换需要启动恢复核对，旧版备份已保留", 500)
+		}
+		return rollback()
+	}
+	if err := m.store.rememberInstall(record.PluginID, info, dest); err != nil {
+		if old == nil {
+			_ = os.RemoveAll(dest)
+			return managementError("INSTALLATION_FAILED", "无法记录安装来源，新版本已撤回", 500)
 		}
 		return rollback()
 	}
@@ -386,6 +392,9 @@ func (m *Manager) recoverTransaction(tx string, record commitRecord) error {
 	info, infoErr := loadInstallInfo(dest)
 	stErr := validateRecoveryState(dest, true)
 	if hashErr == nil && infoErr == nil && stErr == nil && hash == record.PackageHash && info.PackageHash == record.PackageHash && (info.InstalledVia == "local-api" || info.InstalledVia == "acp") {
+		if err := m.store.adoptPersonalRecord(record.PluginID, dest, record.PackageHash); err != nil {
+			return managementError("RECOVERY_FAILED", "无法记录已恢复应用的安装来源", 503)
+		}
 		if syncDirectory(m.store.dir) != nil || os.RemoveAll(tx) != nil {
 			return managementError("RECOVERY_FAILED", "无法完成新版提交恢复", 503)
 		}
