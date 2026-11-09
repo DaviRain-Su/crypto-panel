@@ -127,6 +127,10 @@ func (m *Manager) Propose(source Source, operation, targetID, expectedHash, via 
 	if targetID != "" && targetID != c.manifest.ID {
 		return Installation{}, managementError("PLUGIN_ID_MISMATCH", "目标 id 与候选清单不一致", 409)
 	}
+	// 生产路径为空。测试在任务写入前关闭入口，以观察代际是否作废仍在校验的提议。
+	if beforeProposalCommit != nil {
+		beforeProposalCommit()
+	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if m.closed {
@@ -145,7 +149,8 @@ func (m *Manager) Propose(source Source, operation, targetID, expectedHash, via 
 		if task.record.PluginID != c.manifest.ID {
 			continue
 		}
-		if task.record.Operation == operation && task.record.PackageHash == c.hash && task.record.ExpectedHash == expectedHash {
+		// 相同内容只复用同一入口的任务。API 不能挂到 ACP 任务上，否则关闭 API 撤不掉它。
+		if task.record.Operation == operation && task.record.PackageHash == c.hash && task.record.ExpectedHash == expectedHash && task.record.Via == via {
 			return cloneInstallation(task.record), nil
 		}
 		return Installation{}, managementError("CANDIDATE_CONFLICT", "该应用已有其他待处理候选", 409)
@@ -252,14 +257,55 @@ func (m *Manager) Decide(id string, allow bool) (Installation, error) {
 	return cloneInstallation(task.record), nil
 }
 
+// beforeProposalCommit 仅测试设置。它在候选通过校验、写入任务表之前运行。
+var beforeProposalCommit func()
+
+// APIMayMutate 只放行未签名的 local.* 个人应用。官方和已签名应用仍由原生界面卸载和改设置。
+// 尚未安装的 id 不在这里报错，因此删除一个已经不存在的 local.* 应用保持幂等。
+func (m *Manager) APIMayMutate(id string) error {
+	if !strings.HasPrefix(id, "local.") {
+		return managementError("API_MUTATION_FORBIDDEN", "本机 API 只能卸载或修改未签名的 local.* 个人应用", 403)
+	}
+	inst, err := m.store.Get(id)
+	if errors.Is(err, ErrNotInstalled) {
+		return nil
+	}
+	if err != nil {
+		return installedError(err)
+	}
+	if inst.Official || inst.Signed || !strings.HasPrefix(inst.Manifest.ID, "local.") {
+		return managementError("API_MUTATION_FORBIDDEN", "本机 API 只能卸载或修改未签名的 local.* 个人应用", 403)
+	}
+	info, err := loadInstallInfo(inst.Dir)
+	if err != nil || info.Official || info.Hash != "" || info.Publisher != "" || info.Signature != "" {
+		return managementError("API_MUTATION_FORBIDDEN", "安装记录无法确认是未签名个人应用，本机 API 不能卸载或修改", 403)
+	}
+	return nil
+}
+
 // Cancel 仅取消 pending，不能宣称撤销正在提交的安装。
 func (m *Manager) Cancel(id string) (Installation, error) {
+	return m.cancel(id, "")
+}
+
+// CancelFrom 只取消指定入口的任务。本机 API 不能取消 ACP 发起的安装。
+func (m *Manager) CancelFrom(id, via string) (Installation, error) {
+	if via != "local-api" && via != "acp" {
+		return Installation{}, managementError("INVALID_VIA", "提议来源无效", 400)
+	}
+	return m.cancel(id, via)
+}
+
+func (m *Manager) cancel(id, via string) (Installation, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.pruneLocked(time.Now().UTC())
 	task, ok := m.tasks[id]
 	if !ok {
 		return Installation{}, managementError("INSTALLATION_NOT_FOUND", "安装任务不存在", 404)
+	}
+	if via != "" && task.record.Via != via {
+		return cloneInstallation(task.record), managementError("INSTALLATION_ORIGIN_FORBIDDEN", "本机 API 不能取消其他来源的安装任务", 403)
 	}
 	if task.record.Status == "cancelled" {
 		return cloneInstallation(task.record), nil

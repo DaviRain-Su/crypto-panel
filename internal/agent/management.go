@@ -145,9 +145,13 @@ func (s *Server) installation(w http.ResponseWriter, r *http.Request) {
 	var job plugin.Installation
 	var err error
 	if r.Method == http.MethodDelete {
-		job, err = manager.Cancel(r.PathValue("requestId"))
+		job, err = manager.CancelFrom(r.PathValue("requestId"), "local-api")
 	} else {
 		job, err = manager.GetInstallation(r.PathValue("requestId"))
+		if err == nil && job.Via == "acp" {
+			writeCodeError(w, http.StatusNotFound, "INSTALLATION_NOT_FOUND", "安装任务不存在")
+			return
+		}
 	}
 	if err != nil {
 		writeManagementError(w, err)
@@ -175,6 +179,10 @@ func (s *Server) settings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	id := r.PathValue("id")
+	if err := manager.APIMayMutate(id); err != nil {
+		writeManagementError(w, err)
+		return
+	}
 	settings, err := manager.SetSettings(id, req.Values)
 	// 清空秘密是撤销配置，成功写入也不能当成可自动运行的配置保存。
 	clearedSecret := false
@@ -206,6 +214,10 @@ func (s *Server) remove(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	id := r.PathValue("id")
+	if err := manager.APIMayMutate(id); err != nil {
+		writeManagementError(w, err)
+		return
+	}
 	if err := manager.Remove(id); err != nil {
 		writeManagementError(w, err)
 		return

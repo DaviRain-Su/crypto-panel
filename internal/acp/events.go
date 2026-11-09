@@ -109,6 +109,9 @@ func cancelledPermission() any {
 	return map[string]any{"outcome": map[string]string{"outcome": "cancelled"}}
 }
 
+// permissionBeforeAccept 仅测试设置。它在许可选择已经返回、尚未被接受时运行。
+var permissionBeforeAccept func(*Client)
+
 func (c *Client) handleRequest(msg message) {
 	c.mu.Lock()
 	duplicate := c.inbound[msg.idKey]
@@ -171,6 +174,10 @@ func (c *Client) handleRequest(msg message) {
 		select {
 		case answer = <-selected:
 		case <-t.permissionCtx.Done():
+		}
+		// 生产路径为空。测试在观察到选择后、接受选择前取消本轮。
+		if permissionBeforeAccept != nil {
+			permissionBeforeAccept(c)
 		}
 		c.mu.Lock()
 		canSelect := answer.err == nil && answer.id != "" && allowed[answer.id] && t.permissionCtx.Err() == nil && c.active == t && !t.cancelRequested && !c.closing && c.terminal == nil

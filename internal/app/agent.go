@@ -280,7 +280,7 @@ func (a *App) agentPlugins() []agent.Plugin {
 		p.Settings, _ = a.plugins.DescribeSettings(m.ID)
 		if a.pluginManager != nil {
 			for _, job := range a.pluginManager.Installations() {
-				if job.PluginID == m.ID {
+				if job.PluginID == m.ID && job.Via == "local-api" {
 					p.PendingInstallationID = job.RequestID
 					break
 				}

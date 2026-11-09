@@ -245,6 +245,73 @@ func TestManagerLeaseAndRemoveInvalidatePending(t *testing.T) {
 		t.Fatalf("仍安装: %v", err)
 	}
 }
+func TestProposalInValidationRevokedWhenAPICloses(t *testing.T) {
+	_, m := newTestManager(t, nil)
+	p := personalPackage(t, "local.personal.inflight", "1.0.0")
+	beforeProposalCommit = func() { m.CancelVia("local-api") }
+	t.Cleanup(func() { beforeProposalCommit = nil })
+	_, err := m.Propose(Source{Kind: "inline", Package: &p}, "install", "", "", "local-api")
+	requireCode(t, err, "PROPOSAL_CANCELLED")
+	if len(m.Installations()) != 0 {
+		t.Fatal("校验中的 API 提议在入口关闭后仍可批准")
+	}
+	acp, err := m.Propose(Source{Kind: "inline", Package: &p}, "install", "", "", "acp")
+	if err != nil || acp.Status != "pending" || acp.Via != "acp" {
+		t.Fatalf("关闭 API 撤销了仍在校验的 ACP 提议: %+v %v", acp, err)
+	}
+}
+
+func TestRemoveCancelsOnlyThePendingTaskForThatApp(t *testing.T) {
+	_, m := newTestManager(t, nil)
+	first := installTest(t, m, personalPackage(t, "local.personal.gone", "1.0.0"))
+	other := proposeTest(t, m, personalPackage(t, "local.personal.stay", "1.0.0"), "install", "")
+	pending := proposeTest(t, m, personalPackage(t, first.PluginID, "2.0.0"), "update", first.PackageHash)
+	if err := m.Remove(first.PluginID); err != nil {
+		t.Fatal(err)
+	}
+	gone, err := m.GetInstallation(pending.RequestID)
+	if err != nil || gone.Status != "cancelled" {
+		t.Fatalf("同 id 的待确认任务未取消: %+v %v", gone, err)
+	}
+	stayed, err := m.GetInstallation(other.RequestID)
+	if err != nil || stayed.Status != "pending" {
+		t.Fatalf("卸载取消了其他应用的任务: %+v %v", stayed, err)
+	}
+}
+
+func TestAPIProposalDoesNotAttachToACPTask(t *testing.T) {
+	_, m := newTestManager(t, nil)
+	p := personalPackage(t, "local.personal.origin", "1.0.0")
+	acp, err := m.Propose(Source{Kind: "inline", Package: &p}, "install", "", "", "acp")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = m.Propose(Source{Kind: "inline", Package: &p}, "install", "", "", "local-api")
+	requireCode(t, err, "CANDIDATE_CONFLICT")
+	again, err := m.Propose(Source{Kind: "inline", Package: &p}, "install", "", "", "acp")
+	if err != nil || again.RequestID != acp.RequestID {
+		t.Fatalf("同一入口未复用任务: %+v %v", again, err)
+	}
+	_, err = m.CancelFrom(acp.RequestID, "local-api")
+	requireCode(t, err, "INSTALLATION_ORIGIN_FORBIDDEN")
+	got, err := m.GetInstallation(acp.RequestID)
+	if err != nil || got.Status != "pending" || got.Via != "acp" {
+		t.Fatalf("ACP 任务被 API 改变: %+v %v", got, err)
+	}
+	other := personalPackage(t, "local.personal.api-only", "1.0.0")
+	api, err := m.Propose(Source{Kind: "inline", Package: &other}, "install", "", "", "local-api")
+	if err != nil {
+		t.Fatal(err)
+	}
+	cancelled, err := m.CancelFrom(api.RequestID, "local-api")
+	if err != nil || cancelled.Status != "cancelled" {
+		t.Fatalf("API 不能取消自己的任务: %+v %v", cancelled, err)
+	}
+	if stayed, _ := m.GetInstallation(acp.RequestID); stayed.Status != "pending" {
+		t.Fatal("取消 API 任务时连带取消了 ACP")
+	}
+}
+
 func TestManagerPersonalNamespaceAndSafeJSON(t *testing.T) {
 	_, m := newTestManager(t, nil)
 	for _, id := range []string{"com.example.gas", "local.one", "org.personal.test", "local.personal.extra.slug"} {

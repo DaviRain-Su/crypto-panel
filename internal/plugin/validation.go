@@ -1,6 +1,8 @@
 package plugin
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -9,6 +11,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 	"unicode"
@@ -388,6 +391,7 @@ func safeMetadata(value string) bool {
 }
 
 // PackageHash 读取安装目录的规范化内容身份，同时保留既有来源完整性检查。
+// 摘要在原目录上流式计算：清单用规范化 JSON，其余文件保持原字节，不复制整棵树。
 func (s *Store) PackageHash(id string) (string, error) {
 	if err := validatePluginID(id); err != nil {
 		return "", err
@@ -403,30 +407,90 @@ func (s *Store) PackageHash(id string) (string, error) {
 }
 
 func normalizedPackageHash(dir string) (string, error) {
-	parent, err := os.MkdirTemp("", "lintel-hash-")
-	if err != nil {
-		return "", managementError("HASH_UNAVAILABLE", "无法计算应用摘要", 503)
-	}
-	defer os.RemoveAll(parent)
-	if err := copyCandidate(dir, parent); err != nil {
-		return "", managementError("BROKEN_PLUGIN", "应用文件树无效", 409)
-	}
-	manifest, err := LoadManifest(parent)
-	if err != nil || manifest.ValidateDir(parent) != nil {
+	manifest, err := LoadManifest(dir)
+	if err != nil || manifest.ValidateDir(dir) != nil {
 		return "", managementError("BROKEN_PLUGIN", "应用清单或主模块无效", 409)
 	}
-	data, err := json.Marshal(manifest)
+	canonical, err := json.Marshal(manifest)
 	if err != nil {
 		return "", managementError("BROKEN_PLUGIN", "应用清单无效", 409)
 	}
-	if err := os.WriteFile(filepath.Join(parent, "plugin.json"), append(data, '\n'), 0600); err != nil {
-		return "", managementError("HASH_UNAVAILABLE", "无法计算应用摘要", 503)
-	}
-	hash, err := DigestDir(parent)
+	canonical = append(canonical, '\n')
+	files, err := packageIdentityFiles(dir)
 	if err != nil {
 		return "", managementError("BROKEN_PLUGIN", "应用文件树无效", 409)
 	}
-	return hash, nil
+	h := sha256.New()
+	for _, rel := range files {
+		data := canonical
+		if rel != "plugin.json" {
+			data, err = os.ReadFile(filepath.Join(dir, filepath.FromSlash(rel)))
+			if err != nil {
+				return "", managementError("BROKEN_PLUGIN", "应用文件树无效", 409)
+			}
+		}
+		fmt.Fprintf(h, "%s\x00%d\x00", rel, len(data))
+		h.Write(data)
+	}
+	return "sha256:" + hex.EncodeToString(h.Sum(nil)), nil
+}
+
+// packageIdentityFiles 列出摘要包含的文件。规则与复制后再 DigestDir 相同：
+// 跳过壳文件、垃圾文件和垃圾目录，拒绝链接与特殊文件。
+func packageIdentityFiles(dir string) ([]string, error) {
+	var files []string
+	total := int64(0)
+	err := filepath.WalkDir(dir, func(p string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		rel, err := filepath.Rel(dir, p)
+		if err != nil {
+			return err
+		}
+		if rel == "." {
+			return nil
+		}
+		rel = filepath.ToSlash(rel)
+		// 先拒绝链接、特殊文件和非法路径，再跳过壳文件与垃圾文件。
+		// 名为 kv.json / state.json / .DS_Store 的符号链接不能被跳过。
+		if strings.ContainsAny(rel, "\\\x00") || path.Clean(rel) != rel || path.IsAbs(rel) {
+			return fmt.Errorf("plugin path is invalid: %s", rel)
+		}
+		if d.Type()&fs.ModeSymlink != 0 || (!d.IsDir() && !d.Type().IsRegular()) {
+			return fmt.Errorf("plugin contains a symlink or special file: %s", rel)
+		}
+		if d.IsDir() {
+			if isJunk(rel) || isShellFile(rel) {
+				return fs.SkipDir
+			}
+			return nil
+		}
+		if isJunk(rel) || isShellFile(rel) {
+			return nil
+		}
+		info, err := d.Info()
+		if err != nil {
+			return err
+		}
+		if info.Size() > maxPluginFile {
+			return fmt.Errorf("%s is larger than %d bytes", rel, maxPluginFile)
+		}
+		files = append(files, rel)
+		total += info.Size()
+		if len(files) > maxPluginFiles {
+			return fmt.Errorf("plugin has more than %d files", maxPluginFiles)
+		}
+		if total > maxPluginTotal {
+			return fmt.Errorf("plugin is larger than %d bytes", maxPluginTotal)
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	sort.Strings(files)
+	return files, nil
 }
 
 // OfficialPackage 只从随壳内嵌的两个模板读取完整内容。

@@ -26,7 +26,7 @@ func TestManagementRoutesKeepTheSameAccessWall(t *testing.T) {
 	for _, route := range routes {
 		t.Run(route.method+route.path, func(t *testing.T) {
 			for _, origin := range []string{"", "https://untrusted.example"} {
-				req := httptest.NewRequest(route.method, route.path, nil)
+				req := withLocalHost(s, httptest.NewRequest(route.method, route.path, nil))
 				want := http.StatusUnauthorized
 				if origin != "" {
 					req.Header.Set("Authorization", "Bearer test-token")
@@ -61,7 +61,7 @@ func TestHTTPHasNoApprovalOrSigningEndpoint(t *testing.T) {
 
 func TestReadOnlyBackendDoesNotPretendToInstall(t *testing.T) {
 	s, _ := newTestServer(t)
-	req := httptest.NewRequest("POST", "/v0/plugins", strings.NewReader(`{"source":{"kind":"folder","path":"/missing"}}`))
+	req := withLocalHost(s, httptest.NewRequest("POST", "/v0/plugins", strings.NewReader(`{"source":{"kind":"folder","path":"/missing"}}`)))
 	req.Header.Set("Authorization", "Bearer test-token")
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()

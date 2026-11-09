@@ -152,6 +152,96 @@ func TestUpdateCopiesCompleteCodeWithoutStateOrSecrets(t *testing.T) {
 	}
 }
 
+func TestEmptyWorkspaceRootDoesNotSweepTempDir(t *testing.T) {
+	sentinel := filepath.Join(os.TempDir(), "lintel-authoring-sentinel-"+strings.ReplaceAll(t.Name(), "/", "-"))
+	if err := os.MkdirAll(filepath.Join(sentinel, "context"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_ = os.Chmod(filepath.Join(sentinel, "context"), 0700)
+		_ = os.RemoveAll(sentinel)
+	})
+	if err := os.WriteFile(filepath.Join(sentinel, "context", "catalog.json"), []byte("{}"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := SweepStaleWorkspaces(""); err != nil {
+		t.Fatal(err)
+	}
+	if err := SweepStaleWorkspaces("   "); err != nil {
+		t.Fatal(err)
+	}
+	dir, err := createWorkspace(context.Background(), "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { removeWorkspace(dir) })
+	if _, err := os.Stat(sentinel); err != nil {
+		t.Fatal("未指定工作根时清扫了系统临时目录")
+	}
+	if _, err := os.Stat(dir); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestWorkspaceSourceOverlapGuard(t *testing.T) {
+	src := t.TempDir()
+	nested := filepath.Join(src, "lintel-authoring-child")
+	if err := checkWorkspaceOverlap(nested, src); !errors.Is(err, ErrSource) {
+		t.Fatalf("工作目录位于来源内部时被接受: %v", err)
+	}
+	if err := checkWorkspaceOverlap(src, src); !errors.Is(err, ErrSource) {
+		t.Fatalf("工作目录与来源相同时被接受: %v", err)
+	}
+	other := t.TempDir()
+	if err := checkWorkspaceOverlap(other, src); err != nil {
+		t.Fatalf("互不包含的路径被拒绝: %v", err)
+	}
+}
+
+func TestSweepStaleWorkspacesKeepsUnrelatedEntries(t *testing.T) {
+	root := t.TempDir()
+	stale := filepath.Join(root, "lintel-authoring-stale")
+	contextDir := filepath.Join(stale, "context")
+	if err := os.MkdirAll(contextDir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(contextDir, "catalog.json"), []byte("{}"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(filepath.Join(contextDir, "catalog.json"), 0400); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(contextDir, 0500); err != nil {
+		t.Fatal(err)
+	}
+	keep := filepath.Join(root, "notes")
+	if err := os.Mkdir(keep, 0700); err != nil {
+		t.Fatal(err)
+	}
+	note := filepath.Join(root, "lintel-authoring-note.txt")
+	if err := os.WriteFile(note, []byte("keep"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(root, "lintel-authoring-link")
+	if err := os.Symlink(keep, link); err != nil {
+		t.Fatal(err)
+	}
+	if err := SweepStaleWorkspaces(root); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(stale); !errors.Is(err, os.ErrNotExist) {
+		t.Fatal("过期生成目录还在")
+	}
+	for _, path := range []string{keep, note, link} {
+		if _, err := os.Lstat(path); err != nil {
+			t.Fatalf("清扫删除了 %s: %v", path, err)
+		}
+	}
+	if err := SweepStaleWorkspaces(filepath.Join(root, "missing")); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestCopyRejectsLinksUnsafePathsAndOverlap(t *testing.T) {
 	for _, kind := range []string{"root symlink", "file symlink", "excluded symlink", "path escape", "overlap"} {
 		t.Run(kind, func(t *testing.T) {

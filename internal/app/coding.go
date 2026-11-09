@@ -48,6 +48,7 @@ func (a *App) initAuthoring() {
 		return
 	}
 	a.coding.initialized = true
+	_ = authoring.SweepStaleWorkspaces(a.workspaceRoot())
 	if a.pluginManager != nil {
 		a.coding.service = authoring.New(a.pluginManager)
 	}
