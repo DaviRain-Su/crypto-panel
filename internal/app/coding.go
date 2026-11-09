@@ -27,6 +27,7 @@ type codingState struct {
 	open, busy, checking                              bool
 	prompt, slug, targetID, expectedHash, existingDir string
 	notice, err, progress                             string
+	installationID                                    string
 	initialization                                    acp.Initialization
 	session                                           acp.Session
 	values                                            map[string]string
@@ -266,6 +267,7 @@ func (a *App) openCreator(id string) {
 	a.coding.open = false
 	a.coding.targetID, a.coding.expectedHash, a.coding.existingDir = "", "", ""
 	a.coding.err, a.coding.notice, a.coding.progress = "", "", ""
+	a.coding.installationID = ""
 	if id != "" {
 		inst, err := a.plugins.Get(id)
 		if err != nil || inst.Official || inst.Signed || !strings.HasPrefix(id, "local.") {
@@ -371,6 +373,7 @@ func (a *App) startGeneration() {
 	a.coding.generation++
 	generation := a.coding.generation
 	a.coding.err, a.coding.notice, a.coding.progress = "", "", ""
+	a.coding.installationID = ""
 	request := authoring.Request{Profile: profile, Prompt: prompt, WorkspaceRoot: a.workspaceRoot(), TargetID: target, ExpectedHash: a.coding.expectedHash, ExistingDir: a.coding.existingDir, Catalog: catalog, Examples: examples, ConfigValues: values,
 		RequestPermission: a.requestCodingPermission,
 		OnUpdate: func(update acp.Update) {
@@ -409,6 +412,7 @@ func (a *App) startGeneration() {
 			} else if err != nil {
 				a.coding.err = "生成未完成：" + safeAgentText(err.Error(), 800)
 			} else {
+				a.coding.installationID = result.Installation.RequestID
 				a.coding.notice = fmt.Sprintf("%s v%s 已通过校验，请在待确认区域审阅权限", result.Installation.Manifest.Name, result.Installation.Version)
 				a.coding.initialization = result.Initialization
 				a.coding.session = result.Session

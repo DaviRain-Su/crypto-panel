@@ -86,6 +86,17 @@ type Plugin struct {
 	PackageHash           string                 `json:"packageHash,omitempty"`
 	Settings              []plugin.SettingStatus `json:"settings,omitempty"`
 	PendingInstallationID string                 `json:"pendingInstallationId,omitempty"`
+	Verification          *Verification          `json:"verification,omitempty"`
+}
+
+// Verification 仅描述当前已批准包的首页检查，不含页面、凭据或异常原文。
+type Verification struct {
+	RequestID   string     `json:"requestId"`
+	PackageHash string     `json:"packageHash"`
+	Page        string     `json:"page"`
+	Status      string     `json:"status"`
+	Code        string     `json:"code,omitempty"`
+	CheckedAt   *time.Time `json:"checkedAt,omitempty"`
 }
 
 // Permissions is what an app may do, as its manifest declares.

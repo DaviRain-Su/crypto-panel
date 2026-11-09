@@ -176,7 +176,23 @@ func (s *Server) settings(w http.ResponseWriter, r *http.Request) {
 	}
 	id := r.PathValue("id")
 	settings, err := manager.SetSettings(id, req.Values)
-	data.ApplicationsChanged(id)
+	// 清空秘密是撤销配置，成功写入也不能当成可自动运行的配置保存。
+	clearedSecret := false
+	if err == nil {
+		for _, field := range settings {
+			value, supplied := req.Values[field.Key]
+			if field.Secret && supplied && value == "" {
+				clearedSecret = true
+				break
+			}
+		}
+	}
+	// 旧宿主继续只接收变更通知。
+	if observer, ok := data.(interface{ ApplicationSettingsChanged(string, bool, bool) }); ok {
+		observer.ApplicationSettingsChanged(id, err == nil, clearedSecret)
+	} else {
+		data.ApplicationsChanged(id)
+	}
 	if err != nil {
 		writeManagementError(w, err)
 		return

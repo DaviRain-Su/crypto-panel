@@ -22,6 +22,7 @@ func (a *App) ApplicationsChanged(id string) {
 			a.pluginGen++
 		}
 		a.stopRunner(id)
+		a.invalidateInstallationVerification(id, "SETTINGS_CHANGED")
 		for key := range a.pluginDrafts {
 			if strings.HasPrefix(key, id+"/") {
 				delete(a.pluginDrafts, key)
@@ -66,6 +67,7 @@ func (a *App) reviewInstallation(requestID string) {
 					}
 					a.refreshPlugins()
 					a.openPluginDetail(job.PluginID)
+					a.beginInstallationVerification(result)
 				}
 				a.invalidate()
 			})
@@ -124,6 +126,7 @@ func (a *App) clearPluginSecret(id, key string) {
 		a.invalidate()
 		return
 	}
+	a.invalidateInstallationVerification(id, "SETTINGS_CHANGED")
 	if a.pluginKey().id == id {
 		a.pluginGen++
 		a.pluginView = pluginPageState{}

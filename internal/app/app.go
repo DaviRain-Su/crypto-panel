@@ -166,6 +166,10 @@ type App struct {
 	pluginView         pluginPageState
 	pluginGen          int
 
+	// 安装后验证只保存当前进程中的安全元数据，不复用普通页面的签名能力。
+	installationVerifications        map[string]*installationVerification
+	runningInstallationVerifications int
+
 	// The plugin store: the tab the Apps page shows, the app whose settings
 	// are open, the catalog last read, the registry form, and the entry
 	// being installed.

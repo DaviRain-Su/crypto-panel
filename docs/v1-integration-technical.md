@@ -9,7 +9,9 @@
 - internal/app：Manager 生命周期、主线程 UI 状态、原生权限确认、API runner 禁止签名、Apps 创建与 agent 配置。
 - internal/acp：stdio 会话、请求 / 通知、能力协商和取消；仅拥有编码子进程，无钱包或插件批准能力。
 
-HTTP 提议 → Manager.Propose → Apps 待确认卡 → 原生 confirmInstall → Manager.Decide → 刷新启动器。ACP 生成文件 → 同一 Propose / Decide。两种来源都不能直接调用网络批准接口。
+HTTP 提议 → Manager.Propose → Apps 待确认卡 → 原生 confirmInstall → Manager.Decide → 刷新启动器及安装后运行验证。ACP 生成文件 → 同一 Propose / Decide。两种来源都不能直接调用网络批准接口。
+
+安装后验证的状态、摘要绑定、设置保存通知、禁签名执行与测试规格独立定义于[安装后运行验证技术契约](v1-post-install-technical.md)。HTTP 宿主可选实现 ApplicationSettingsChanged(id, success, clearedSecret)，仅完整保存成功且没有清空秘密时自动验证；旧 Management 接口保持兼容。
 
 ## 2. HTTP 集成接口
 

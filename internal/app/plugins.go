@@ -98,6 +98,16 @@ func (a *App) refreshPlugins() {
 			a.pluginDrafts[key] = &value
 		}
 	}
+	// 验证记录只属于仍安装的同一包；卸载或更新不能保留旧的通过状态。
+	for id, current := range a.installationVerifications {
+		inst, err := a.plugins.Get(id)
+		hash, hashErr := a.plugins.PackageHash(id)
+		if err != nil || inst.Err != "" || hashErr != nil || hash != current.result.PackageHash {
+			a.forgetInstallationVerification(id)
+		} else if !inst.Enabled {
+			a.invalidateInstallationVerification(id, "APP_DISABLED")
+		}
+	}
 	// A plugin page whose plugin was removed or turned off falls back to the
 	// manager, so the window never shows a page that no longer exists.
 	if a.route.kind == "plugin" && !a.pluginPageAvailable(items, a.route.id) {
@@ -338,11 +348,15 @@ func (a *App) savePluginSettings(m plugin.Manifest) {
 		}
 	}
 	if err != nil {
+		a.invalidateInstallationVerification(m.ID, "SETTINGS_WRITE_FAILED")
 		a.pluginNotice = err.Error()
 		a.invalidate()
 		return
 	}
-	if a.pluginKey().id == m.ID {
+	if a.installationVerifications[m.ID] != nil {
+		a.invalidateInstallationVerification(m.ID, "SETTINGS_CHANGED")
+		a.verifyInstalledApp(m.ID)
+	} else if a.pluginKey().id == m.ID {
 		a.loadPluginPage()
 	}
 	a.pluginNotice = a.t(i18n.PluginSettingsSaved)
@@ -360,6 +374,9 @@ func (a *App) stopRunner(id string) {
 
 // stopAllRunners 使旧网络和设置的运行结果失效，下一次执行重建 runtime。
 func (a *App) stopAllRunners() {
+	for id := range a.installationVerifications {
+		a.invalidateInstallationVerification(id, "HOST_CHANGED")
+	}
 	a.pluginGen++
 	if a.pluginKey().id != "" {
 		a.pluginView = pluginPageState{}

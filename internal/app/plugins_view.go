@@ -122,6 +122,9 @@ func (a *App) appTile(c *ui.Context, item plugin.Installed) {
 		if m.Description != "" {
 			ui.Text(c, m.Description).FontSize(12).TextColor(p.muted).MaxLines(2)
 		}
+		if current := a.installationVerifications[id]; current != nil {
+			ui.Text(c, installationVerificationMessage(current.result)).FontSize(11).TextColor(p.muted).MaxLines(2)
+		}
 		ui.Row(c).Gap(6).AlignItems(ui.Center).Children(func() {
 			if enabled && len(m.Navigation) > 0 {
 				a.softButton(c, a.t(i18n.AppOpen), nil, p.text, func() { a.openPluginApp(id) })
@@ -209,6 +212,7 @@ func (a *App) appCard(c *ui.Context, item plugin.Installed) {
 		if len(m.Settings) > 0 {
 			a.pluginSettingsForm(c, m)
 		}
+		a.installationVerificationView(c, id)
 		ui.Row(c).AlignItems(ui.Center).Gap(6).Children(func() {
 			a.softButton(c, a.t(i18n.PluginLogs), iconTerminal, p.text, func() {
 				a.pluginLogsOpen[id] = !a.pluginLogsOpen[id]

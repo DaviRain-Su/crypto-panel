@@ -10,7 +10,8 @@ Lintel 的个人应用仍是沙箱 JS 与原生页面数据。编码 agent 负�
 4. Apps → 创建应用，填短名和需求，点击开始生成。不要在需求里写私钥、Local API token 或 API key。
 5. 工具若请求许可，壳会显示独立的原生工具窗口。检查路径和命令；拒绝或关闭会按取消处理。工作目录不是操作系统沙箱，本机编码程序仍具有自己的系统权限。
 6. 生成只在 session/prompt 真正返回成功完成后进入静态校验，最多三轮修复。通过后成为 Apps 的待确认任务。点击审阅权限，原生窗口里确认才会安装。
-7. 安装后从应用设置填写 API key 等字段，再打开应用。秘密字段只显示是否配置；留空保存保留旧秘密，使用清除按钮才删除。
+7. 安装后若有设置项，先填写 API key 等字段并保存，壳随后验证首页；也可点击“验证首页”跳过可选设置。秘密字段只显示是否配置；留空保存保留旧秘密，使用清除按钮才删除。
+8. 没有设置项时，安装后自动验证首页。应用设置和启动器显示等待设置、验证中、通过或失败；失败不会移除已安装应用，可以调整设置或修改应用后重试。验证使用禁止 EVM / NEAR 签名的独立 runtime，检查页面执行和结构；通过后仍需打开应用核对数据。
 
 预设执行本机 `claude-code-acp` 和 `codex-acp`，不会自动下载或执行 npx / uvx 安装。Claude 适配器的当前上游已迁至 [agentclientprotocol/claude-agent-acp](https://github.com/agentclientprotocol/claude-agent-acp)，新版命令为 `claude-agent-acp`；若使用新版，在 executable 中改为该命令。Codex 的普通 CLI / app-server 不是 ACP server，使用 [zed-industries/codex-acp](https://github.com/zed-industries/codex-acp) 或其他兼容适配器。
 
@@ -40,6 +41,8 @@ Lintel 的个人应用仍是沙箱 JS 与原生页面数据。编码 agent 负�
 | `DELETE /v0/plugins/{id}` | 按用户指令卸载应用与宿主状态 |
 
 没有 HTTP approve、钱包签名、广播或密钥接口。refresh 禁用 EVM / NEAR 签名，但声明范围内的 host.fetch 和 KV 写入仍可能产生副作用，不能代替静态 validate。
+
+原生确认安装后，`GET /v0/plugins` 可返回当前包的可选 `verification`：requestId、packageHash、page、status（waiting_settings / running / passed / failed）、固定原因 code 及完成时间 checkedAt。它与安装任务的 installed 状态分开；passed 只表示首页执行与结构检查通过。完整保存设置且没有清除秘密时，会自动验证已跟踪的安装；清除秘密使旧结果失效并等待配置，部分保存失败不会执行。验证不记录插件日志或回传页面、异常原文。记录只存在于当前进程，重启后没有该字段；需要时继续显式 refresh。
 
 ## 包格式与请求
 

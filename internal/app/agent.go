@@ -276,6 +276,7 @@ func (a *App) agentPlugins() []agent.Plugin {
 			p.InstalledVia = "unknown"
 		}
 		p.PackageHash, _ = a.plugins.PackageHash(m.ID)
+		p.Verification = a.installationVerificationResult(m.ID, p.PackageHash)
 		p.Settings, _ = a.plugins.DescribeSettings(m.ID)
 		if a.pluginManager != nil {
 			for _, job := range a.pluginManager.Installations() {
@@ -303,7 +304,28 @@ func (a *App) Refresh(id string) (any, error) {
 
 // RefreshPage 的 lease 包含模块构造和执行；每次建立禁用签名的新 runtime。
 func (a *App) RefreshPage(id, page string) (agent.PageResult, error) {
+	return a.readOnlyPage(id, page, readOnlyPageOptions{})
+}
+
+type readOnlyPageOptions struct {
+	expectedHash string
+	quiet        bool
+	active       func() bool
+}
+
+func (o readOnlyPageOptions) check() error {
+	if o.active != nil && !o.active() {
+		return &plugin.Error{Code: "CONTENT_CHANGED", Message: "本轮运行验证已失效", Status: 409}
+	}
+	return nil
+}
+
+// readOnlyPage 共用完整性与执行协调；验证还绑定已批准摘要，并丢弃插件日志。
+func (a *App) readOnlyPage(id, page string, options readOnlyPageOptions) (agent.PageResult, error) {
 	var result agent.PageResult
+	if err := options.check(); err != nil {
+		return result, err
+	}
 	if a.pluginManager == nil {
 		return result, &plugin.Error{Code: "MANAGEMENT_UNAVAILABLE", Message: "应用管理不可用", Status: 503}
 	}
@@ -345,11 +367,17 @@ func (a *App) RefreshPage(id, page string) (agent.PageResult, error) {
 	if err != nil {
 		return result, err
 	}
-	runner, err := a.agentRunner(inst)
+	if options.expectedHash != "" && result.PackageHash != options.expectedHash {
+		return result, &plugin.Error{Code: "CONTENT_CHANGED", Message: "已安装包与批准摘要不同", Status: 409}
+	}
+	runner, err := a.agentRunner(inst, options)
 	if err != nil {
 		return result, err
 	}
 	defer runner.Close()
+	if err := options.check(); err != nil {
+		return result, err
+	}
 	result.Page, err = runner.Page(page)
 	if err == nil {
 		result.EvaluatedAt = time.Now().UTC()
@@ -359,10 +387,13 @@ func (a *App) RefreshPage(id, page string) (agent.PageResult, error) {
 
 // agentRunner builds a runtime for one API request. The host is the app's,
 // with both signing functions replaced by a refusal.
-func (a *App) agentRunner(inst plugin.Installed) (*plugin.Runner, error) {
+func (a *App) agentRunner(inst plugin.Installed, options readOnlyPageOptions) (*plugin.Runner, error) {
 	var runner *plugin.Runner
 	var err error
 	a.runOnMain(func() {
+		if err = options.check(); err != nil {
+			return
+		}
 		source, rerr := os.ReadFile(filepath.Join(inst.Dir, filepath.FromSlash(inst.Manifest.Main)))
 		if rerr != nil {
 			err = fmt.Errorf("app %s: %w", inst.Manifest.ID, rerr)
@@ -374,6 +405,9 @@ func (a *App) agentRunner(inst plugin.Installed) (*plugin.Runner, error) {
 		}
 		deps.Sign = func(plugin.SignRequest) (plugin.SignResult, error) { return refuse() }
 		deps.NearSign = func(plugin.NearSignRequest) (plugin.SignResult, error) { return refuse() }
+		if options.quiet {
+			deps.Log = nil
+		}
 		runner, err = plugin.NewRunner(inst.Manifest, source, plugin.NewHost(deps), a.lang())
 	})
 	return runner, err
