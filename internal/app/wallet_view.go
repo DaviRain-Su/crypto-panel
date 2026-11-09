@@ -6,16 +6,17 @@ import (
 	"github.com/egoist/mygo/ui"
 
 	"github.com/davirain-su/crypto-panel/internal/chain"
+	"github.com/davirain-su/crypto-panel/internal/chains"
 	"github.com/davirain-su/crypto-panel/internal/i18n"
 	"github.com/davirain-su/crypto-panel/internal/passkey"
 	"github.com/davirain-su/crypto-panel/internal/wallet"
 )
 
 // walletView is the native wallet's page. A wallet is a named container.
-// The chain switcher chooses which of that container's accounts is on
-// screen: balance, lock, and send when the chain already has it. Import
-// writes a key into the wallet that is open, in the format of the chain
-// that is open.
+// The network menu chooses which of that container's accounts is on
+// screen: balance, lock, and send when that network's family already has
+// it. Import writes a key into the wallet that is open, in the format of
+// the network that is open.
 func (a *App) walletView(c *ui.Context) {
 	p := a.pal
 	a.walletKeyCard(c)
@@ -27,13 +28,16 @@ func (a *App) walletView(c *ui.Context) {
 	if a.settings.Passkey == nil {
 		a.passkeyCard(c)
 	}
-	a.walletSwitcher(c)
+	a.walletPickers(c)
+	if a.passkeyPrepared && a.settings.Passkey != nil {
+		a.passkeyPreparedCard(c)
+		return
+	}
 	if len(a.settings.Wallets) == 0 && !a.viewingPasskey() {
 		a.emptyWallet(c)
 		a.walletImportForm(c)
 		return
 	}
-	a.chainSwitcher(c)
 	if a.viewingPasskey() {
 		a.passkeyChainCard(c)
 		a.walletImportForm(c)
@@ -115,72 +119,79 @@ func (a *App) walletKeyCard(c *ui.Context) {
 	})
 }
 
-// walletSwitcher picks which named wallet is on the page. The passkey, when
-// one exists, is one of the choices.
-func (a *App) walletSwitcher(c *ui.Context) {
+// walletPickers is the wallet menu and the network menu. The network menu
+// lists every preset, not a family tab: Ethereum and Base are separate
+// choices that share one EVM account, and the two NEAR networks share one
+// NEAR account.
+func (a *App) walletPickers(c *ui.Context) {
+	p := a.pal
 	type choice struct {
 		id, label string
 	}
-	var choices []choice
+	var wallets []choice
 	for _, w := range a.settings.Wallets {
 		label := w.Name
 		if label == "" {
 			label = wallet.Short(w.ID)
 		}
-		choices = append(choices, choice{id: w.ID, label: label})
+		wallets = append(wallets, choice{id: w.ID, label: label})
 	}
 	if a.settings.Passkey != nil {
-		choices = append(choices, choice{id: wallet.PasskeyContainerID, label: a.t(i18n.PasskeyTitle)})
+		wallets = append(wallets, choice{id: wallet.PasskeyContainerID, label: a.t(i18n.PasskeyTitle)})
 	}
-	if len(choices) < 2 {
-		return
-	}
-	p := a.pal
-	labels := make([]string, len(choices))
-	idx := 0
-	active := a.settings.ActiveWallet
-	if active == "" && len(a.settings.Wallets) > 0 {
-		active = a.settings.Wallets[0].ID
-	}
-	if a.viewingPasskey() {
-		active = wallet.PasskeyContainerID
-	}
-	for i, choice := range choices {
-		labels[i] = choice.label
-		if choice.id == active {
-			idx = i
+	networks := chains.All()
+	names := make([]string, len(networks))
+	nidx := 0
+	for i, n := range networks {
+		names[i] = n.Name
+		if n.ID == a.settings.NetworkID {
+			nidx = i
 		}
 	}
-	selected := labels[idx]
-	ui.Column(c).Gap(6).Margin(14, 0, 4, 0).MaxWidth(360).Children(func() {
-		ui.Text(c, a.t(i18n.WalletSwitch)).FontSize(11).FontWeight(600).
-			TextColor(p.muted).MaxLines(1)
-		if ui.Select(c.Key("wallet-switch"), &selected, labels).Changed() {
-			for i, label := range labels {
-				if label == selected {
-					a.selectWallet(choices[i].id)
-					break
+	network := names[nidx]
+	ui.Row(c).Gap(16).Margin(14, 0, 12, 0).Children(func() {
+		if len(wallets) >= 2 {
+			labels := make([]string, len(wallets))
+			idx := 0
+			active := a.settings.ActiveWallet
+			if active == "" && len(a.settings.Wallets) > 0 {
+				active = a.settings.Wallets[0].ID
+			}
+			if a.viewingPasskey() {
+				active = wallet.PasskeyContainerID
+			}
+			for i, choice := range wallets {
+				labels[i] = choice.label
+				if choice.id == active {
+					idx = i
 				}
 			}
+			selected := labels[idx]
+			ui.Column(c).Gap(6).Grow(1).MaxWidth(360).Children(func() {
+				ui.Text(c, a.t(i18n.WalletSwitch)).FontSize(11).FontWeight(600).
+					TextColor(p.muted).MaxLines(1)
+				if ui.Select(c.Key("wallet-switch"), &selected, labels).Changed() {
+					for i, label := range labels {
+						if label == selected {
+							a.selectWallet(wallets[i].id)
+							break
+						}
+					}
+				}
+			})
 		}
-	})
-}
-
-// chainSwitcher chooses which account inside the open wallet is shown, and
-// switches the app's network to that family so the balance matches.
-func (a *App) chainSwitcher(c *ui.Context) {
-	p := a.pal
-	families := []chain.Family{chain.EVM, chain.Near, chain.Solana}
-	ui.Row(c).Gap(8).Margin(16, 0, 12, 0).Children(func() {
-		for _, family := range families {
-			family := family
-			label := familyName(family)
-			if a.network().Family == family {
-				a.primaryButton(c, label, nil, false, func() {})
-				continue
+		ui.Column(c).Gap(6).Grow(1).MaxWidth(360).Children(func() {
+			ui.Text(c, a.t(i18n.WalletNetwork)).FontSize(11).FontWeight(600).
+				TextColor(p.muted).MaxLines(1)
+			if ui.Select(c.Key("wallet-network"), &network, names).Changed() {
+				for i, name := range names {
+					if name == network {
+						a.setNetwork(networks[i].ID)
+						break
+					}
+				}
 			}
-			a.softButton(c, label, nil, p.text, func() { a.showFamily(family) })
-		}
+		})
 	})
 }
 
@@ -188,7 +199,7 @@ func (a *App) missingChain(c *ui.Context, w wallet.Container) {
 	p := a.pal
 	ui.Column(c).Gap(8).Padding(22).Center().Radius(14).
 		Background(p.card).Border(1, p.hairline).Margin(0, 0, 12, 0).Children(func() {
-		ui.Text(c, a.t(i18n.WalletNoChain, w.Name, familyName(a.network().Family))).
+		ui.Text(c, a.t(i18n.WalletNoChain, w.Name, a.network().Name)).
 			FontSize(13).FontWeight(600).TextAlign(ui.Center).MaxLines(3)
 		ui.Text(c, a.t(i18n.WalletNoChainWhy)).FontSize(12).TextColor(p.muted).
 			TextAlign(ui.Center).MaxLines(3)
@@ -316,7 +327,7 @@ func (a *App) walletImportForm(c *ui.Context) {
 	a.sectionTitle(c, title)
 	ui.Column(c).Gap(10).Padding(16).Radius(14).MaxWidth(600).
 		Background(p.card).Border(1, p.hairline).Shadow(0, 1, 2, 0, p.shadow).Children(func() {
-		ui.Text(c, a.t(i18n.WalletImportChain, familyName(family))).FontSize(12).
+		ui.Text(c, a.t(i18n.WalletImportChain, a.network().Name)).FontSize(12).
 			TextColor(p.muted).MaxLines(2)
 		if family == chain.Near {
 			ui.TextInput(c.Key("near-account"), &a.draftNearAccount).

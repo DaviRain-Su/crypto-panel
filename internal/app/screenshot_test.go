@@ -232,6 +232,22 @@ func TestScreenshots(t *testing.T) {
 	tt.SetDark(true)
 	save(t, tt, "new-wallet-passkey-dark")
 
+	// The one-time list of every network's address, then the same passkey
+	// on Ethereum and on Solana.
+	a.passkeyPrepared = true
+	save(t, ui.NewTester(a.view, windowWidth, windowHeight), "new-wallet-passkey-ready")
+	a.passkeyPrepared = false
+	a.settings.NetworkID = chains.Ethereum.ID
+	a.settings = a.settings.Validate()
+	a.snap.accounts = append(a.snap.accounts, accountSnapshot{
+		addr:   a.settings.Passkey.EVMAddress,
+		native: big.NewInt(500_000_000_000_000_000),
+	})
+	save(t, ui.NewTester(a.view, windowWidth, windowHeight), "new-wallet-passkey-ethereum")
+	a.settings.NetworkID = chains.SolanaMainnet.ID
+	a.settings = a.settings.Validate()
+	save(t, ui.NewTester(a.view, windowWidth, windowHeight), "new-wallet-passkey-solana")
+
 	a = newTestApp(t)
 	a.passkeyKind = passkey.KindTouchID
 	ap := approvalFor(&evmtx.Summary{

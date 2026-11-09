@@ -247,14 +247,17 @@ keys, with no seed phrase tying them together:
 
 The keys are in the OS keychain, never in `settings.json`. The settings file
 keeps the container's name and each account's address and label. The keyring
-reads a key into memory only while that account is unlocked. Switching the
-selected network changes which of the container's accounts the page shows:
-balance, lock, reveal, and send where that chain already sends (NEAR).
-Importing a private key targets the open wallet and the chain on screen; the
-field is 64 hex for EVM, `ed25519:` (plus an optional account id) for NEAR,
-and a base58 64-byte keypair for Solana. An older settings file that stored
-flat EVM and NEAR lists is migrated into one container per account, because
-those keys were not created as one identity.
+reads a key into memory only while that account is unlocked. The page picks a
+network from a menu of the presets (Ethereum, Base, NEAR, NEAR Testnet,
+Solana), the same choice Settings stores. Ethereum and Base share the EVM
+account and show that chain's balance. The two NEAR networks share the NEAR
+account. Only the selected network's account is on screen: balance, lock,
+reveal, and send where that family already sends (NEAR). Importing a private
+key targets the open wallet and the network on screen; the field is 64 hex
+for an EVM network, `ed25519:` (plus an optional account id) for NEAR, and a
+base58 64-byte keypair for Solana. An older settings file that stored flat
+EVM and NEAR lists is migrated into one container per account, because those
+keys were not created as one identity.
 
 Wallet accounts are watched like any other address, so their balances join the
 portfolio; a wallet address cannot also be added as a watch-only one. Solana

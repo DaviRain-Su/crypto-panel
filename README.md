@@ -308,10 +308,11 @@ network access to the NEAR testnet RPC and 1Click.
 
 3. **Create or import a wallet.** Wallet → **New wallet**. That prepares an
    EVM key, a NEAR implicit account, and a Solana key together, and shows each
-   secret once; save them. There is no seed phrase. Switch the chain control
-   on the page (or the network in Settings) to see that wallet's account on
-   NEAR. To use a named testnet account instead, create it with `near-cli` or
-   a testnet wallet, switch to NEAR, and import its `ed25519:` key into the
+   secret once; save them. There is no seed phrase. The network menu on the
+   page lists Ethereum, Base, NEAR, NEAR Testnet, and Solana; choosing one
+   shows that wallet's account for it and updates the sidebar. To use a named
+   testnet account instead, create it with `near-cli` or a testnet wallet,
+   choose NEAR Testnet, and import its `ed25519:` key into the
    open wallet.
 
 4. **Fund it.** Open <https://near-faucet.io>, enter the 64-hex account ID,

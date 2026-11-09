@@ -209,6 +209,7 @@ func (a *App) createPasskey() {
 			a.watchPasskeyAccount(pk.SolanaAddress, "Passkey")
 			a.save()
 			a.passkeyNotice = created
+			a.passkeyPrepared = true
 			a.touch()
 			a.requestRefresh()
 			a.invalidate()
@@ -246,6 +247,7 @@ func (a *App) removePasskey() {
 	}
 	a.passkeyErr = ""
 	a.passkeyNotice = ""
+	a.passkeyPrepared = false
 	a.passkeySendErr = ""
 	a.passkeySendNotice = ""
 	a.passkeySendHash = ""

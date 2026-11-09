@@ -94,6 +94,7 @@ const (
 	WalletNewTitle               Key = "walletNewTitle"
 	WalletNewTitleMany           Key = "walletNewTitleMany"
 	WalletSwitch                 Key = "walletSwitch"
+	WalletNetwork                Key = "walletNetwork"
 	WalletImportInto             Key = "walletImportInto"
 	WalletImportChain            Key = "walletImportChain"
 	WalletNoChain                Key = "walletNoChain"
@@ -155,6 +156,9 @@ const (
 	PasskeyWaiting        Key = "passkeyWaiting"
 	PasskeyFine           Key = "passkeyFine"
 	PasskeyCreated        Key = "passkeyCreated"
+	PasskeyPreparedTitle  Key = "passkeyPreparedTitle"
+	PasskeyPreparedBody   Key = "passkeyPreparedBody"
+	PasskeyPreparedFoot   Key = "passkeyPreparedFoot"
 	PasskeyFailed         Key = "passkeyFailed"
 	PasskeyUnavailable    Key = "passkeyUnavailable"
 	PasskeyNearAccount    Key = "passkeyNearAccount"
@@ -492,8 +496,9 @@ var messages = map[Key]map[string]string{
 	WalletNewTitle:               {English: "Save this private key", Chinese: "请保存这个私钥"},
 	WalletNewTitleMany:           {English: "Save these private keys", Chinese: "请保存这些私钥"},
 	WalletSwitch:                 {English: "Wallet", Chinese: "钱包"},
+	WalletNetwork:                {English: "Network", Chinese: "网络"},
 	WalletImportInto:             {English: "Import a private key into %s", Chinese: "向 %s 导入私钥"},
-	WalletImportChain:            {English: "This key is for %s. Switch chain above to import a different one.", Chinese: "这把私钥属于 %s。要导入其他链，请先在上方切换。"},
+	WalletImportChain:            {English: "This key is for %s. Pick another network above to import a different chain.", Chinese: "这把私钥用于 %s。要导入其他链，请先在上方更换网络。"},
 	WalletNoChain:                {English: "%s has no %s account", Chinese: "%s 还没有 %s 账户"},
 	WalletNoChainWhy:             {English: "Import a key for this chain below, or create a new wallet to generate one.", Chinese: "在下方为这条链导入私钥，或新建一个钱包来生成。"},
 	WalletSolanaKeyLabel:         {English: "Solana secret key", Chinese: "Solana 私钥"},
@@ -553,6 +558,9 @@ var messages = map[Key]map[string]string{
 	PasskeyWaiting:        {English: "Waiting for your passkey…", Chinese: "等待 Passkey 确认…"},
 	PasskeyFine:           {English: "The private key never leaves the authenticator. Crypto Panel stores only the public key.", Chinese: "私钥不会离开认证器。Crypto Panel 只保存公钥。"},
 	PasskeyCreated:        {English: "Passkey created. Its NEAR account can be funded. The Solana vault is not created on chain yet.", Chinese: "Passkey 已创建。其 NEAR 账户可以充值。Solana 金库尚未在链上创建。"},
+	PasskeyPreparedTitle:  {English: "One passkey, every network", Chinese: "一把 Passkey，覆盖每个网络"},
+	PasskeyPreparedBody:   {English: "These addresses were prepared together. The private key never left the authenticator.", Chinese: "这些地址是一起准备好的。私钥没有离开认证器。"},
+	PasskeyPreparedFoot:   {English: "Ethereum and Base share one smart-account address. Both NEAR networks share one account. The Solana vault is not created on chain — do not send SOL there. Sending from the EVM account is not wired.", Chinese: "Ethereum 和 Base 共用一个智能账户地址。两个 NEAR 网络共用一个账户。Solana 金库尚未在链上创建——不要向那里发送 SOL。EVM 账户的发送尚未接入。"},
 	PasskeyFailed:         {English: "The passkey ceremony failed:", Chinese: "Passkey 流程失败："},
 	PasskeyUnavailable:    {English: "Passkeys are unavailable in this build.", Chinese: "此版本无法使用 Passkey。"},
 	PasskeyNearAccount:    {English: "NEAR account", Chinese: "NEAR 账户"},

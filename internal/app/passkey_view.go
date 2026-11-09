@@ -5,8 +5,67 @@ import (
 	"github.com/egoist/mygo/ui"
 
 	"github.com/davirain-su/crypto-panel/internal/chain"
+	"github.com/davirain-su/crypto-panel/internal/chains"
 	"github.com/davirain-su/crypto-panel/internal/i18n"
+	"github.com/davirain-su/crypto-panel/internal/wallet"
 )
+
+// passkeyPreparedCard is the one-time list of every network's address after
+// a passkey is created. It holds no secret: the private key never entered
+// the app. Dismissing it leaves the page on the selected network only.
+func (a *App) passkeyPreparedCard(c *ui.Context) {
+	p := a.pal
+	pk := a.settings.Passkey
+	if pk == nil {
+		return
+	}
+	ui.Column(c).Key("passkey-prepared").Gap(12).Padding(16).Radius(14).
+		Background(p.card).Border(1, p.hairline).Shadow(0, 1, 2, 0, p.shadow).
+		Margin(0, 0, 14, 0).Children(func() {
+		ui.Row(c).Gap(12).AlignItems(ui.Center).Children(func() {
+			ui.Box(c).Size(38, 38).Radius(11).Background(p.accentSoft).Center().Children(func() {
+				ui.Icon(c, iconFingerprint).Size(19, 19).TextColor(p.accent)
+			})
+			ui.Column(c).Grow(1).Gap(3).Children(func() {
+				ui.Text(c, a.t(i18n.PasskeyPreparedTitle)).FontSize(13.5).FontWeight(700).MaxLines(1)
+				ui.Text(c, a.t(i18n.PasskeyPreparedBody)).FontSize(11.5).TextColor(p.muted).MaxLines(3)
+			})
+		})
+		for _, network := range chains.All() {
+			addr, copyable := a.passkeyAddress(network)
+			a.passkeyAccountRow(c, network.Name, addr, "", copyable)
+		}
+		ui.Text(c, a.t(i18n.PasskeyPreparedFoot)).FontSize(11).TextColor(p.muted).MaxLines(4)
+		a.softButton(c, a.t(i18n.WalletHide), nil, p.muted, a.dismissPasskeyPrepared)
+		a.passkeyMessages(c)
+	})
+}
+
+// passkeyAddress is the account this passkey controls on network. Ethereum
+// and Base share the EVM smart-account address. The two NEAR networks share
+// the NEAR account id. Solana is the LazorKit vault.
+func (a *App) passkeyAddress(network chain.Network) (string, bool) {
+	pk := a.settings.Passkey
+	if pk == nil {
+		return "", false
+	}
+	switch network.Family {
+	case chain.Near:
+		return pk.NEARAccount, pk.NEARAccount != ""
+	case chain.Solana:
+		return pk.SolanaAddress, pk.SolanaAddress != ""
+	default:
+		if pk.EVMAddress == "" {
+			return a.t(i18n.PasskeyDeriving), false
+		}
+		return wallet.Display(wallet.EVM, pk.EVMAddress), true
+	}
+}
+
+func (a *App) dismissPasskeyPrepared() {
+	a.passkeyPrepared = false
+	a.invalidate()
+}
 
 // passkeyChainCard is the passkey identity for the chain the page is showing.
 // One credential still controls the NEAR account, the EVM smart account and

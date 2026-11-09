@@ -120,9 +120,12 @@ type App struct {
 	// The passkey wallet: the browser ceremony that creates and uses the
 	// credential, the form for sending from its NEAR account, and the state
 	// the card shows. The credential's private key never enters the app.
-	passkeyBusy       bool
-	passkeyErr        string
-	passkeyNotice     string
+	passkeyBusy   bool
+	passkeyErr    string
+	passkeyNotice string
+	// passkeyPrepared is the one-time list of every network's address, shown
+	// after a passkey is created and cleared when the user dismisses it.
+	passkeyPrepared   bool
 	passkeyDeployHash string
 	passkeySendTo     string
 	passkeySendAmount string
@@ -421,6 +424,7 @@ func (a *App) goTo(r route) {
 		a.newKey, a.newKeyAddr = "", ""
 		a.shownKeys = nil
 		a.walletNotice = ""
+		a.passkeyPrepared = false
 	}
 	if a.route.kind == "plugins" && r.kind != "plugins" {
 		a.pluginDetail = ""

@@ -10,6 +10,7 @@ import (
 	"github.com/egoist/mygo/ui"
 
 	"github.com/davirain-su/crypto-panel/internal/chain"
+	"github.com/davirain-su/crypto-panel/internal/chains"
 	"github.com/davirain-su/crypto-panel/internal/wallet"
 )
 
@@ -250,6 +251,32 @@ func TestCreateWalletGroupsThreeChains(t *testing.T) {
 		if key.Key == "" || strings.Contains(string(data), key.Key) {
 			t.Fatalf("settings hold a %s key", key.Chain)
 		}
+	}
+}
+
+func TestNetworkMenuFollowsTheSelectedChain(t *testing.T) {
+	a := newTestApp(t)
+	a.route = routeWallet
+	a.createWalletAccount()
+	a.hideKey()
+	addr := wallet.Checksum(a.settings.Wallets[0].EVM.Addr)
+	sol := a.settings.Wallets[0].Solana.Address
+	page := func() *ui.Tester { return ui.NewTester(a.view, windowWidth, windowHeight) }
+	if !page().HasText("Network") || !page().HasText("Ethereum") || !page().HasText(addr) {
+		t.Fatalf("ethereum is not the open network: %q", page().Texts())
+	}
+	if page().HasText(sol) {
+		t.Fatal("the Solana address is shown while Ethereum is selected")
+	}
+	a.setNetwork(chains.Base.ID)
+	if a.network().Name != "Base" {
+		t.Fatalf("network = %s", a.network().Name)
+	}
+	if !page().HasText("Base") || !page().HasText(addr) {
+		t.Fatalf("Base does not show the same EVM account: %q", page().Texts())
+	}
+	if page().HasText(sol) {
+		t.Fatal("the Solana address is shown on Base")
 	}
 }
 
