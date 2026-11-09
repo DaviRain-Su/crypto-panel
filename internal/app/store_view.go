@@ -164,6 +164,61 @@ func (a *App) storeState(entry plugin.RegistryEntry) (*plugin.Installed, bool) {
 	return nil, false
 }
 
+// openProvenanceConfirm is the native approval for re-saving one personal
+// app's install provenance after a credential-store failure. It does not
+// read install.json; ConfirmProvenance runs only after the user agrees.
+func (a *App) openProvenanceConfirm(view plugin.ProvenanceView, done func(bool)) {
+	if a.win == nil || a.installOpen {
+		done(false)
+		return
+	}
+	a.installOpen = true
+	var win *mygo.Window
+	finish := func(ok bool) {
+		a.installOpen = false
+		if win != nil {
+			win.Close()
+		}
+		done(ok)
+	}
+	var decided bool
+	decide := func(ok bool) {
+		if decided {
+			return
+		}
+		decided = true
+		finish(ok)
+	}
+	win = mygo.NewWindow(mygo.WindowOptions{
+		Title:           a.t(i18n.ProvenanceLockedTitle),
+		Width:           460,
+		Height:          360,
+		MinWidth:        400,
+		MinHeight:       300,
+		Parent:          a.win,
+		Modal:           true,
+		BackgroundColor: "light-dark(#f6f4ef, #141513)",
+		Content: ui.View(func(c *ui.Context) {
+			p := a.pal
+			c.Root().Background(p.bg)
+			ui.Column(c).Fill().Padding(20).Gap(12).Children(func() {
+				ui.Text(c, a.t(i18n.ProvenanceLockedTitle)).FontSize(20).FontWeight(700).MaxLines(2)
+				ui.Text(c, view.Name).FontSize(14).FontWeight(600).MaxLines(1)
+				ui.Text(c, a.t(i18n.ProvenanceLockedPath, view.Path)).FontSize(12).MaxLines(3)
+				ui.Text(c, a.t(i18n.ProvenanceLockedHash, view.PackageHash)).FontSize(12).MaxLines(2)
+				ui.Text(c, a.t(i18n.ProvenanceLockedUnsigned)).FontSize(12).MaxLines(1)
+				ui.Text(c, a.t(i18n.ProvenanceLockedWarn)).FontSize(13).MaxLines(6)
+				ui.Row(c).Gap(8).Children(func() {
+					a.primaryButton(c, a.t(i18n.Cancel), nil, false, func() { decide(false) })
+					a.softButton(c, a.t(i18n.ProvenanceLockedAction, view.Name), nil, p.muted, func() { decide(true) })
+				})
+			})
+		}),
+	})
+	win.OnClose(func(*mygo.CloseEvent) { decide(false) })
+	win.Focus()
+}
+
 // askInstall is the shell's permission prompt: what the plugin may do, in
 // the shell's words, and two buttons. It never blocks the main thread; the
 // answer arrives through done.

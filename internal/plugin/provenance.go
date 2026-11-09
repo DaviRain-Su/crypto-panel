@@ -13,6 +13,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/egoist/mygo"
 )
 
 // provenanceIOTimeout bounds one credential-store read or write. A slow
@@ -228,15 +230,7 @@ func provenanceAbsent(err error) bool {
 	if err == nil {
 		return false
 	}
-	if errors.Is(err, os.ErrNotExist) || errors.Is(err, fs.ErrNotExist) {
-		return true
-	}
-	switch err.Error() {
-	case "mygo: secret not found", "no such secret":
-		return true
-	default:
-		return false
-	}
+	return errors.Is(err, os.ErrNotExist) || errors.Is(err, fs.ErrNotExist) || errors.Is(err, mygo.ErrSecretNotFound)
 }
 
 func (s *Store) getProvenance(id string) (hostProvenance, bool, error) {
@@ -346,10 +340,13 @@ func (s *Store) adoptPersonalRecord(id, dir, packageHash string) error {
 // from trusting install.json as it reads then. Apps left without a confirmed
 // record stay forbidden to the local API until a native reinstall.
 //
-// Residual risk: if both the sentinel file and the credential-store writes
-// fail, the next start cannot tell this attempt from a first upgrade and may
-// classify whatever install.json says at that moment. Deleting the sentinel
-// and the credential-store markers has the same effect.
+// Residual risk: a failed sentinel write alone is enough. The started and
+// done markers are only attempted after the sentinel is created, so if that
+// create fails the next start looks like a first upgrade and may classify
+// install.json as it is then. Re-migration also happens if the sentinel,
+// both migration markers, and the target app's provenance record are all
+// gone. That is the same surface as forging install.json before the first
+// upgrade. Deleting only the sentinel, or only the markers, is not enough.
 func (s *Store) migrateProvenance() {
 	done, found, err := s.readProv(provenanceMigrationAccount)
 	if err != nil || (found && len(done) > 0) {
@@ -448,15 +445,12 @@ func (s *Store) migrationSentinelExists() (bool, error) {
 	return true, nil
 }
 
-func (s *Store) createMigrationSentinel() error {
-	path, err := s.migrationSentinelPath()
-	if err != nil {
-		return err
-	}
+// createMigrationSentinelFile writes the sentinel. Tests replace it to inject
+// a failure without changing directory permissions.
+var createMigrationSentinelFile = writeMigrationSentinelFile
+
+func writeMigrationSentinelFile(path string) error {
 	f, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE|os.O_EXCL, 0o600)
-	if errors.Is(err, fs.ErrExist) {
-		return err
-	}
 	if err != nil {
 		return err
 	}
@@ -465,6 +459,14 @@ func (s *Store) createMigrationSentinel() error {
 		return err
 	}
 	return f.Sync()
+}
+
+func (s *Store) createMigrationSentinel() error {
+	path, err := s.migrationSentinelPath()
+	if err != nil {
+		return err
+	}
+	return createMigrationSentinelFile(path)
 }
 
 func apiMutationForbidden() *Error {
@@ -537,4 +539,217 @@ func provenanceMatchesInstall(prov hostProvenance, dir string) error {
 		return errors.New("install record package hash changed")
 	}
 	return nil
+}
+
+// migrationStuck reports an unfinished provenance migration. A read error is
+// not treated as "finished".
+func (s *Store) migrationStuck() (bool, error) {
+	_, found, err := s.readProv(provenanceMigrationAccount)
+	if err != nil {
+		return false, err
+	}
+	if found {
+		return false, nil
+	}
+	_, started, err := s.readProv(provenanceMigrationStarted)
+	if err != nil {
+		return false, err
+	}
+	sentinel, serr := s.migrationSentinelExists()
+	if serr != nil {
+		return true, nil
+	}
+	return started || sentinel, nil
+}
+
+// ErrProvenanceChanged means the app on disk is not the one the confirm
+// window showed. ErrProvenanceSigned means a verified signature is present,
+// so the local API stays closed. ErrProvenanceUnhashed means there is no
+// package hash to pin. ErrProvenanceLinked means install.json has more than
+// one name.
+var (
+	ErrProvenanceChanged  = errors.New("the app changed before it was confirmed")
+	ErrProvenanceSigned   = errors.New("a signed app cannot be opened to the local API")
+	ErrProvenanceUnhashed = errors.New("the app has no package hash")
+	ErrProvenanceLinked   = errors.New("install record has more than one link")
+)
+
+// ProvenanceView is the snapshot shown in the confirm window.
+type ProvenanceView struct {
+	ID          string
+	Name        string
+	Path        string
+	PackageHash string
+	Signed      bool
+	dev         uint64
+	ino         uint64
+	nlink       uint64
+	digest      string
+}
+
+// LockedLocalApps are local.* personal apps whose origin cannot be confirmed
+// while migration did not finish. The list does not call them unsigned:
+// install.json is not signature evidence. A package whose signature still
+// verifies is omitted, because confirming it cannot make it editable. A
+// local.* app that was signed before local.* ids were rejected, and whose
+// install.json a same-user process rewrites before the window opens, can
+// still appear here. The user's confirm click is the only gate. This does
+// not follow links.
+
+// readInstallIdentity is installIdentity, swapped in tests that need a link
+// count the kernel will not produce.
+var readInstallIdentity = installIdentity
+
+func (s *Store) LockedLocalApps() ([]Installed, error) {
+	stuck, err := s.migrationStuck()
+	if err != nil || !stuck {
+		return nil, err
+	}
+	entries, err := os.ReadDir(s.dir)
+	if err != nil {
+		return nil, err
+	}
+	var out []Installed
+	for _, entry := range entries {
+		name := entry.Name()
+		if strings.HasPrefix(name, ".") || !entry.IsDir() || !strings.HasPrefix(name, "local.") || validatePluginID(name) != nil {
+			continue
+		}
+		_, found, err := s.getProvenance(name)
+		if err == nil && found {
+			continue
+		}
+		inst, err := s.Get(name)
+		if err != nil || inst.Manifest.ID != name || inst.Official {
+			continue
+		}
+		signed, _ := verifiedSignature(inst.Dir)
+		if signed || inst.Signed {
+			continue
+		}
+		out = append(out, inst)
+	}
+	return out, nil
+}
+
+// SnapshotProvenance records what the confirm window is about to show.
+func (s *Store) SnapshotProvenance(id string) (ProvenanceView, error) {
+	view, _, err := s.inspectProvenance(id)
+	return view, err
+}
+
+// ConfirmProvenance writes a host record only when the app still matches the
+// snapshot from the open window. A verified signature is stored as signed
+// and never turned into an editable personal app. The caller holds no API
+// grant until this returns nil.
+func (s *Store) ConfirmProvenance(view ProvenanceView) error {
+	if !strings.HasPrefix(view.ID, "local.") || validatePluginID(view.ID) != nil {
+		return errors.New("only a local app can be confirmed")
+	}
+	release, err := s.tryLease(view.ID)
+	if err != nil {
+		return err
+	}
+	defer release()
+	stuck, err := s.migrationStuck()
+	if err != nil {
+		return err
+	}
+	if !stuck {
+		return errors.New("provenance migration is not waiting for confirmation")
+	}
+	current, raw, err := s.inspectProvenance(view.ID)
+	if err != nil {
+		return err
+	}
+	if current.PackageHash == "" || view.PackageHash == "" {
+		return ErrProvenanceUnhashed
+	}
+	if view.ID != current.ID || view.Path != current.Path || view.PackageHash != current.PackageHash || view.digest != current.digest || view.Signed != current.Signed || view.dev != current.dev || view.ino != current.ino || view.nlink != current.nlink || view.nlink > 1 || current.nlink > 1 {
+		return ErrProvenanceChanged
+	}
+	if current.Signed {
+		return ErrProvenanceSigned
+	}
+	record, _, err := readInstallBytes(filepath.Join(s.dir, current.ID))
+	if err != nil {
+		return err
+	}
+	return s.putProvenance(hostProvenance{
+		ID:            current.ID,
+		Signed:        false,
+		Via:           record.InstalledVia,
+		PackageHash:   current.PackageHash,
+		InstallDigest: installDigest(raw),
+	})
+}
+
+func (s *Store) inspectProvenance(id string) (ProvenanceView, []byte, error) {
+	dir := filepath.Join(s.dir, id)
+	inst, err := s.Get(id)
+	if err != nil || inst.Manifest.ID != id {
+		return ProvenanceView{}, nil, errors.New("app is not installed")
+	}
+	if inst.Official {
+		return ProvenanceView{}, nil, ErrProvenanceSigned
+	}
+	path := filepath.Join(dir, "install.json")
+	info, err := os.Lstat(path)
+	if err != nil {
+		return ProvenanceView{}, nil, err
+	}
+	if info.Mode()&fs.ModeSymlink != 0 || !info.Mode().IsRegular() {
+		return ProvenanceView{}, nil, errInstallNotRegular
+	}
+	dev, ino, nlink, ok := readInstallIdentity(path, info)
+	if !ok || nlink == 0 || nlink > 1 {
+		return ProvenanceView{}, nil, ErrProvenanceLinked
+	}
+	_, raw, err := readInstallBytes(dir)
+	if err != nil {
+		return ProvenanceView{}, nil, err
+	}
+	opened, err := os.Lstat(path)
+	if err != nil || !os.SameFile(info, opened) {
+		return ProvenanceView{}, nil, ErrProvenanceChanged
+	}
+	hash, err := normalizedPackageHash(dir)
+	if err != nil {
+		return ProvenanceView{}, nil, err
+	}
+	if hash == "" {
+		return ProvenanceView{}, nil, ErrProvenanceUnhashed
+	}
+	signed, _ := verifiedSignature(dir)
+	if inst.Signed {
+		signed = true
+	}
+	return ProvenanceView{
+		ID: id, Name: inst.Manifest.Name, Path: dir, PackageHash: hash, Signed: signed,
+		dev: dev, ino: ino, nlink: nlink, digest: installDigest(raw),
+	}, raw, nil
+}
+
+// verifiedSignature reports whether this directory carries a signature that
+// checks out against its own bytes. A publisher claim that does not verify
+// is not evidence. Official examples are signed for this purpose.
+func verifiedSignature(dir string) (bool, error) {
+	record, _, err := readInstallBytes(dir)
+	if err != nil {
+		return false, err
+	}
+	if record.Official {
+		return true, nil
+	}
+	if record.Publisher == "" || record.Signature == "" || record.Hash == "" {
+		return false, nil
+	}
+	digest, err := DigestDir(dir)
+	if err != nil || digest != record.Hash {
+		return false, nil
+	}
+	if err := VerifyDigest(record.Hash, record.Signature, record.Publisher); err != nil {
+		return false, nil
+	}
+	return true, nil
 }

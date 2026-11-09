@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"crypto/ed25519"
 	"crypto/rand"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -186,7 +188,7 @@ func secretStored(secrets credentialMemory, secret string) bool {
 	return false
 }
 
-func installSignedApp(t *testing.T, store *plugin.Store, id string) {
+func installSignedApp(t *testing.T, store *plugin.Store, secrets plugin.Secrets, id string) {
 	t.Helper()
 	dir := t.TempDir()
 	manifest := fmt.Sprintf(`{"id":%q,"name":"Signed","version":"1.0.0","main":"index.js","permissions":{"storageKb":1},"settings":[{"key":"plain","label":"Plain"},{"key":"token","label":"Token","secret":true}],"navigation":[{"title":"Overview","page":"overview"}]}`, id)
@@ -196,32 +198,35 @@ func installSignedApp(t *testing.T, store *plugin.Store, id string) {
 	if err := os.WriteFile(filepath.Join(dir, "index.js"), []byte(`export function page(){return {title:"Signed"};}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	m, err := plugin.LoadManifest(dir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	digest, err := plugin.DigestDir(dir)
-	if err != nil {
+	if _, err := store.Install(dir); err != nil {
 		t.Fatal(err)
 	}
 	_, priv, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
 		t.Fatal(err)
 	}
-	entry := plugin.RegistryEntry{
-		ID: m.ID, Name: m.Name, Version: m.Version, URL: "https://example.com/signed.zip",
-		Hash: digest, Signature: plugin.SignDigest(priv, digest),
-		Publisher: plugin.PublicKeyString(priv.Public().(ed25519.PublicKey)),
-	}
-	archive, err := plugin.ZipDir(dir)
+	installed := filepath.Join(store.Dir(), id)
+	digest, err := plugin.DigestDir(installed)
 	if err != nil {
 		t.Fatal(err)
 	}
-	ready, err := store.Prepare(archive, entry)
+	body := fmt.Sprintf("{\n  \"installedVia\": \"store\",\n  \"hash\": %q,\n  \"publisher\": %q,\n  \"signature\": %q\n}\n", digest, plugin.PublicKeyString(priv.Public().(ed25519.PublicKey)), plugin.SignDigest(priv, digest))
+	if err := os.WriteFile(filepath.Join(installed, "install.json"), []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	hash, err := store.PackageHash(id)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := ready.Install(); err != nil {
+	sum := sha256.Sum256([]byte(body))
+	record, err := json.Marshal(map[string]any{
+		"id": id, "signed": true, "via": "store", "packageHash": hash,
+		"installDigest": "sha256:" + hex.EncodeToString(sum[:]),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := secrets.Set(plugin.ProvenanceAccount(id), record); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -260,7 +265,7 @@ func TestAPICannotUninstallOrRetuneProtectedApps(t *testing.T) {
 	if _, err := manager.SetSettings("com.example.vault", map[string]string{"plain": "original", "token": vaultSecret}); err != nil {
 		t.Fatal(err)
 	}
-	installSignedApp(t, store, "local.signed.app")
+	installSignedApp(t, store, secrets, "local.signed.app")
 	signedSecret := "signed-credential"
 	if _, err := manager.SetSettings("local.signed.app", map[string]string{"token": signedSecret}); err != nil {
 		t.Fatal(err)
@@ -340,7 +345,7 @@ func TestCorruptInstallRecordIsNotAPIMutable(t *testing.T) {
 	}
 	t.Cleanup(func() { manager.Close() })
 	s := New(&managedData{base, manager}, "test-token")
-	installSignedApp(t, store, "local.signed.app")
+	installSignedApp(t, store, secrets, "local.signed.app")
 	secret := "signed-credential"
 	if _, err := manager.SetSettings("local.signed.app", map[string]string{"token": secret}); err != nil {
 		t.Fatal(err)

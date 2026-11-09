@@ -2,10 +2,12 @@ package agent
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/davirain-su/lintel/internal/plugin"
@@ -300,7 +302,7 @@ func TestSignedUpdateUsesHostProvenance(t *testing.T) {
 	}
 	t.Cleanup(func() { manager.Close() })
 	s := New(&managedData{base, manager}, "test-token")
-	installSignedApp(t, store, "local.personal.signed")
+	installSignedApp(t, store, secrets, "local.personal.signed")
 	hash, err := store.PackageHash("local.personal.signed")
 	if err != nil {
 		t.Fatal(err)
@@ -348,4 +350,90 @@ func TestSignedUpdateUsesHostProvenance(t *testing.T) {
 	if len(listed.Installations) != 0 {
 		t.Fatalf("被拒绝的更新仍进入队列: %+v", listed.Installations)
 	}
+}
+
+type startupErrSecrets struct {
+	mu      sync.Mutex
+	m       map[string][]byte
+	failGet int
+}
+
+func (s *startupErrSecrets) Get(key string) ([]byte, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.failGet > 0 {
+		s.failGet--
+		return nil, errors.New("keychain read failed")
+	}
+	v, ok := s.m[key]
+	if !ok {
+		return nil, os.ErrNotExist
+	}
+	return append([]byte(nil), v...), nil
+}
+func (s *startupErrSecrets) Set(key string, value []byte) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.m == nil {
+		s.m = map[string][]byte{}
+	}
+	s.m[key] = append([]byte(nil), value...)
+	return nil
+}
+func (s *startupErrSecrets) Delete(key string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	delete(s.m, key)
+	return nil
+}
+
+func TestDeletedSentinelAndReadErrorKeepsSignedAppClosed(t *testing.T) {
+	sec := &startupErrSecrets{}
+	root := t.TempDir()
+	store := plugin.NewStore(filepath.Join(root, "plugins"), sec)
+	manager, err := plugin.NewManager(store)
+	if err != nil {
+		t.Fatal(err)
+	}
+	installSignedApp(t, store, sec, "local.personal.signed")
+	secret := "signed-secret"
+	if _, err := manager.SetSettings("local.personal.signed", map[string]string{"token": secret}); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(filepath.Join(root, ".plugins-migration-attempted")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(store.Dir(), "local.personal.signed", "install.json"), []byte("{}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := manager.Close(); err != nil {
+		t.Fatal(err)
+	}
+	sec.failGet = 1
+	manager, err = plugin.NewManager(store)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { manager.Close() })
+	_, base := newTestServer(t)
+	base.plugins = nil
+	s := New(&managedData{base, manager}, "test-token")
+	changed := jsonRequest(t, s, http.MethodPut, "/v0/plugins/local.personal.signed/settings", map[string]any{"values": map[string]string{"plain": "hacked"}})
+	if changed.Code != http.StatusForbidden || codeOf(t, changed) != "API_MUTATION_FORBIDDEN" || !secretStored(sec.asMemory(), secret) {
+		t.Fatalf("删哨兵加读错误后设置被接受: %d %s", changed.Code, changed.Body)
+	}
+	removed := do(t, s, http.MethodDelete, "/v0/plugins/local.personal.signed", "test-token")
+	if removed.Code != http.StatusForbidden || codeOf(t, removed) != "API_MUTATION_FORBIDDEN" || !secretStored(sec.asMemory(), secret) {
+		t.Fatalf("删哨兵加读错误后卸载被接受: %d %s", removed.Code, removed.Body)
+	}
+}
+
+func (s *startupErrSecrets) asMemory() credentialMemory {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := credentialMemory{}
+	for k, v := range s.m {
+		out[k] = append([]byte(nil), v...)
+	}
+	return out
 }

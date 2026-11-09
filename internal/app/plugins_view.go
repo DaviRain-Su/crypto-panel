@@ -21,6 +21,7 @@ func (a *App) pluginsView(c *ui.Context) {
 		ui.Text(c, a.pluginNotice).FontSize(11).TextColor(p.muted).MaxLines(2).
 			Margin(0, 0, 12, 0)
 	}
+	a.provenanceLockNotice(c)
 	if a.coding.open {
 		a.creatorView(c)
 		return
@@ -38,6 +39,86 @@ func (a *App) pluginsView(c *ui.Context) {
 		return
 	}
 	a.appGrid(c)
+}
+
+func (a *App) provenanceLockNotice(c *ui.Context) {
+	locked := a.provenanceLocked
+	if len(locked) == 0 {
+		return
+	}
+	p := a.pal
+	ui.Column(c).Gap(8).Padding(14).Radius(12).Background(p.card).
+		Border(1, p.hairline).Margin(0, 0, 12, 0).Children(func() {
+		ui.Text(c, a.t(i18n.ProvenanceLockedNotice)).FontSize(12).TextColor(p.text).MaxLines(4)
+		for _, item := range locked {
+			id, name := item.Manifest.ID, item.Manifest.Name
+			a.softButton(c, a.t(i18n.ProvenanceLockedAction, name), nil, p.accent, func() {
+				a.askProvenanceConfirm(id, name)
+			})
+		}
+	})
+}
+
+func (a *App) askProvenanceConfirm(id, name string) {
+	if a.plugins == nil {
+		return
+	}
+	plugins := a.plugins
+	a.pluginNotice = a.t(i18n.ProvenanceLockedBusy)
+	a.invalidate()
+	a.async(func() {
+		view, err := plugins.SnapshotProvenance(id)
+		a.main(func() {
+			if err != nil || view.Signed || view.PackageHash == "" || view.ID != id || a.plugins != plugins {
+				a.pluginNotice = a.t(i18n.ProvenanceLockedFailed)
+				a.invalidate()
+				a.refreshProvenanceLocks()
+				return
+			}
+			ask := a.confirmProvenance
+			if ask == nil {
+				ask = a.openProvenanceConfirm
+			}
+			ask(view, func(ok bool) {
+				if !ok || a.plugins != plugins {
+					return
+				}
+				a.pluginNotice = a.t(i18n.ProvenanceLockedBusy)
+				a.invalidate()
+				a.async(func() {
+					err := plugins.ConfirmProvenance(view)
+					a.main(func() {
+						if err != nil || a.pluginManager != nil && a.pluginManager.APIMayMutate(id) != nil {
+							a.pluginNotice = a.t(i18n.ProvenanceLockedFailed)
+							a.invalidate()
+							a.refreshProvenanceLocks()
+							return
+						}
+						a.pluginNotice = a.t(i18n.ProvenanceLockedDone, name)
+						a.refreshPlugins()
+						a.refreshProvenanceLocks()
+						a.invalidate()
+					})
+				})
+			})
+		})
+	})
+}
+
+func (a *App) async(fn func()) {
+	if a.goAsync != nil {
+		a.goAsync(fn)
+		return
+	}
+	fn()
+}
+
+func (a *App) main(fn func()) {
+	if a.runOnMain != nil {
+		a.runOnMain(fn)
+		return
+	}
+	fn()
 }
 
 // pluginTabs switches the Apps page between the launcher and the store,
