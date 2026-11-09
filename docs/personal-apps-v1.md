@@ -247,11 +247,11 @@ V1 支持更高版本的同 id 个人应用更新，通过与首次安装相同�
 | `POST /v0/plugins` | 提议新安装 | 202，含任务 |
 | `PUT /v0/plugins/{id}` | 提议个人更新 | 202，含任务 |
 | `GET /v0/installations/{requestId}` | 查询任务状态 | 200 |
-| `DELETE /v0/installations/{requestId}` | 取消尚待确认的任务 | 200，含 cancelled 任务 |
-| `GET /v0/plugins` | 已安装应用、设置元数据和待确认摘要 | 200 |
-| `PUT /v0/plugins/{id}/settings` | 写入声明过的设置 | 200 |
+| `DELETE /v0/installations/{requestId}` | 取消本机 API 尚待确认的任务。ACP 任务返回 403 `INSTALLATION_ORIGIN_FORBIDDEN` | 200，含 cancelled 任务 |
+| `GET /v0/plugins` | 已安装应用、设置元数据和本机 API 待确认摘要。不返回 ACP 任务 requestId | 200 |
+| `PUT /v0/plugins/{id}/settings` | 写入未签名 `local.*` 应用声明过的设置。其他应用返回 403 `API_MUTATION_FORBIDDEN` | 200 |
 | `POST /v0/plugins/{id}/refresh` | 在 API 上下文中求页面 | 200，页面 JSON |
-| `DELETE /v0/plugins/{id}` | 卸载 | 204 |
+| `DELETE /v0/plugins/{id}` | 卸载未签名 `local.*` 应用。官方、已签名或安装记录不可读时返回 403 `API_MUTATION_FORBIDDEN` | 204 |
 
 ### 10.2 应用输入
 
@@ -392,7 +392,7 @@ HTTP 错误保留原来的字符串 error 字段，补充稳定 code；需要时
 | 状态码 | 使用范围 |
 | --- | --- |
 | 400 | 请求 JSON、字段、类型或页名错误 |
-| 401 / 403 | token 无效 / 浏览器 Origin 被拒绝 |
+| 401 / 403 | token 无效 / 浏览器 Origin 被拒绝 / `API_MUTATION_FORBIDDEN`（卸载或改设置的不是未签名 `local.*`，或安装记录不可读）/ `INSTALLATION_ORIGIN_FORBIDDEN`（取消 ACP 任务） |
 | 404 | 应用、模板、源路径或任务不存在 |
 | 409 | id 冲突、版本冲突、基线变化、已有不同候选、任务不可取消、应用禁用或正忙 |
 | 413 / 415 | 大小超限 / 不支持的请求媒体类型 |

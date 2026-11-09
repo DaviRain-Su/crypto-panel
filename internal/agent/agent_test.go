@@ -124,9 +124,19 @@ func TestRejectsMultipleOriginsCrossSiteAndForeignHost(t *testing.T) {
 			req.Header.Add("Origin", "https://b.example")
 		})
 	})
+	t.Run("multiple origins with empty first", func(t *testing.T) {
+		forbid(t, func(req *http.Request) {
+			req.Header["Origin"] = []string{"", "https://evil.example"}
+		})
+	})
 	t.Run("cross-site", func(t *testing.T) {
 		forbid(t, func(req *http.Request) {
 			req.Header.Set("Sec-Fetch-Site", "cross-site")
+		})
+	})
+	t.Run("cross-site case and padding", func(t *testing.T) {
+		forbid(t, func(req *http.Request) {
+			req.Header.Set("Sec-Fetch-Site", " Cross-Site ")
 		})
 	})
 	t.Run("foreign host", func(t *testing.T) {
@@ -155,11 +165,60 @@ func TestRejectsMultipleOriginsCrossSiteAndForeignHost(t *testing.T) {
 	forbid(t, func(req *http.Request) { req.Host = "localhost:1" })
 	req := withLocalHost(s, httptest.NewRequest(http.MethodGet, "/v0/portfolio", nil))
 	req.Header.Set("Authorization", "Bearer test-token")
-	req.Host = "localhost" + s.Addr()[strings.LastIndex(s.Addr(), ":"):]
+	port := s.Addr()[strings.LastIndex(s.Addr(), ":"):]
+	req.Host = "localhost" + port
 	rec := httptest.NewRecorder()
 	s.handler().ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("localhost status %d", rec.Code)
+	}
+	req = withLocalHost(s, httptest.NewRequest(http.MethodGet, "/v0/portfolio", nil))
+	req.Header.Set("Authorization", "Bearer test-token")
+	req.Host = "LOCALHOST" + port
+	rec = httptest.NewRecorder()
+	s.handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("LOCALHOST status %d", rec.Code)
+	}
+}
+
+func TestLoopbackHostDoesNotRaceWithClose(t *testing.T) {
+	s, _ := newTestServer(t)
+	if err := s.Start(0); err != nil {
+		t.Fatal(err)
+	}
+	host := s.Addr()
+	done := make(chan struct{})
+	go func() {
+		_ = s.Close()
+		close(done)
+	}()
+	for {
+		if !s.loopbackHost(host) {
+			t.Fatal("bound host rejected")
+		}
+		select {
+		case <-done:
+			return
+		default:
+		}
+	}
+}
+
+func TestRefreshOmitsEmptyMetadataHeaders(t *testing.T) {
+	_, base := newTestServer(t)
+	s := New(headerManagedEmpty{base}, "test-token")
+	rec := do(t, s, http.MethodPost, "/v0/plugins/com.example.gas/refresh", "test-token")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("refresh: %d %s", rec.Code, rec.Body)
+	}
+	for _, name := range []string{
+		"X-Crypto-Panel-Package-Hash", "X-Lintel-Package-Hash",
+		"X-Crypto-Panel-Evaluated-At", "X-Lintel-Evaluated-At",
+	} {
+		if rec.Header().Get(name) != "" {
+			t.Fatalf("%s = %q", name, rec.Header().Get(name))
+		}
 	}
 }
 

@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 )
 
@@ -273,5 +274,91 @@ func TestPackageHashMatchesCanonicalDigestWithoutCopying(t *testing.T) {
 		if strings.HasPrefix(entry.Name(), "lintel-hash-") {
 			t.Fatal("计算摘要时复制了整棵应用树")
 		}
+	}
+}
+
+func TestPackageHashRejectsSymlinkedShellFiles(t *testing.T) {
+	s, m := newTestManager(t, nil)
+	installed := installTest(t, m, personalPackage(t, "local.personal.gas", "1.0.0"))
+	appDir := filepath.Join(s.Dir(), installed.PluginID)
+	outside := filepath.Join(t.TempDir(), "outside.json")
+	const marker = "kvlink-probe-secret"
+	if err := os.WriteFile(outside, []byte(marker), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"state.json", "kv.json"} {
+		path := filepath.Join(appDir, name)
+		_ = os.Remove(path)
+		if err := os.Symlink(outside, path); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := s.PackageHash(installed.PluginID); err == nil {
+		t.Fatal("壳文件符号链接仍可计算摘要")
+	}
+	next := personalPackage(t, installed.PluginID, "2.0.0")
+	if _, err := m.Propose(Source{Kind: "inline", Package: &next}, "update", installed.PluginID, installed.PackageHash, "local-api"); err == nil {
+		t.Fatal("更新被批准")
+	}
+	got, err := s.Get(installed.PluginID)
+	if err != nil || got.Manifest.Version != "1.0.0" {
+		t.Fatalf("已安装版本被替换: %+v %v", got.Manifest.Version, err)
+	}
+	for _, name := range []string{"state.json", "kv.json"} {
+		info, err := os.Lstat(filepath.Join(appDir, name))
+		if err != nil || info.Mode()&os.ModeSymlink == 0 {
+			t.Fatalf("%s 不再是指向外部文件的符号链接", name)
+		}
+	}
+	outsideData, err := os.ReadFile(outside)
+	if err != nil || string(outsideData) != marker {
+		t.Fatal("外部文件被改写")
+	}
+	err = filepath.WalkDir(s.Dir(), func(path string, d os.DirEntry, err error) error {
+		if err != nil || d.IsDir() || d.Type()&os.ModeSymlink != 0 {
+			return err
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		if strings.Contains(string(data), marker) {
+			t.Fatalf("外部内容被复制进 %s", path)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestPackageHashRejectsSpecialOrJunkLinksBeforeSkip(t *testing.T) {
+	for _, kind := range []string{"fifo", "backslash", "junk-symlink"} {
+		t.Run(kind, func(t *testing.T) {
+			s, m := newTestManager(t, nil)
+			installed := installTest(t, m, personalPackage(t, "local.personal.gas", "1.0.0"))
+			appDir := filepath.Join(s.Dir(), installed.PluginID)
+			switch kind {
+			case "fifo":
+				if err := syscall.Mkfifo(filepath.Join(appDir, "kv.json"), 0o600); err != nil {
+					t.Fatal(err)
+				}
+			case "backslash":
+				if err := os.WriteFile(filepath.Join(appDir, `bad\name.js`), []byte("x"), 0o600); err != nil {
+					t.Fatal(err)
+				}
+			case "junk-symlink":
+				outside := filepath.Join(t.TempDir(), "junk")
+				if err := os.WriteFile(outside, []byte("x"), 0o600); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.Symlink(outside, filepath.Join(appDir, ".DS_Store")); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if _, err := s.PackageHash(installed.PluginID); err == nil {
+				t.Fatal("被旧摘要规则拒绝的文件树通过了")
+			}
+		})
 	}
 }

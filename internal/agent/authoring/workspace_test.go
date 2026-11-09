@@ -152,6 +152,37 @@ func TestUpdateCopiesCompleteCodeWithoutStateOrSecrets(t *testing.T) {
 	}
 }
 
+func TestEmptyWorkspaceRootDoesNotSweepTempDir(t *testing.T) {
+	sentinel := filepath.Join(os.TempDir(), "lintel-authoring-sentinel-"+strings.ReplaceAll(t.Name(), "/", "-"))
+	if err := os.MkdirAll(filepath.Join(sentinel, "context"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_ = os.Chmod(filepath.Join(sentinel, "context"), 0700)
+		_ = os.RemoveAll(sentinel)
+	})
+	if err := os.WriteFile(filepath.Join(sentinel, "context", "catalog.json"), []byte("{}"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := SweepStaleWorkspaces(""); err != nil {
+		t.Fatal(err)
+	}
+	if err := SweepStaleWorkspaces("   "); err != nil {
+		t.Fatal(err)
+	}
+	dir, err := createWorkspace(context.Background(), "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { removeWorkspace(dir) })
+	if _, err := os.Stat(sentinel); err != nil {
+		t.Fatal("未指定工作根时清扫了系统临时目录")
+	}
+	if _, err := os.Stat(dir); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestWorkspaceSourceOverlapGuard(t *testing.T) {
 	src := t.TempDir()
 	nested := filepath.Join(src, "lintel-authoring-child")

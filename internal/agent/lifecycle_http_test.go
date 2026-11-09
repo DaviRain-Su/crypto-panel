@@ -329,6 +329,77 @@ func TestAPICannotUninstallOrRetuneProtectedApps(t *testing.T) {
 	}
 }
 
+func TestCorruptInstallRecordIsNotAPIMutable(t *testing.T) {
+	secrets := credentialMemory{}
+	_, base := newTestServer(t)
+	base.plugins = nil
+	store := plugin.NewStore(t.TempDir(), secrets)
+	manager, err := plugin.NewManager(store)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { manager.Close() })
+	s := New(&managedData{base, manager}, "test-token")
+	installSignedApp(t, store, "local.signed.app")
+	secret := "signed-credential"
+	if _, err := manager.SetSettings("local.signed.app", map[string]string{"token": secret}); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(store.Dir(), "local.signed.app", "install.json"), []byte("{"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	removed := do(t, s, http.MethodDelete, "/v0/plugins/local.signed.app", "test-token")
+	if removed.Code != http.StatusForbidden || codeOf(t, removed) != "API_MUTATION_FORBIDDEN" || !secretStored(secrets, secret) {
+		t.Fatalf("损坏的安装记录仍被卸载：%d %s", removed.Code, removed.Body)
+	}
+	changed := jsonRequest(t, s, http.MethodPut, "/v0/plugins/local.signed.app/settings", map[string]any{"values": map[string]string{"plain": "hacked"}})
+	if changed.Code != http.StatusForbidden || codeOf(t, changed) != "API_MUTATION_FORBIDDEN" {
+		t.Fatalf("损坏的安装记录仍可改设置：%d %s", changed.Code, changed.Body)
+	}
+	if _, err := os.Stat(filepath.Join(store.Dir(), "local.signed.app", "plugin.json")); err != nil {
+		t.Fatal(err)
+	}
+	if err := manager.Remove("local.signed.app"); err != nil || secretStored(secrets, secret) {
+		t.Fatal("原生卸载被 API 限制挡住")
+	}
+	if removed := do(t, s, http.MethodDelete, "/v0/plugins/local.personal.absent", "test-token"); removed.Code != http.StatusNoContent {
+		t.Fatalf("缺失的 local.* 卸载：%d %s", removed.Code, removed.Body)
+	}
+}
+
+func TestAPIListingHidesACPRequestIDs(t *testing.T) {
+	s, manager, _ := managementServer(t)
+	manifest := []byte(`{"id":"local.personal.acp-only","name":"ACP","version":"1.0.0","main":"index.js","navigation":[{"title":"Overview","page":"overview"}]}`)
+	main := `export function page(){return {title:"ACP"};}`
+	acp, err := manager.Propose(plugin.Source{Kind: "inline", Package: &plugin.Package{Plugin: manifest, Main: main}}, "install", "", "", "acp")
+	if err != nil {
+		t.Fatal(err)
+	}
+	accepted := jsonRequest(t, s, http.MethodPost, "/v0/plugins", httpPackage(t, "1.0.0"))
+	if accepted.Code != http.StatusAccepted {
+		t.Fatalf("API 提议：%d %s", accepted.Code, accepted.Body)
+	}
+	var api plugin.Installation
+	if err := json.Unmarshal(accepted.Body.Bytes(), &api); err != nil {
+		t.Fatal(err)
+	}
+	list := do(t, s, http.MethodGet, "/v0/plugins", "test-token")
+	if strings.Contains(list.Body.String(), acp.RequestID) || !strings.Contains(list.Body.String(), api.RequestID) {
+		t.Fatalf("列表暴露了 ACP 任务或隐藏了 API 任务：%s", list.Body)
+	}
+	hidden := do(t, s, http.MethodGet, "/v0/installations/"+acp.RequestID, "test-token")
+	if hidden.Code != http.StatusNotFound || strings.Contains(hidden.Body.String(), acp.RequestID) {
+		t.Fatalf("查询暴露了 ACP 任务：%d %s", hidden.Code, hidden.Body)
+	}
+	shown := do(t, s, http.MethodGet, "/v0/installations/"+api.RequestID, "test-token")
+	if shown.Code != http.StatusOK || !strings.Contains(shown.Body.String(), api.RequestID) {
+		t.Fatalf("API 任务查询：%d %s", shown.Code, shown.Body)
+	}
+	if got, err := manager.GetInstallation(acp.RequestID); err != nil || got.Status != "pending" {
+		t.Fatal("隐藏查询取消了 ACP 任务")
+	}
+}
+
 func TestAPICannotCancelOrReuseACPInstallation(t *testing.T) {
 	s, manager, _ := managementServer(t)
 	manifest := []byte(`{"id":"local.personal.acp-only","name":"ACP","version":"1.0.0","main":"index.js","navigation":[{"title":"Overview","page":"overview"}]}`)
@@ -373,6 +444,14 @@ func (headerManaged) ApplicationManager() *plugin.Manager { return nil }
 func (headerManaged) ApplicationsChanged(string)          {}
 func (headerManaged) RefreshPage(string, string) (PageResult, error) {
 	return PageResult{Page: map[string]any{"title": "Gas"}, PackageHash: "sha256:" + strings.Repeat("ab", 32), EvaluatedAt: time.Date(2026, 11, 9, 1, 2, 3, 4, time.UTC)}, nil
+}
+
+type headerManagedEmpty struct{ *fakeData }
+
+func (headerManagedEmpty) ApplicationManager() *plugin.Manager { return nil }
+func (headerManagedEmpty) ApplicationsChanged(string)          {}
+func (headerManagedEmpty) RefreshPage(string, string) (PageResult, error) {
+	return PageResult{Page: map[string]any{"title": "Gas"}}, nil
 }
 
 func TestRefreshSendsLegacyAndLintelHeaders(t *testing.T) {

@@ -112,6 +112,9 @@ type Permissions struct {
 type Server struct {
 	data  Data
 	token string
+	// port is captured once in Start. Host checks read it and never the
+	// listener, which Close sets to nil.
+	port string
 
 	srv *http.Server
 	ln  net.Listener
@@ -134,6 +137,9 @@ func (s *Server) Start(port int) error {
 		return fmt.Errorf("the local API cannot listen on 127.0.0.1:%d: %w", port, err)
 	}
 	s.ln = ln
+	if _, port, err := net.SplitHostPort(ln.Addr().String()); err == nil {
+		s.port = port
+	}
 	s.srv = &http.Server{
 		Handler:           s.handler(),
 		ReadHeaderTimeout: 5 * time.Second,
@@ -240,11 +246,10 @@ func (s *Server) loopbackHost(host string) bool {
 	if name != "127.0.0.1" && !strings.EqualFold(name, "localhost") {
 		return false
 	}
-	if s.ln == nil {
+	if s.port == "" {
 		return true
 	}
-	_, bound, err := net.SplitHostPort(s.ln.Addr().String())
-	return err == nil && port == bound
+	return port == s.port
 }
 
 func (s *Server) portfolio(w http.ResponseWriter, _ *http.Request) {
@@ -259,10 +264,20 @@ func (s *Server) plugins(w http.ResponseWriter, _ *http.Request) {
 	jobs := []plugin.Installation{}
 	if data, ok := s.data.(Management); ok {
 		if manager := data.ApplicationManager(); manager != nil {
-			jobs = manager.Installations()
+			jobs = localAPIInstallations(manager.Installations())
 		}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"plugins": items, "installations": jobs})
+}
+
+func localAPIInstallations(jobs []plugin.Installation) []plugin.Installation {
+	out := []plugin.Installation{}
+	for _, job := range jobs {
+		if job.Via == "local-api" {
+			out = append(out, job)
+		}
+	}
+	return out
 }
 
 func (s *Server) refresh(w http.ResponseWriter, r *http.Request) {

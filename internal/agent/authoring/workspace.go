@@ -137,6 +137,7 @@ func createWorkspace(ctx context.Context, parent string) (string, error) {
 	if err := ctx.Err(); err != nil {
 		return "", err
 	}
+	explicitRoot := strings.TrimSpace(parent) != ""
 	if parent == "" {
 		parent = filepath.Clean(os.TempDir())
 	}
@@ -159,7 +160,9 @@ func createWorkspace(ctx context.Context, parent string) (string, error) {
 	if err != nil || !os.SameFile(info, opened) {
 		return "", ErrWorkspace
 	}
-	_ = SweepStaleWorkspaces(parent)
+	if explicitRoot {
+		_ = SweepStaleWorkspaces(parent)
+	}
 	for range 10 {
 		if err := ctx.Err(); err != nil {
 			return "", err
@@ -262,10 +265,11 @@ func writeContext(ctx context.Context, workspace string, req Request) error {
 func fmtExampleName(i int) string { return "example-" + strconv.Itoa(i) + ".cryptoapp.json" }
 
 // SweepStaleWorkspaces 删除 parent 下上次进程留下的 lintel-authoring-* 目录。
+// 未指定工作根时直接返回，绝不清扫系统临时目录。
 // 普通文件和其他目录保留。context 目录是只读的，删除前先恢复写权限。
 func SweepStaleWorkspaces(parent string) error {
 	if strings.TrimSpace(parent) == "" {
-		parent = filepath.Clean(os.TempDir())
+		return nil
 	}
 	entries, err := os.ReadDir(parent)
 	if errors.Is(err, fs.ErrNotExist) {

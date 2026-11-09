@@ -452,6 +452,14 @@ func packageIdentityFiles(dir string) ([]string, error) {
 			return nil
 		}
 		rel = filepath.ToSlash(rel)
+		// 先拒绝链接、特殊文件和非法路径，再跳过壳文件与垃圾文件。
+		// 名为 kv.json / state.json / .DS_Store 的符号链接不能被跳过。
+		if strings.ContainsAny(rel, "\\\x00") || path.Clean(rel) != rel || path.IsAbs(rel) {
+			return fmt.Errorf("plugin path is invalid: %s", rel)
+		}
+		if d.Type()&fs.ModeSymlink != 0 || (!d.IsDir() && !d.Type().IsRegular()) {
+			return fmt.Errorf("plugin contains a symlink or special file: %s", rel)
+		}
 		if d.IsDir() {
 			if isJunk(rel) || isShellFile(rel) {
 				return fs.SkipDir
@@ -460,12 +468,6 @@ func packageIdentityFiles(dir string) ([]string, error) {
 		}
 		if isJunk(rel) || isShellFile(rel) {
 			return nil
-		}
-		if d.Type()&fs.ModeSymlink != 0 {
-			return fmt.Errorf("plugin contains a symlink: %s", rel)
-		}
-		if !d.Type().IsRegular() {
-			return fmt.Errorf("plugin contains a special file: %s", rel)
 		}
 		info, err := d.Info()
 		if err != nil {

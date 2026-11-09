@@ -276,6 +276,10 @@ func (m *Manager) APIMayMutate(id string) error {
 	if inst.Official || inst.Signed || !strings.HasPrefix(inst.Manifest.ID, "local.") {
 		return managementError("API_MUTATION_FORBIDDEN", "本机 API 只能卸载或修改未签名的 local.* 个人应用", 403)
 	}
+	info, err := loadInstallInfo(inst.Dir)
+	if err != nil || info.Official || info.Hash != "" || info.Publisher != "" || info.Signature != "" {
+		return managementError("API_MUTATION_FORBIDDEN", "安装记录无法确认是未签名个人应用，本机 API 不能卸载或修改", 403)
+	}
 	return nil
 }
 

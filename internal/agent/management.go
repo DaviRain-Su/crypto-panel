@@ -148,6 +148,10 @@ func (s *Server) installation(w http.ResponseWriter, r *http.Request) {
 		job, err = manager.CancelFrom(r.PathValue("requestId"), "local-api")
 	} else {
 		job, err = manager.GetInstallation(r.PathValue("requestId"))
+		if err == nil && job.Via == "acp" {
+			writeCodeError(w, http.StatusNotFound, "INSTALLATION_NOT_FOUND", "安装任务不存在")
+			return
+		}
 	}
 	if err != nil {
 		writeManagementError(w, err)
