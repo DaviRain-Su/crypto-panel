@@ -262,9 +262,17 @@ type App struct {
 	approveIntents       func(intentsApprovalRequest) bool
 }
 
+// appUserDataDir, appRunOnMain and appGoAsync are the startup hooks. Tests
+// replace them so New can load the locked list without the UI loop.
+var (
+	appUserDataDir = func() (string, error) { return mygo.App.Path(mygo.PathUserData) }
+	appRunOnMain   = mygo.RunOnMain
+	appGoAsync     = func(fn func()) { go fn() }
+)
+
 // New loads the settings and returns the shell, before the app is ready.
 func New() (*App, error) {
-	dir, err := mygo.App.Path(mygo.PathUserData)
+	dir, err := appUserDataDir()
 	if err != nil {
 		return nil, err
 	}
@@ -294,8 +302,8 @@ func New() (*App, error) {
 	a.intentsClient = intents.New()
 	a.priceSource = prices.New()
 	a.startRefresh = a.fetch
-	a.runOnMain = mygo.RunOnMain
-	a.goAsync = func(fn func()) { go fn() }
+	a.runOnMain = appRunOnMain
+	a.goAsync = appGoAsync
 	a.confirmInstall = a.askInstall
 	a.confirmProvenance = a.openProvenanceConfirm
 	a.refreshProvenanceLocks()

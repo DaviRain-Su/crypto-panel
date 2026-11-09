@@ -8,7 +8,6 @@ import (
 	"path/filepath"
 	"reflect"
 	"strings"
-	"sync"
 	"testing"
 	"unsafe"
 
@@ -169,7 +168,7 @@ func TestProvenanceWindowCloseWiringDoesNotConfirm(t *testing.T) {
 	if opened == nil {
 		t.Fatal("没有创建确认窗")
 	}
-	fireProvenanceClose(opened)
+	fireProvenanceClose(t, opened)
 	if confirmed {
 		t.Fatal("窗口关闭回调被当成了确认")
 	}
@@ -220,27 +219,127 @@ func TestSignedSnapshotDoesNotOpenConfirm(t *testing.T) {
 	}
 }
 
-func fireProvenanceClose(w *mygo.Window) {
-	rv := reflect.ValueOf(w).Elem().FieldByName("onClose")
-	type closeListener struct {
-		id   uint64
-		fn   func(*mygo.CloseEvent)
-		once bool
+func fireProvenanceClose(t *testing.T, w *mygo.Window) {
+	t.Helper()
+	window := reflect.ValueOf(w)
+	if window.Kind() != reflect.Pointer || window.IsNil() || window.Elem().Kind() != reflect.Struct {
+		t.Fatalf("close target is %v, want a non-nil *mygo.Window", window.Type())
 	}
-	type closeListeners struct {
-		mu   sync.Mutex
-		next uint64
-		list []closeListener
+	onClose := window.Elem().FieldByName("onClose")
+	if !onClose.IsValid() {
+		t.Fatal("mygo.Window has no onClose field")
 	}
-	list := (*closeListeners)(unsafe.Pointer(rv.UnsafeAddr()))
-	list.mu.Lock()
-	fns := append([]closeListener(nil), list.list...)
-	list.mu.Unlock()
-	if len(fns) == 0 {
-		panic("provenance window registered no close callback")
+	onClose = reflect.NewAt(onClose.Type(), unsafe.Pointer(onClose.UnsafeAddr())).Elem()
+	list := onClose.FieldByName("list")
+	if !list.IsValid() || list.Kind() != reflect.Slice {
+		t.Fatalf("onClose.list is %v, want a slice", onClose.Type())
 	}
-	for _, fn := range fns {
-		fn.fn(&mygo.CloseEvent{Window: w})
+	if list.Len() == 0 {
+		t.Fatal("provenance window registered no close callback")
+	}
+	want := reflect.TypeOf((func(*mygo.CloseEvent))(nil))
+	for i := 0; i < list.Len(); i++ {
+		fn := list.Index(i).FieldByName("fn")
+		got := "<missing>"
+		if fn.IsValid() {
+			got = fn.Type().String()
+		}
+		if !fn.IsValid() || fn.Type() != want {
+			t.Fatalf("close listener %d fn type is %s, want %s", i, got, want)
+		}
+		callback := *(*func(*mygo.CloseEvent))(unsafe.Pointer(fn.UnsafeAddr()))
+		callback(&mygo.CloseEvent{Window: w})
+	}
+}
+
+func TestStartupRefreshLoadsLockedApps(t *testing.T) {
+	dir := t.TempDir()
+	prevDir, prevAsync, prevMain, prevSecrets := appUserDataDir, appGoAsync, appRunOnMain, newPluginSecrets
+	appUserDataDir = func() (string, error) { return dir, nil }
+	appGoAsync = func(fn func()) { fn() }
+	appRunOnMain = func(fn func()) { fn() }
+	newPluginSecrets = func() plugin.Secrets { return memStore{} }
+	t.Cleanup(func() {
+		appUserDataDir, appGoAsync, appRunOnMain, newPluginSecrets = prevDir, prevAsync, prevMain, prevSecrets
+	})
+	plugins := filepath.Join(dir, "plugins")
+	id := "local.personal.startup"
+	appDir := filepath.Join(plugins, id)
+	if err := os.MkdirAll(appDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	manifest := []byte(`{"id":"local.personal.startup","name":"Startup","version":"1.0.0","main":"index.js","permissions":{"storageKb":1},"navigation":[{"title":"Overview","page":"overview"}]}`)
+	if err := os.WriteFile(filepath.Join(appDir, "plugin.json"), manifest, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(appDir, "index.js"), []byte(`export function page(){return {title:"Startup"};}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(appDir, "install.json"), []byte("{\"installedVia\":\"folder\"}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, ".plugins-migration-attempted"), []byte("1\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	a, err := New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if a.pluginManager != nil {
+			a.pluginManager.Close()
+		}
+	})
+	found := false
+	for _, item := range a.provenanceLocked {
+		if item.Manifest.ID == id {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("启动没有载入锁定列表: %+v", a.provenanceLocked)
+	}
+}
+
+func TestReplacedPluginStoreIsNotConfirmed(t *testing.T) {
+	a := newTestApp(t)
+	sec := a.pluginSecrets.(memStore)
+	delete(sec, "provenance:migration")
+	id := "local.personal.locked"
+	appDir := filepath.Join(a.plugins.Dir(), id)
+	if err := os.MkdirAll(appDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	manifest := []byte(`{"id":"local.personal.locked","name":"Locked","version":"1.0.0","main":"index.js","permissions":{"storageKb":1},"navigation":[{"title":"Overview","page":"overview"}]}`)
+	if err := os.WriteFile(filepath.Join(appDir, "plugin.json"), manifest, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(appDir, "index.js"), []byte(`export function page(){return {title:"Locked"};}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(appDir, "install.json"), []byte("{\"installedVia\":\"folder\"}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	a.refreshPlugins()
+	a.refreshProvenanceLocks()
+	prev := takeProvenanceSnapshot
+	takeProvenanceSnapshot = func(plugins *plugin.Store, want string) (plugin.ProvenanceView, error) {
+		view, err := plugins.SnapshotProvenance(want)
+		a.plugins = plugin.NewStore(t.TempDir(), memStore{})
+		return view, err
+	}
+	t.Cleanup(func() { takeProvenanceSnapshot = prev })
+	asked := false
+	a.confirmProvenance = func(_ plugin.ProvenanceView, done func(bool)) {
+		asked = true
+		done(true)
+	}
+	a.askProvenanceConfirm(id, "Locked")
+	if asked {
+		t.Fatal("应用目录被换掉后仍进入确认")
+	}
+	if _, ok := sec[plugin.ProvenanceAccount(id)]; ok {
+		t.Fatal("应用目录被换掉后仍写下了记录")
 	}
 }
 

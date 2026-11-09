@@ -823,6 +823,66 @@ func (s *notFoundSecrets) Delete(key string) error {
 	return nil
 }
 
+func confirmListedApp(t *testing.T, s *Store, id string) {
+	t.Helper()
+	locked, err := s.LockedLocalApps()
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, item := range locked {
+		if item.Manifest.ID == id {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("锁定列表没有 %s: %+v", id, locked)
+	}
+	view, err := s.SnapshotProvenance(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.ConfirmProvenance(view); err != nil {
+		t.Fatalf("应允许确认 %s: %v", id, err)
+	}
+	if _, ok, err := s.getProvenance(id); err != nil || !ok {
+		t.Fatalf("确认没有写下 %s 的记录: %v", id, err)
+	}
+}
+
+func TestStartedMarkerWithoutSentinelAllowsConfirm(t *testing.T) {
+	sec := &scriptedSecrets{m: map[string][]byte{}}
+	s := NewStore(filepath.Join(t.TempDir(), "plugins"), sec)
+	id := "local.personal.startedonly"
+	plantLoose(t, s.Dir(), id)
+	if err := sec.Set(provenanceMigrationStarted, []byte("1")); err != nil {
+		t.Fatal(err)
+	}
+	path, err := s.migrationSentinelPath()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Lstat(path); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("这个用例不能有哨兵: %v", err)
+	}
+	confirmListedApp(t, s, id)
+}
+
+func TestDirectorySentinelKeepsTheAppConfirmable(t *testing.T) {
+	sec := &scriptedSecrets{m: map[string][]byte{}}
+	s := NewStore(filepath.Join(t.TempDir(), "plugins"), sec)
+	id := "local.personal.dirconfirm"
+	plantLoose(t, s.Dir(), id)
+	path, err := s.migrationSentinelPath()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(path, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	confirmListedApp(t, s, id)
+}
+
 func stuckUnsigned(t *testing.T, id string) *Store {
 	t.Helper()
 	sec := &scriptedSecrets{m: map[string][]byte{}}
@@ -1594,6 +1654,156 @@ func (d deleteFailSecrets) Delete(key string) error {
 		return d.err
 	}
 	return d.inner.Delete(key)
+}
+
+func TestLockedListEmptyWhenMigrationFinished(t *testing.T) {
+	sec := &scriptedSecrets{m: map[string][]byte{}}
+	s := NewStore(filepath.Join(t.TempDir(), "plugins"), sec)
+	id := "local.personal.done"
+	plantLoose(t, s.Dir(), id)
+	if err := sec.Set(provenanceMigrationAccount, []byte("done")); err != nil {
+		t.Fatal(err)
+	}
+	locked, err := s.LockedLocalApps()
+	if err != nil || len(locked) != 0 {
+		t.Fatalf("迁移完成后仍锁定: %+v %v", locked, err)
+	}
+}
+
+func TestConfirmRequiresUnfinishedMigration(t *testing.T) {
+	sec := &scriptedSecrets{m: map[string][]byte{}}
+	s := NewStore(filepath.Join(t.TempDir(), "plugins"), sec)
+	id := "local.personal.finished"
+	plantLoose(t, s.Dir(), id)
+	if err := sec.Set(provenanceMigrationAccount, []byte("done")); err != nil {
+		t.Fatal(err)
+	}
+	view, _, err := s.inspectProvenance(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.ConfirmProvenance(view); err == nil || !strings.Contains(err.Error(), "not waiting for confirmation") {
+		t.Fatalf("迁移已经完成仍可确认: %v", err)
+	}
+	if _, found, _ := s.getProvenance(id); found {
+		t.Fatal("迁移完成后的确认写下了记录")
+	}
+}
+
+func TestConfirmRejectsNonLocalID(t *testing.T) {
+	sec := &scriptedSecrets{m: map[string][]byte{}}
+	s := NewStore(filepath.Join(t.TempDir(), "plugins"), sec)
+	id := "com.example.catalog"
+	dir := filepath.Join(s.Dir(), id)
+	manifest := strings.Replace(personalManifest, "local.personal.gas", id, 1)
+	writePlugin(t, dir, manifest, personalSource)
+	if err := os.WriteFile(filepath.Join(dir, "install.json"), []byte("{\"installedVia\":\"folder\"}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	sentinel, err := s.migrationSentinelPath()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(sentinel, []byte("1\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	view, _, err := s.inspectProvenance(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.ConfirmProvenance(view); err == nil || !strings.Contains(err.Error(), "only a local app") {
+		t.Fatalf("非 local.* 被确认: %v", err)
+	}
+	if _, found, _ := s.getProvenance(id); found {
+		t.Fatal("非 local.* 写下了记录")
+	}
+}
+
+func TestLockedListOmitsOfficialAndNonLocalApps(t *testing.T) {
+	sec := &scriptedSecrets{m: map[string][]byte{}}
+	root := t.TempDir()
+	s := NewStore(filepath.Join(root, "plugins"), sec)
+	if err := s.EnsureOfficial(); err != nil {
+		t.Fatal(err)
+	}
+	id := "com.example.custom"
+	dir := filepath.Join(s.Dir(), id)
+	manifest := strings.Replace(personalManifest, "local.personal.gas", id, 1)
+	writePlugin(t, dir, manifest, personalSource)
+	if err := os.WriteFile(filepath.Join(dir, "install.json"), []byte("{\"installedVia\":\"folder\"}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for _, account := range []string{ProvenanceAccount("com.example.gas"), ProvenanceAccount("com.example.feargreed"), ProvenanceAccount(id), provenanceMigrationAccount} {
+		delete(sec.m, account)
+	}
+	sentinel, err := s.migrationSentinelPath()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(sentinel, []byte("1\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	locked, err := s.LockedLocalApps()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, item := range locked {
+		if item.Manifest.ID == "com.example.gas" || item.Manifest.ID == id || item.Official {
+			t.Fatalf("锁定列表纳入了非个人应用: %+v", item.Manifest.ID)
+		}
+	}
+}
+
+func TestConfirmRejectsMigrationReadError(t *testing.T) {
+	sec := &scriptedSecrets{m: map[string][]byte{}, getErr: map[string]error{provenanceMigrationAccount: errors.New("keychain read failed")}}
+	s := NewStore(filepath.Join(t.TempDir(), "plugins"), sec)
+	id := "local.personal.readerr"
+	plantLoose(t, s.Dir(), id)
+	view, _, err := s.inspectProvenance(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.ConfirmProvenance(view); err == nil {
+		t.Fatal("迁移标记读失败仍被确认")
+	}
+	if _, found, _ := s.getProvenance(id); found {
+		t.Fatal("迁移标记读失败写下了记录")
+	}
+}
+
+func TestRemoveMissingDirectoryClearsSeenHash(t *testing.T) {
+	sec := &scriptedSecrets{m: map[string][]byte{}}
+	s := NewStore(filepath.Join(t.TempDir(), "plugins"), sec)
+	id := "local.personal.missingdir"
+	plantLoose(t, s.Dir(), id)
+	sentinel, err := s.migrationSentinelPath()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(sentinel, []byte("1\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.LockedLocalApps(); err != nil {
+		t.Fatal(err)
+	}
+	changed := `export function page(){return {title:"Changed"};}`
+	if err := os.RemoveAll(filepath.Join(s.Dir(), id)); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Remove(id); err != nil {
+		t.Fatalf("目录已经不在时卸载失败: %v", err)
+	}
+	plantLoose(t, s.Dir(), id)
+	if err := os.WriteFile(filepath.Join(s.Dir(), id, "index.js"), []byte(changed), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	view, _, err := s.inspectProvenance(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.ConfirmProvenance(view); err != nil {
+		t.Fatalf("目录已删除的卸载没有清掉旧摘要: %v", err)
+	}
 }
 
 func TestDirectorySentinelIsNotAbsent(t *testing.T) {
