@@ -1,4 +1,4 @@
-// Command pluginsign signs plugins for the crypto-panel store: it packs a
+// Command pluginsign signs plugins for the Lintel store: it packs a
 // plugin folder into an archive, hashes it, signs the hash, and writes the
 // registry entry that lists it.
 //
@@ -22,7 +22,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/davirain-su/crypto-panel/internal/plugin"
+	"github.com/davirain-su/lintel/internal/plugin"
 )
 
 func main() {

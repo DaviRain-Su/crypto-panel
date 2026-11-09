@@ -10,9 +10,9 @@ import (
 	"io"
 	"os"
 
-	"github.com/davirain-su/crypto-panel/internal/i18n"
-	"github.com/davirain-su/crypto-panel/internal/passkeywallet"
-	"github.com/davirain-su/crypto-panel/internal/webauthn"
+	"github.com/davirain-su/lintel/internal/i18n"
+	"github.com/davirain-su/lintel/internal/passkeywallet"
+	"github.com/davirain-su/lintel/internal/webauthn"
 )
 
 const (

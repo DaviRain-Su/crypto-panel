@@ -65,7 +65,7 @@ func loadOfficial() {
 			continue
 		}
 		root := path.Join("testdata/examples", entry.Name())
-		tmp, err := os.MkdirTemp("", "crypto-panel-official-*")
+		tmp, err := os.MkdirTemp("", "lintel-official-*")
 		if err != nil {
 			officialErr = err
 			return

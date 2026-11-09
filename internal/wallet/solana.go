@@ -10,7 +10,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/davirain-su/crypto-panel/internal/base58"
+	"github.com/davirain-su/lintel/internal/base58"
 )
 
 // SolanaKeyring holds the wallet's Solana accounts and, while unlocked, their

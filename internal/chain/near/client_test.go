@@ -14,10 +14,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/davirain-su/crypto-panel/internal/base58"
-	"github.com/davirain-su/crypto-panel/internal/chain"
-	"github.com/davirain-su/crypto-panel/internal/chain/rpc"
-	"github.com/davirain-su/crypto-panel/internal/neartx"
+	"github.com/davirain-su/lintel/internal/base58"
+	"github.com/davirain-su/lintel/internal/chain"
+	"github.com/davirain-su/lintel/internal/chain/rpc"
+	"github.com/davirain-su/lintel/internal/neartx"
 )
 
 // The test networks are written out here rather than taken from presets:

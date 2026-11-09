@@ -8,8 +8,8 @@ import (
 
 	"github.com/egoist/mygo"
 
-	"github.com/davirain-su/crypto-panel/internal/chain"
-	"github.com/davirain-su/crypto-panel/internal/i18n"
+	"github.com/davirain-su/lintel/internal/chain"
+	"github.com/davirain-su/lintel/internal/i18n"
 )
 
 // accountSnapshot is one address's balances in one refresh.

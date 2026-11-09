@@ -8,7 +8,7 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/common"
 
-	"github.com/davirain-su/crypto-panel/internal/webauthn"
+	"github.com/davirain-su/lintel/internal/webauthn"
 )
 
 func TestWebAuthnAuthEncode(t *testing.T) {
@@ -36,7 +36,7 @@ func TestWebAuthnAuthEncode(t *testing.T) {
 }
 
 func TestSignatureFromAssertion(t *testing.T) {
-	auth, err := webauthn.NewSoftAuthenticator("crypto-panel.app", "https://crypto-panel.app")
+	auth, err := webauthn.NewSoftAuthenticator("lintel.example", "https://lintel.example")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -112,7 +112,7 @@ func TestWebAuthnAuthEncodeRejectsMissingIndices(t *testing.T) {
 }
 
 func TestSignRejectsWrongChallenge(t *testing.T) {
-	auth, err := webauthn.NewSoftAuthenticator("crypto-panel.app", "https://crypto-panel.app")
+	auth, err := webauthn.NewSoftAuthenticator("lintel.example", "https://lintel.example")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -126,8 +126,8 @@ func TestSignRejectsWrongChallenge(t *testing.T) {
 		big.NewInt(8453),
 		auth.Credential(),
 		assertion,
-		"https://crypto-panel.app",
-		"crypto-panel.app",
+		"https://lintel.example",
+		"lintel.example",
 	)
 	if err == nil {
 		t.Fatal("Sign accepted an assertion for another challenge")

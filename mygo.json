@@ -1,5 +1,5 @@
 {
-  "name": "Crypto Panel",
+  "name": "Lintel",
   "identifier": "dev.davirain.crypto-panel",
   "out": "build",
   "icon": "resources/icon.png"

@@ -6,7 +6,7 @@ import (
 	"math/big"
 	"strings"
 
-	"github.com/davirain-su/crypto-panel/internal/chain"
+	"github.com/davirain-su/lintel/internal/chain"
 )
 
 // balanceOf(address) selector: the first four bytes of its Keccak-256 hash.

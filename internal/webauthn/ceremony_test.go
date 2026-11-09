@@ -14,7 +14,7 @@ func b64(b []byte) string {
 }
 
 func TestCeremonyURL(t *testing.T) {
-	page := "https://crypto-panel.app/passkey/"
+	page := "https://lintel.example/passkey/"
 	challenge := bytes.Repeat([]byte{0x42}, 32)
 	createURL, err := CeremonyURL(page, CeremonyRequest{
 		Mode:            CeremonyCreate,
@@ -23,7 +23,7 @@ func TestCeremonyURL(t *testing.T) {
 		UserID:          bytes.Repeat([]byte{0x01}, 16),
 		UserName:        "davirain",
 		UserDisplayName: "Davirain",
-		RPName:          "Crypto Panel",
+		RPName:          "Lintel",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -32,7 +32,7 @@ func TestCeremonyURL(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if u.Scheme != "https" || u.Host != "crypto-panel.app" || u.Path != "/passkey/" {
+	if u.Scheme != "https" || u.Host != "lintel.example" || u.Path != "/passkey/" {
 		t.Fatalf("page = %s", createURL)
 	}
 	if u.RawQuery != "" {
@@ -51,7 +51,7 @@ func TestCeremonyURL(t *testing.T) {
 	if q.Get("userId") != b64(bytes.Repeat([]byte{0x01}, 16)) {
 		t.Fatalf("user id = %q", q.Get("userId"))
 	}
-	if q.Get("userName") != "davirain" || q.Get("rpName") != "Crypto Panel" {
+	if q.Get("userName") != "davirain" || q.Get("rpName") != "Lintel" {
 		t.Fatalf("fragment = %q", u.Fragment)
 	}
 
@@ -90,14 +90,14 @@ func TestCeremonyURLLocalhost(t *testing.T) {
 }
 
 func TestCeremonyURLRejects(t *testing.T) {
-	page := "https://crypto-panel.app/passkey/"
+	page := "https://lintel.example/passkey/"
 	challenge := bytes.Repeat([]byte{0x42}, 32)
 	tests := []struct {
 		name string
 		page string
 		req  CeremonyRequest
 	}{
-		{"http", "http://crypto-panel.app/passkey/", CeremonyRequest{Mode: CeremonyGet, Challenge: challenge, State: "s", CredentialID: []byte{1}}},
+		{"http", "http://lintel.example/passkey/", CeremonyRequest{Mode: CeremonyGet, Challenge: challenge, State: "s", CredentialID: []byte{1}}},
 		{"no host", "/passkey/", CeremonyRequest{Mode: CeremonyGet, Challenge: challenge, State: "s", CredentialID: []byte{1}}},
 		{"short challenge", page, CeremonyRequest{Mode: CeremonyGet, Challenge: []byte{1}, State: "s", CredentialID: []byte{1}}},
 		{"no state", page, CeremonyRequest{Mode: CeremonyGet, Challenge: challenge, CredentialID: []byte{1}}},
@@ -217,7 +217,7 @@ func TestParseCallbackRejects(t *testing.T) {
 		name string
 		raw  string
 	}{
-		{"wrong scheme", "https://crypto-panel.app/passkey?result=" + validPayload},
+		{"wrong scheme", "https://lintel.example/passkey?result=" + validPayload},
 		{"wrong host", "cryptopanel://other?result=" + validPayload},
 		{"no result", "cryptopanel://passkey"},
 		{"bad base64", "cryptopanel://passkey?result=%%%"},

@@ -1,5 +1,5 @@
 // Command icon draws the app's icon: an ink rounded square with three brass
-// bars, the panel's mark. It writes the 1024×1024 PNG mygo.json names.
+// bars, the app's mark. It writes the 1024×1024 PNG mygo.json names.
 //
 //	go run ./tools/icon -out resources/icon.png
 package main
@@ -67,7 +67,7 @@ func drawIcon() *image.RGBA {
 		return color.NRGBA{0xff, 0xff, 0xff, 0x1f}
 	})
 
-	// Three bars, the tallest in the middle: the panel's mark.
+	// Three bars, the tallest in the middle: the app's mark.
 	bars := []struct {
 		h     float64
 		shade float64

@@ -6,7 +6,7 @@ import (
 
 	"github.com/MoeForge/moejs"
 
-	"github.com/davirain-su/crypto-panel/internal/pages"
+	"github.com/davirain-su/lintel/internal/pages"
 )
 
 // NearSignRequest is what host.requestNearSign asks for: a NEAR receiver and

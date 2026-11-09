@@ -1,4 +1,4 @@
-// Package version names this build of the panel.
+// Package version names this build of Lintel.
 package version
 
 // Version is the app's version. It follows the milestones in docs/design.md:

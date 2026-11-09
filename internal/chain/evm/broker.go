@@ -1,5 +1,5 @@
 // Package evm reads EVM networks: the broker that pins chain ids, the typed
-// reads the panel shows, and the parsing of JSON-RPC quantities. Every
+// reads the app shows, and the parsing of JSON-RPC quantities. Every
 // eip155 network speaks this dialect.
 package evm
 
@@ -10,7 +10,7 @@ import (
 	"net/url"
 	"sync"
 
-	"github.com/davirain-su/crypto-panel/internal/chain/rpc"
+	"github.com/davirain-su/lintel/internal/chain/rpc"
 )
 
 // Endpoint is one RPC endpoint and the chain it must serve. ChainID is
@@ -78,7 +78,7 @@ type ChainMismatchError struct {
 }
 
 func (e *ChainMismatchError) Error() string {
-	return fmt.Sprintf("%s serves chain %d, but the panel is set to chain %d", e.Endpoint, e.Got, e.Want)
+	return fmt.Sprintf("%s serves chain %d, but the app is set to chain %d", e.Endpoint, e.Got, e.Want)
 }
 
 func (b *Broker) verify(ctx context.Context, ep Endpoint) error {

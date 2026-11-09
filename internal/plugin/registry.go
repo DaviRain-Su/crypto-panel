@@ -22,7 +22,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/davirain-su/crypto-panel/internal/version"
+	"github.com/davirain-su/lintel/internal/version"
 )
 
 // A registry is the plugin store's catalog: a static JSON file that lists
@@ -206,7 +206,7 @@ func fetch(ctx context.Context, client *http.Client, rawURL string, max int64) (
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("User-Agent", "crypto-panel/"+version.Version)
+	req.Header.Set("User-Agent", "lintel/"+version.Version)
 	req.Header.Set("Accept", "application/json, application/zip, */*")
 	resp, err := client.Do(req)
 	if err != nil {

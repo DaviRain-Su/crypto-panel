@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"math/big"
 
-	"github.com/davirain-su/crypto-panel/internal/base58"
+	"github.com/davirain-su/lintel/internal/base58"
 )
 
 // RPC is one call to the chain, as chain.Reader.RPC makes it.

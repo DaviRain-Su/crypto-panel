@@ -9,8 +9,8 @@ import (
 	"math/big"
 	"strings"
 
-	"github.com/davirain-su/crypto-panel/internal/base58"
-	"github.com/davirain-su/crypto-panel/internal/nearid"
+	"github.com/davirain-su/lintel/internal/base58"
+	"github.com/davirain-su/lintel/internal/nearid"
 )
 
 // ErrInvalidKey reports a string that is not an ed25519 key in a form the

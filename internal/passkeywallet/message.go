@@ -13,8 +13,8 @@ import (
 
 	"golang.org/x/crypto/sha3"
 
-	"github.com/davirain-su/crypto-panel/internal/base58"
-	"github.com/davirain-su/crypto-panel/internal/webauthn"
+	"github.com/davirain-su/lintel/internal/base58"
+	"github.com/davirain-su/lintel/internal/webauthn"
 )
 
 // RequestDomain is the prefix the wallet contract hashes before the Borsh
@@ -46,7 +46,7 @@ type Request struct {
 	External []Promise  `json:"external,omitempty"`
 }
 
-// WalletOp is an internal wallet operation. The panel does not use them, and
+// WalletOp is an internal wallet operation. The app does not use them, and
 // the encoder refuses one rather than guessing its layout.
 type WalletOp struct {
 	Op      string          `json:"op"`
@@ -246,7 +246,7 @@ func (w *writer) action(a Action) error {
 }
 
 // StateInitAction deploys a deterministic account as one action of a
-// promise. The panel uses it to create the passkey wallet account.
+// promise. The app uses it to create the passkey wallet account.
 type StateInitAction struct {
 	StateInit []byte
 	Deposit   string `json:"deposit,omitempty"`

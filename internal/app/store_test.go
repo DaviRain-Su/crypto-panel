@@ -13,8 +13,8 @@ import (
 
 	"github.com/egoist/mygo/ui"
 
-	"github.com/davirain-su/crypto-panel/internal/i18n"
-	"github.com/davirain-su/crypto-panel/internal/plugin"
+	"github.com/davirain-su/lintel/internal/i18n"
+	"github.com/davirain-su/lintel/internal/plugin"
 )
 
 // writeStorePlugin writes a plugin folder for the store tests.

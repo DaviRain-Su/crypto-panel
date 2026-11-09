@@ -8,7 +8,7 @@ import (
 
 	"github.com/egoist/mygo/ui"
 
-	"github.com/davirain-su/crypto-panel/internal/neartx"
+	"github.com/davirain-su/lintel/internal/neartx"
 )
 
 func TestApprovalLongCallsRemainReadableAndButtonsVisible(t *testing.T) {

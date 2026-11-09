@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/davirain-su/crypto-panel/internal/webauthn"
+	"github.com/davirain-su/lintel/internal/webauthn"
 )
 
 // openPosting returns an open function that reads the ceremony state from
@@ -176,7 +176,7 @@ func TestCeremonyPageServesTheAssets(t *testing.T) {
 	}
 	body, _ := io.ReadAll(resp.Body)
 	resp.Body.Close()
-	if !strings.Contains(string(body), "Crypto Panel") || !strings.Contains(string(body), "connect-src") {
+	if !strings.Contains(string(body), "Lintel") || !strings.Contains(string(body), "connect-src") {
 		t.Error("the page is not the ceremony page")
 	}
 }

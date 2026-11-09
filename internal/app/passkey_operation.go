@@ -8,9 +8,9 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/davirain-su/crypto-panel/internal/i18n"
-	"github.com/davirain-su/crypto-panel/internal/neartx"
-	"github.com/davirain-su/crypto-panel/internal/wallet"
+	"github.com/davirain-su/lintel/internal/i18n"
+	"github.com/davirain-su/lintel/internal/neartx"
+	"github.com/davirain-su/lintel/internal/wallet"
 )
 
 // passkeyOperation 由 UI 线程管理。工作协程只使用 context，

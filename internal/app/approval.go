@@ -10,12 +10,12 @@ import (
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
 
-	"github.com/davirain-su/crypto-panel/internal/chain"
-	"github.com/davirain-su/crypto-panel/internal/evmtx"
-	"github.com/davirain-su/crypto-panel/internal/i18n"
-	"github.com/davirain-su/crypto-panel/internal/neartx"
-	"github.com/davirain-su/crypto-panel/internal/passkey"
-	"github.com/davirain-su/crypto-panel/internal/wallet"
+	"github.com/davirain-su/lintel/internal/chain"
+	"github.com/davirain-su/lintel/internal/evmtx"
+	"github.com/davirain-su/lintel/internal/i18n"
+	"github.com/davirain-su/lintel/internal/neartx"
+	"github.com/davirain-su/lintel/internal/passkey"
+	"github.com/davirain-su/lintel/internal/wallet"
 )
 
 // approval is the shell's own window for one transaction: what the shell

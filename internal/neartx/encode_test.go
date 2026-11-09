@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/davirain-su/crypto-panel/internal/base58"
+	"github.com/davirain-su/lintel/internal/base58"
 )
 
 // TestRealTestnetTransaction checks the encoder against a transaction the

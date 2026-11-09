@@ -183,7 +183,7 @@ func (s *Server) guard(next http.HandlerFunc) http.HandlerFunc {
 		}
 		token, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
 		if !ok || subtle.ConstantTimeCompare([]byte(token), []byte(s.token)) != 1 {
-			w.Header().Set("WWW-Authenticate", `Bearer realm="crypto-panel"`)
+			w.Header().Set("WWW-Authenticate", `Bearer realm="lintel"`)
 			writeError(w, http.StatusUnauthorized, "a bearer token is required")
 			return
 		}

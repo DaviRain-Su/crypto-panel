@@ -3,7 +3,7 @@ package wallet
 import (
 	"fmt"
 
-	"github.com/davirain-su/crypto-panel/internal/base58"
+	"github.com/davirain-su/lintel/internal/base58"
 )
 
 // decodeBase58 decodes s and requires exactly 32 bytes, the length of a

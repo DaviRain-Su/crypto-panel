@@ -3,10 +3,10 @@ package chains
 import (
 	"fmt"
 
-	"github.com/davirain-su/crypto-panel/internal/chain"
-	"github.com/davirain-su/crypto-panel/internal/chain/evm"
-	"github.com/davirain-su/crypto-panel/internal/chain/near"
-	"github.com/davirain-su/crypto-panel/internal/chain/solana"
+	"github.com/davirain-su/lintel/internal/chain"
+	"github.com/davirain-su/lintel/internal/chain/evm"
+	"github.com/davirain-su/lintel/internal/chain/near"
+	"github.com/davirain-su/lintel/internal/chain/solana"
 )
 
 // All lists the presets, in the order the settings offer them.
@@ -27,7 +27,7 @@ func ByID(id string) (chain.Network, bool) {
 	return chain.Network{}, false
 }
 
-// Families lists the chain families the panel speaks, in display order.
+// Families lists the chain families the app speaks, in display order.
 func Families() []chain.Family {
 	return []chain.Family{chain.EVM, chain.Near, chain.Solana}
 }

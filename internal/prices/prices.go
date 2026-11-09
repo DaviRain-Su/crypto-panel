@@ -1,6 +1,6 @@
 // Package prices reads approximate USD prices from CoinGecko's public API.
 //
-// The panel uses prices only to annotate balances: a balance is always shown
+// The app uses prices only to annotate balances: a balance is always shown
 // in its own asset first, and a fiat value is a hint, never the number the
 // user acts on. The client keeps a short cache so the refresh loop does not
 // spend the public API's rate limit, and it never sends an address, a key or
@@ -29,8 +29,8 @@ const DefaultURL = "https://api.coingecko.com/api/v3/simple/price"
 // minute, so one call per refresh is the budget.
 const DefaultTTL = 60 * time.Second
 
-// ids maps the symbols the panel shows to CoinGecko's asset ids. A symbol
-// that is not here has no fiat value, and the panel says nothing rather than
+// ids maps the symbols the app shows to CoinGecko's asset ids. A symbol
+// that is not here has no fiat value, and the app says nothing rather than
 // guessing at a lookalike token.
 var ids = map[string]string{
 	"ETH":   "ethereum",
@@ -152,7 +152,7 @@ func (c *Client) get(ctx context.Context, assetIDs []string) (map[string]map[str
 		return nil, fmt.Errorf("prices: %w", err)
 	}
 	req.Header.Set("Accept", "application/json")
-	req.Header.Set("User-Agent", "crypto-panel")
+	req.Header.Set("User-Agent", "lintel")
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("prices: %w", err)

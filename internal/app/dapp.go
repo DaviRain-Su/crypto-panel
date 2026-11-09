@@ -15,10 +15,10 @@ import (
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
 
-	"github.com/davirain-su/crypto-panel/internal/chain"
-	"github.com/davirain-su/crypto-panel/internal/chains"
-	"github.com/davirain-su/crypto-panel/internal/i18n"
-	"github.com/davirain-su/crypto-panel/internal/plugin"
+	"github.com/davirain-su/lintel/internal/chain"
+	"github.com/davirain-su/lintel/internal/chains"
+	"github.com/davirain-su/lintel/internal/i18n"
+	"github.com/davirain-su/lintel/internal/plugin"
 )
 
 // The DApp mode: a web page of someone else's, in an untrusted web view,
@@ -28,6 +28,8 @@ import (
 // still opens the shell's own approval window.
 //
 // The page's requests reach the shell through the cryptopanel:// scheme.
+// The scheme name is unchanged so pages and tests that already call it
+// keep working.
 // An untrusted page cannot read a cross-origin response, so the answer goes
 // back as an event to the page that asked, which the preload script turns
 // into the promise's result.
@@ -66,7 +68,7 @@ type dappAccount struct {
 // window is created.
 func (a *App) registerDappScheme() {
 	if err := mygo.Protocol.HandleFunc(dappScheme, a.serveDappRequest); err != nil {
-		log.Printf("crypto-panel: the DApp bridge: %v", err)
+		log.Printf("lintel: the DApp bridge: %v", err)
 	}
 }
 
@@ -85,7 +87,7 @@ func (a *App) serveDappRequest(w http.ResponseWriter, r *http.Request) {
 	})
 	a.serveDappRequestFrom(w, r, bridge, page, origin, func(out dappResponse) {
 		if err := dappEvent.EmitPage(page, out); err != nil {
-			log.Printf("crypto-panel: answering %s: %v", origin, err)
+			log.Printf("lintel: answering %s: %v", origin, err)
 		}
 	})
 }

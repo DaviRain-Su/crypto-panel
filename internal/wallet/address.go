@@ -1,7 +1,7 @@
-// Package wallet holds what the app knows about the addresses it watches.
-// The panel is watch-only: an address here is a string to read balances
-// for, never a key. It speaks both families: EVM addresses (0x + 40 hex,
-// EIP-55) and Solana addresses (base58, 32 bytes).
+// Package wallet holds addresses the app can read, and the keyrings that
+// keep signing keys in the OS keychain. An address value is a string — EVM
+// (0x + 40 hex, EIP-55), a NEAR account id, or Solana (base58, 32 bytes) —
+// and never a private key.
 package wallet
 
 import (
@@ -11,7 +11,7 @@ import (
 
 	"golang.org/x/crypto/sha3"
 
-	"github.com/davirain-su/crypto-panel/internal/nearid"
+	"github.com/davirain-su/lintel/internal/nearid"
 )
 
 // Kind is an address format, one per chain family.

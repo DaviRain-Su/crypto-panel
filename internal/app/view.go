@@ -10,12 +10,12 @@ import (
 
 	"github.com/egoist/mygo/ui"
 
-	"github.com/davirain-su/crypto-panel/internal/chain"
-	"github.com/davirain-su/crypto-panel/internal/chains"
-	"github.com/davirain-su/crypto-panel/internal/i18n"
-	"github.com/davirain-su/crypto-panel/internal/passkey"
-	"github.com/davirain-su/crypto-panel/internal/version"
-	"github.com/davirain-su/crypto-panel/internal/wallet"
+	"github.com/davirain-su/lintel/internal/chain"
+	"github.com/davirain-su/lintel/internal/chains"
+	"github.com/davirain-su/lintel/internal/i18n"
+	"github.com/davirain-su/lintel/internal/passkey"
+	"github.com/davirain-su/lintel/internal/version"
+	"github.com/davirain-su/lintel/internal/wallet"
 )
 
 // view builds the window: the sidebar of pages beside the selected page. It

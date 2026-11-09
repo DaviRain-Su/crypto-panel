@@ -13,11 +13,11 @@ import (
 
 	"github.com/egoist/mygo/ui"
 
-	"github.com/davirain-su/crypto-panel/internal/agent"
-	"github.com/davirain-su/crypto-panel/internal/chain"
-	"github.com/davirain-su/crypto-panel/internal/chains"
-	"github.com/davirain-su/crypto-panel/internal/pages"
-	"github.com/davirain-su/crypto-panel/internal/wallet"
+	"github.com/davirain-su/lintel/internal/agent"
+	"github.com/davirain-su/lintel/internal/chain"
+	"github.com/davirain-su/lintel/internal/chains"
+	"github.com/davirain-su/lintel/internal/pages"
+	"github.com/davirain-su/lintel/internal/wallet"
 )
 
 // writeAgentPlugin writes a plugin folder for the local API tests.

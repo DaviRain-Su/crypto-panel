@@ -12,9 +12,9 @@ import (
 	"github.com/egoist/mygo/transfer"
 	"github.com/egoist/mygo/ui"
 
-	"github.com/davirain-su/crypto-panel/internal/agent"
-	"github.com/davirain-su/crypto-panel/internal/i18n"
-	"github.com/davirain-su/crypto-panel/internal/plugin"
+	"github.com/davirain-su/lintel/internal/agent"
+	"github.com/davirain-su/lintel/internal/i18n"
+	"github.com/davirain-su/lintel/internal/plugin"
 )
 
 // agentTokenKey is where the local API's bearer token lives in the keychain.

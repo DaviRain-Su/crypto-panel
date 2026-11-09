@@ -19,7 +19,7 @@ import (
 var EntryPointV07 = common.HexToAddress("0x0000000071727De22E5E9d8BAf0edAc6f37da032")
 
 // DefaultFactory is the Coinbase Smart Wallet factory v1.1. It is deployed at
-// the same address on the EVM chains the panel reads, so one passkey owns the
+// the same address on the EVM chains the app reads, so one passkey owns the
 // same smart account address everywhere.
 var DefaultFactory = common.HexToAddress("0xBA5ED110eFDBa3D005bfC882d75358ACBbB85842")
 

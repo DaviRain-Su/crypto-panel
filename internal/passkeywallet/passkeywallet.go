@@ -18,7 +18,7 @@ import (
 
 	"golang.org/x/crypto/sha3"
 
-	"github.com/davirain-su/crypto-panel/internal/base58"
+	"github.com/davirain-su/lintel/internal/base58"
 )
 
 // FactoryP256 is the NEP-591 global wallet contract for P-256 passkeys. The

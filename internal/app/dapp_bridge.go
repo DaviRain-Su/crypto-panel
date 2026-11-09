@@ -118,7 +118,7 @@ const nearBridgeScript = `(() => {
   }
   window.nearWallet = {
     isNearWallet: true,
-    name: "Crypto Panel",
+    name: "Lintel",
     connect: () => request("connect", {}),
     signIn: (params) => request("connect", params || {}),
     disconnect: () => request("disconnect", {}),

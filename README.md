@@ -1,6 +1,8 @@
-# crypto-panel
+# Lintel
 
-**A chain-agnostic desktop shell that installs apps — with keys and approvals kept local.**
+**A native desktop app for a multi-chain wallet and sandboxed apps. Keys stay in the OS keychain, and every signature goes through the shell's own approval.**
+
+The window is the product: a sidebar of Portfolio, Wallet, Apps, Intents, DApp, and Settings. It is not a menu-bar widget and not a metrics-only dashboard. A wallet is a named container. Creating one prepares an EVM account, a NEAR account, and a Solana account together, and the network menu shows that wallet's account for the selected network. There is no mnemonic. Apps are sandboxed plugins (`plugin.json` + `index.js`); the shell draws native page blocks, and a plugin never supplies HTML. A read-only agent API on loopback can read the portfolio and the installed apps. It cannot sign, approve, or install.
 
 NEAR is the first chain it can truly sign on and connect to web apps: a native
 NEAR wallet whose ed25519 keys live in the OS keychain, a shell-drawn approval
@@ -10,8 +12,9 @@ language of the result.
 
 Design: [`docs/design.md`](docs/design.md). License: [MIT](LICENSE).
 
-**中文简介**：crypto-panel 是一个 Go + MyGo 写成的原生桌面壳：插件是沙箱里的
+**中文简介**：门厅（Lintel）是一个 Go + MyGo 写成的原生桌面应用，不是菜单栏小组件，也不是只看指标的仪表盘。侧边栏是持仓、钱包、应用、Intents、DApp 和设置。插件是沙箱里的
 JavaScript，页面是数据，钥匙留在系统钥匙串，每一次签名都由壳自己解码并弹窗确认。
+钱包是一个有名字的多链容器：新建时同时准备 EVM、NEAR 和 Solana 账户。
 这次黑客松把 NEAR 接成第一条能真正签名、能连接网页应用的链：测试网 NEAR 钱包、
 原生 NEAR 批准窗、受限的 function-call access key、隔离 WebView 里的
 `window.nearWallet` 桥、只跑 `dry: true` 的 NEAR Intents 报价，以及一个真正的
@@ -23,11 +26,11 @@ EVM 发送和 Solana 金库的创建、发送都还没有接入。
 ## The hackathon slice
 
 - **Tracks:** `security` (main narrative) and `defi` (secondary).
-- **Baseline:** tag [`pre-hackathon`](https://github.com/DaviRain-Su/crypto-panel/releases/tag/pre-hackathon)
+- **Baseline:** tag [`pre-hackathon`](https://github.com/DaviRain-Su/lintel/releases/tag/pre-hackathon)
   at `ccde05d` — the EVM + Solana read-only shell, the sandboxed plugin runtime
   and signed store, and the native EVM wallet with decoded approvals and a
   system (Touch ID) check.
-- **This slice:** [`pre-hackathon...hackathon-submission`](https://github.com/DaviRain-Su/crypto-panel/compare/pre-hackathon...hackathon-submission)
+- **This slice:** [`pre-hackathon...hackathon-submission`](https://github.com/DaviRain-Su/lintel/compare/pre-hackathon...hackathon-submission)
   — NEAR testnet wallet, native NEAR approvals, function-call key limits, the
   isolated DApp web view and bridge, plugin NEAR requests, and a NEAR Intents
   dry quote. The `hackathon-submission` tag is created at submission; the link
@@ -222,7 +225,7 @@ curl -H "Authorization: Bearer <token>" http://127.0.0.1:8765/v0/portfolio
 Amounts are decimal strings in the smallest unit, with the symbol and
 decimals beside them. The API cannot sign, approve, install or reach a key:
 an app's `requestSign` is refused over the API before any approval window
-can open. There is no prices endpoint, because the app has no fiat prices.
+can open. There is no prices endpoint. The window can show an approximate USD value from CoinGecko; this API does not.
 
 ### NEAR Intents (dry quote)
 
@@ -239,7 +242,7 @@ language:
   window says so);
 - **Refund to** and **recipient**;
 - the **intent text** as one sentence;
-- **Requested by** — `Crypto Panel · dry run`.
+- **Requested by** — `Lintel · dry run`.
 
 Accepting a dry quote records the conditions and says plainly that nothing
 was signed or sent. Rejecting it changes nothing. A real swap (a wet quote,
@@ -285,7 +288,7 @@ separate credential, created on the Wallet page:
   refuse new creates once its sunset binary is deployed. v2 mainnet
   (`LazorFroi…`, seeds prefixed `lk2:`) was not deployed when this was
   written. Devnet v1 is a different program id and a different vault; the
-  panel's Solana network is mainnet. Sending SOL is **not** wired.
+  app's Solana network is mainnet. Sending SOL is **not** wired.
 
 Restoring the original wallet requires **both the original usable passkey and
 its public recovery file**:
@@ -467,7 +470,7 @@ Other useful tests: `TestDappOrigin` (https / loopback only),
   lost device-bound credential cannot be replaced by the JSON.
 - **macOS-first.** The system check is macOS-only; the app builds elsewhere
   but the presence check is unavailable.
-- **No hardware wallet or menu bar panel.** Those are later milestones.
+- **No hardware wallet.** That is a later milestone.
 
 ## Security model
 
@@ -515,7 +518,7 @@ control on the page chooses which account is shown.
 | **Hackathon** | NEAR wallet and approvals, function-call key limits, DApp web view and bridge, plugin NEAR requests, Intents dry quote — **this slice** |
 | **M4 (part)** | Read-only local agent API: loopback HTTP, bearer token in the keychain, `/v0/portfolio`, `/v0/plugins`, `POST /v0/plugins/{id}/refresh` — **done** |
 | **Passkey** | WebAuthn passkey wallet: NEP-616 NEAR account, NEP-591 contract, relayed deploy and send; the same key's ERC-4337 address on EVM; a LazorKit v1 Solana vault address derived from that key (create and send not wired) — **done** |
-| **Next** | EVM passkey sending through a bundler, Solana passkey vault creation, hardware wallet, menu bar panel |
+| **Next** | EVM passkey sending through a bundler, Solana passkey vault creation and sending, hardware wallet |
 
 ## License
 

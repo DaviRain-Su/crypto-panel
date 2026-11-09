@@ -7,11 +7,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/davirain-su/crypto-panel/internal/chain"
-	"github.com/davirain-su/crypto-panel/internal/chain/evm"
-	"github.com/davirain-su/crypto-panel/internal/chain/near"
-	"github.com/davirain-su/crypto-panel/internal/chain/solana"
-	"github.com/davirain-su/crypto-panel/internal/wallet"
+	"github.com/davirain-su/lintel/internal/chain"
+	"github.com/davirain-su/lintel/internal/chain/evm"
+	"github.com/davirain-su/lintel/internal/chain/near"
+	"github.com/davirain-su/lintel/internal/chain/solana"
+	"github.com/davirain-su/lintel/internal/wallet"
 )
 
 var live = flag.Bool("live", false, "hit the public endpoints in TestLiveReaders")

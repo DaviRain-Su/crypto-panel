@@ -48,17 +48,17 @@
         body: JSON.stringify(result),
       });
       if (!res.ok) {
-        throw new Error("Crypto Panel did not accept the result. Start a new operation in the app.");
+        throw new Error("Lintel did not accept the result. Start a new operation in the app.");
       }
       finished = true;
       status.classList.toggle("error", Boolean(result.error));
       status.textContent = result.error
-        ? "The passkey operation ended. Return to Crypto Panel to start again."
+        ? "The passkey operation ended. Return to Lintel to start again."
         : "Done. You can close this tab.";
       continueButton.disabled = true;
       cancelButton.disabled = true;
     } catch (err) {
-      stop(err && err.message ? err.message : "Crypto Panel did not accept the result.");
+      stop(err && err.message ? err.message : "Lintel did not accept the result.");
     }
   }
 
@@ -79,12 +79,12 @@
   if (mode !== "create" && mode !== "get") {
     title.textContent = "Invalid link";
     lead.textContent = "This page was opened without a passkey request.";
-    stop("Open the passkey flow from Crypto Panel.");
+    stop("Open the passkey flow from Lintel.");
     return;
   }
 
   if (location.hostname !== "localhost" || location.protocol !== "http:" || !window.isSecureContext) {
-    title.textContent = "Open from Crypto Panel";
+    title.textContent = "Open from Lintel";
     lead.textContent = "This build uses its own localhost passkey page.";
     stop("Start the operation in the app. Hosted HTTPS callbacks are not supported.");
     return;
@@ -101,10 +101,10 @@
 
   if (mode === "create") {
     title.textContent = "Create a passkey";
-    lead.textContent = "Crypto Panel will use this passkey to approve transactions for your smart account.";
+    lead.textContent = "Lintel will use this passkey to approve transactions for your smart account.";
   } else {
     title.textContent = "Confirm with your passkey";
-    lead.textContent = "Confirm access to your passkey for the operation you started in Crypto Panel.";
+    lead.textContent = "Confirm access to your passkey for the operation you started in Lintel.";
   }
 
   async function run() {
@@ -121,12 +121,12 @@
             challenge,
             rp: {
               id: host,
-              name: params.get("rpName") || "Crypto Panel",
+              name: params.get("rpName") || "Lintel",
             },
             user: {
               id: decodeB64url(params.get("userId") || ""),
-              name: params.get("userName") || "crypto-panel",
-              displayName: params.get("userDisplayName") || params.get("userName") || "Crypto Panel",
+              name: params.get("userName") || "lintel",
+              displayName: params.get("userDisplayName") || params.get("userName") || "Lintel",
             },
             pubKeyCredParams: [{ type: "public-key", alg: -7 }],
             authenticatorSelection: {
