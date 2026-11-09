@@ -44,13 +44,16 @@ func (a *App) startAgent() {
 	a.agentSrv = srv
 	a.agentAddr = srv.Addr()
 	a.agentToken = token
+	// 监听成功后重新开放入口；关闭期间开始的提议不会被登记。
+	if a.pluginManager != nil {
+		a.pluginManager.ResumeVia("local-api")
+	}
 }
 
-// stopAgent stops the local API, if it runs.
+// stopAgent stops the local API, if it runs. Pending proposals survive a
+// restart (a port change); only disabling the API or rotating its token
+// revokes them, as the docs promise.
 func (a *App) stopAgent() {
-	if a.pluginManager != nil {
-		a.pluginManager.CancelVia("local-api")
-	}
 	if a.agentSrv != nil {
 		_ = a.agentSrv.Close()
 		a.agentSrv = nil
@@ -82,6 +85,10 @@ func (a *App) setAgentEnabled(on bool) {
 	a.settings.AgentEnabled = on
 	a.settings = a.settings.Validate()
 	a.save()
+	if !on && a.pluginManager != nil {
+		// 关闭 Local API 撤销该来源未批准的任务；端口变化不会。
+		a.pluginManager.CancelVia("local-api")
+	}
 	a.startAgent()
 	a.invalidate()
 }
@@ -122,6 +129,10 @@ func (a *App) rotateAgentToken() {
 		a.agentErr = err.Error()
 		a.invalidate()
 		return
+	}
+	// 轮换 token 撤销旧 token 下的未批准任务；startAgent 成功后重新开放入口。
+	if a.pluginManager != nil {
+		a.pluginManager.CancelVia("local-api")
 	}
 	a.startAgent()
 	a.invalidate()
@@ -230,15 +241,31 @@ func (a *App) agentPortfolio() agent.Portfolio {
 }
 
 // Plugins implements agent.Data: the installed apps and their permissions.
+// Only the cheap snapshot is taken on the main thread; package hashing and
+// credential reads run on the calling HTTP goroutine, so polling the API
+// never freezes the window.
 func (a *App) Plugins() []agent.Plugin {
-	var out []agent.Plugin
-	a.runOnMain(func() { out = a.agentPlugins() })
-	return out
-}
-
-func (a *App) agentPlugins() []agent.Plugin {
-	out := make([]agent.Plugin, 0, len(a.pluginItems))
-	for _, item := range a.pluginItems {
+	var items []plugin.Installed
+	verifications := map[string]agent.Verification{}
+	pending := map[string]string{}
+	a.runOnMain(func() {
+		items = append([]plugin.Installed(nil), a.pluginItems...)
+		for id, current := range a.installationVerifications {
+			verifications[id] = current.result
+		}
+		if a.pluginManager != nil {
+			for _, job := range a.pluginManager.Installations() {
+				if job.Via != "local-api" {
+					continue
+				}
+				if _, ok := pending[job.PluginID]; !ok {
+					pending[job.PluginID] = job.RequestID
+				}
+			}
+		}
+	})
+	out := make([]agent.Plugin, 0, len(items))
+	for _, item := range items {
 		if item.Err != "" {
 			out = append(out, agent.Plugin{
 				Folder:  filepath.Base(item.Dir),
@@ -276,16 +303,12 @@ func (a *App) agentPlugins() []agent.Plugin {
 			p.InstalledVia = "unknown"
 		}
 		p.PackageHash, _ = a.plugins.PackageHash(m.ID)
-		p.Verification = a.installationVerificationResult(m.ID, p.PackageHash)
-		p.Settings, _ = a.plugins.DescribeSettings(m.ID)
-		if a.pluginManager != nil {
-			for _, job := range a.pluginManager.Installations() {
-				if job.PluginID == m.ID && job.Via == "local-api" {
-					p.PendingInstallationID = job.RequestID
-					break
-				}
-			}
+		if result, ok := verifications[m.ID]; ok && p.PackageHash != "" && result.PackageHash == p.PackageHash {
+			verification := result
+			p.Verification = &verification
 		}
+		p.Settings, _ = a.plugins.DescribeSettings(m.ID)
+		p.PendingInstallationID = pending[m.ID]
 		for _, nav := range m.Navigation {
 			p.Pages = append(p.Pages, nav.Page)
 		}
@@ -315,7 +338,7 @@ type readOnlyPageOptions struct {
 
 func (o readOnlyPageOptions) check() error {
 	if o.active != nil && !o.active() {
-		return &plugin.Error{Code: "CONTENT_CHANGED", Message: "本轮运行验证已失效", Status: 409}
+		return &plugin.Error{Code: "CONTENT_CHANGED", Message: "this verification run is no longer valid", Status: 409}
 	}
 	return nil
 }
@@ -327,7 +350,7 @@ func (a *App) readOnlyPage(id, page string, options readOnlyPageOptions) (agent.
 		return result, err
 	}
 	if a.pluginManager == nil {
-		return result, &plugin.Error{Code: "MANAGEMENT_UNAVAILABLE", Message: "应用管理不可用", Status: 503}
+		return result, &plugin.Error{Code: "MANAGEMENT_UNAVAILABLE", Message: "app management is unavailable", Status: 503}
 	}
 	release, err := a.pluginManager.TryExecution(id)
 	if err != nil {
@@ -342,7 +365,7 @@ func (a *App) readOnlyPage(id, page string, options readOnlyPageOptions) (agent.
 		return result, err
 	}
 	if inst.Err != "" {
-		return result, errors.New("应用完整性检查失败")
+		return result, errors.New("the app's integrity check failed")
 	}
 	if !inst.Enabled {
 		return result, agent.ErrDisabled
@@ -361,14 +384,14 @@ func (a *App) readOnlyPage(id, page string, options readOnlyPageOptions) (agent.
 		}
 	}
 	if !declared {
-		return result, &plugin.Error{Code: "PAGE_NOT_FOUND", Message: "页面未在应用中声明", Status: 404}
+		return result, &plugin.Error{Code: "PAGE_NOT_FOUND", Message: "the page is not declared by the app", Status: 400}
 	}
 	result.PackageHash, err = a.plugins.PackageHash(id)
 	if err != nil {
 		return result, err
 	}
 	if options.expectedHash != "" && result.PackageHash != options.expectedHash {
-		return result, &plugin.Error{Code: "CONTENT_CHANGED", Message: "已安装包与批准摘要不同", Status: 409}
+		return result, &plugin.Error{Code: "CONTENT_CHANGED", Message: "the installed package differs from the approved digest", Status: 409}
 	}
 	runner, err := a.agentRunner(inst, options)
 	if err != nil {

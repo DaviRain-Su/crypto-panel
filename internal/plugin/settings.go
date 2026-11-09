@@ -5,6 +5,8 @@ import (
 	"io/fs"
 	"path/filepath"
 	"sort"
+
+	"github.com/egoist/mygo"
 )
 
 // DescribeSettings 返回完整声明元数据，秘密字段仅返回配置状态。
@@ -112,7 +114,8 @@ func (s *Store) SetSettings(id string, values map[string]string) ([]SettingStatu
 			writeErr = errors.New("credential store unavailable")
 		} else if values[key] == "" {
 			writeErr = s.secrets.Delete(secretKey(id, key))
-			if errors.Is(writeErr, fs.ErrNotExist) {
+			// 删除缺失的 key 不是错误：目标状态（key 不存在）已达成。
+			if errors.Is(writeErr, fs.ErrNotExist) || errors.Is(writeErr, mygo.ErrSecretNotFound) {
 				writeErr = nil
 			}
 		} else {

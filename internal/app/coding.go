@@ -35,11 +35,11 @@ type codingState struct {
 	generation                                        int
 }
 
-func codingProfiles() []authoring.Profile {
+func (a *App) codingProfiles() []authoring.Profile {
 	return []authoring.Profile{
 		{ID: "claude", Name: "Claude Code (ACP)", Executable: "claude-code-acp"},
 		{ID: "codex", Name: "Codex (ACP)", Executable: "codex-acp"},
-		{ID: "custom", Name: "自定义 ACP Agent"},
+		{ID: "custom", Name: a.t(i18n.CreatorCustomAgent)},
 	}
 }
 
@@ -61,7 +61,7 @@ func (a *App) initAuthoring() {
 
 func (a *App) selectCodingProfile(id string) {
 	var profile authoring.Profile
-	for _, preset := range codingProfiles() {
+	for _, preset := range a.codingProfiles() {
 		if preset.ID == id {
 			profile = preset
 			break
@@ -74,7 +74,7 @@ func (a *App) selectCodingProfile(id string) {
 		}
 	}
 	if profile.ID == "" {
-		profile = codingProfiles()[0]
+		profile = a.codingProfiles()[0]
 	}
 	a.coding.profileID = profile.ID
 	a.coding.executable = profile.Executable
@@ -93,7 +93,7 @@ func (a *App) selectCodingProfile(id string) {
 
 func (a *App) codingProfile() (authoring.Profile, error) {
 	p := authoring.Profile{ID: a.coding.profileID, Executable: strings.TrimSpace(a.coding.executable)}
-	for _, preset := range codingProfiles() {
+	for _, preset := range a.codingProfiles() {
 		if preset.ID == p.ID {
 			p.Name = preset.Name
 		}
@@ -153,14 +153,14 @@ func (a *App) codingSettings(c *ui.Context) {
 		ui.Text(c, a.t(i18n.CodingIntroBody)).FontSize(12).TextColor(p.muted).MaxLines(3)
 		names := []string{}
 		selected := ""
-		for _, profile := range codingProfiles() {
+		for _, profile := range a.codingProfiles() {
 			names = append(names, profile.Name)
 			if profile.ID == a.coding.profileID {
 				selected = profile.Name
 			}
 		}
 		if ui.Select(c.Key("coding-profile"), &selected, names).Changed() {
-			for _, profile := range codingProfiles() {
+			for _, profile := range a.codingProfiles() {
 				if profile.Name == selected {
 					a.selectCodingProfile(profile.ID)
 					break
@@ -402,6 +402,10 @@ func (a *App) startGeneration() {
 	service := a.coding.service
 	a.goAsync(func() {
 		result, err := service.Run(ctx, request)
+		// 调用方拥有工作目录：Run 返回后即可回收，冻结候选已复制到 Manager。
+		if result.Workspace != "" {
+			_ = os.RemoveAll(result.Workspace)
+		}
 		cancelled := ctx.Err() != nil
 		cancel()
 		if cancelled && result.Installation.RequestID != "" {
@@ -416,7 +420,7 @@ func (a *App) startGeneration() {
 			if cancelled {
 				a.coding.notice = a.t(i18n.CodingCanceled)
 			} else if err != nil {
-				a.coding.err = a.t(i18n.CodingIncomplete, safeAgentText(err.Error(), 800))
+				a.coding.err = a.t(i18n.CodingIncomplete, safeAgentText(a.pluginErrorText(err), 800))
 			} else {
 				a.coding.installationID = result.Installation.RequestID
 				a.coding.notice = a.t(i18n.CodingValidated, result.Installation.Manifest.Name, result.Installation.Version)

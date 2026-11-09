@@ -13,7 +13,8 @@ var rpcQueryMethods = map[string][]string{
 		"eth_getLogs", "eth_getProof", "eth_syncing", "net_version",
 	},
 	"near": {
-		"status", "query", "block", "chunk", "gas_price", "validators", "tx",
+		// "tx" 是 broadcast_tx_commit 的别名，会提交交易，绝不列入。
+		"status", "query", "block", "chunk", "gas_price", "validators",
 		"EXPERIMENTAL_protocol_config", "EXPERIMENTAL_changes", "EXPERIMENTAL_changes_in_block",
 		"EXPERIMENTAL_tx_status", "light_client_proof", "next_light_client_block",
 	},
@@ -42,15 +43,6 @@ func checkRPCFamily(family, method string) error {
 	return rpcDenied(method)
 }
 
-// checkRPCMethod 保留旧调用兼容性；真正的 host.rpc 额外验证链 family。
-func checkRPCMethod(method string) error {
-	for family := range rpcQueryMethods {
-		if checkRPCFamily(family, method) == nil {
-			return nil
-		}
-	}
-	return rpcDenied(method)
-}
 func rpcDenied(method string) error {
 	// 不回显任意方法输入，错误仍保留旧安全断言使用的稳定语句。
 	return errors.New("rpc: method is refused: plugins read the chain, they do not sign or send; query allowlist required")

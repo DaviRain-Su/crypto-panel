@@ -55,9 +55,10 @@ type Permissions struct {
 
 // SettingField is one row of the plugin's settings form.
 type SettingField struct {
-	Key    string `json:"key"`
-	Label  string `json:"label"`
-	Secret bool   `json:"secret,omitempty"`
+	Key   string `json:"key"`
+	Label string `json:"label"`
+	// Secret 始终序列化：设置状态接口的客户端按键存在性判断属性。
+	Secret bool   `json:"secret"`
 	Help   string `json:"help,omitempty"`
 	Link   string `json:"link,omitempty"`
 }

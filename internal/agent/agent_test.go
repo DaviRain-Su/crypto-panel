@@ -80,6 +80,33 @@ func do(t *testing.T, s *Server, method, path, token string) *httptest.ResponseR
 	return rec
 }
 
+func TestUnknownRouteAndMethodAnswerJSON(t *testing.T) {
+	s, _ := newTestServer(t)
+	for _, tc := range []struct {
+		method, path string
+		status       int
+		code         string
+	}{
+		{http.MethodGet, "/v0/nope", http.StatusNotFound, "NOT_FOUND"},
+		{http.MethodPost, "/v0/portfolio", http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED"},
+	} {
+		rec := do(t, s, tc.method, tc.path, "test-token")
+		if rec.Code != tc.status {
+			t.Fatalf("%s %s: status %d", tc.method, tc.path, rec.Code)
+		}
+		var body map[string]string
+		if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil || body["code"] != tc.code || body["error"] == "" {
+			t.Fatalf("%s %s: body %q", tc.method, tc.path, rec.Body.String())
+		}
+	}
+	// 处理器自己的 JSON 404 不能被兜底改写。
+	rec := do(t, s, http.MethodGet, "/v0/examples/missing", "test-token")
+	var body map[string]string
+	if rec.Code != http.StatusNotFound || json.Unmarshal(rec.Body.Bytes(), &body) != nil || body["code"] != "EXAMPLE_NOT_FOUND" {
+		t.Fatalf("handler 404 changed: %d %q", rec.Code, rec.Body.String())
+	}
+}
+
 func TestRefusesWithoutTheToken(t *testing.T) {
 	s, _ := newTestServer(t)
 	for _, token := range []string{"", "wrong", "test-token "} {

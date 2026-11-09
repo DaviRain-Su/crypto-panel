@@ -95,7 +95,7 @@ func TestUpdateRejectsSignedAndSecretTypeMigration(t *testing.T) {
 	s, m := newTestManager(t, sec)
 	first := installTest(t, m, personalPackage(t, "local.personal.types", "1.0.0"))
 	p := personalPackage(t, first.PluginID, "2.0.0")
-	p.Plugin = []byte(strings.Replace(string(p.Plugin), `"key":"plain","label":"普通"`, `"key":"plain","label":"普通","secret":true`, 1))
+	p.Plugin = []byte(strings.Replace(string(p.Plugin), `"key":"plain","label":"普通","secret":false`, `"key":"plain","label":"普通","secret":true`, 1))
 	_, err := m.Propose(Source{Kind: "inline", Package: &p}, "update", first.PluginID, first.PackageHash, "local-api")
 	requireCode(t, err, "SETTINGS_MIGRATION_REQUIRED")
 	dir := t.TempDir()

@@ -3,6 +3,8 @@ package plugin
 import (
 	"archive/zip"
 	"bytes"
+	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"sort"
@@ -55,6 +57,34 @@ const storeManifest = `{
     { "key": "token", "label": "Token", "secret": true }
   ]
 }`
+
+func TestRemoveAtCleansDeclaredSecrets(t *testing.T) {
+	root := t.TempDir()
+	src := filepath.Join(root, "src")
+	writePlugin(t, src, storeManifest, `export function page() { return {}; }`)
+	secrets := &memSecrets{m: map[string][]byte{}}
+	store := NewStore(filepath.Join(root, "plugins"), secrets)
+	m, err := store.Install(src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.SetSettings(m.ID, map[string]string{"token": "old-secret"}); err != nil {
+		t.Fatal(err)
+	}
+	inst, err := store.Get(m.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.RemoveAt(inst.Dir); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := secrets.m[m.ID+"/token"]; ok {
+		t.Fatal("RemoveAt 留下了声明的凭据")
+	}
+	if _, err := os.Lstat(inst.Dir); !errors.Is(err, fs.ErrNotExist) {
+		t.Fatalf("目录未删除：%v", err)
+	}
+}
 
 func TestStoreInstallEnableRemove(t *testing.T) {
 	root := t.TempDir()

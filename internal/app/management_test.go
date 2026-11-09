@@ -82,7 +82,7 @@ func TestManagedInstallRejectionDoesNotRunOrInstall(t *testing.T) {
 	}
 }
 
-func TestStopAPICancelsOnlyItsOwnPendingJobs(t *testing.T) {
+func TestDisablingAPICancelsOnlyItsOwnPendingJobs(t *testing.T) {
 	a := newTestApp(t)
 	api, err := a.ApplicationManager().Propose(personalSource(t, "local.personal.api", "1.0.0"), "install", "", "", "local-api")
 	if err != nil {
@@ -92,11 +92,27 @@ func TestStopAPICancelsOnlyItsOwnPendingJobs(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	a.stopAgent()
+	a.settings.AgentEnabled = true
+	a.setAgentEnabled(false)
 	got, _ := a.ApplicationManager().GetInstallation(api.RequestID)
 	other, _ := a.ApplicationManager().GetInstallation(acp.RequestID)
 	if got.Status != "cancelled" || other.Status != "pending" {
 		t.Fatalf("撤销范围错误：%s %s", got.Status, other.Status)
+	}
+}
+
+func TestPortChangeKeepsPendingAPISubmissions(t *testing.T) {
+	a := newTestApp(t)
+	job, err := a.ApplicationManager().Propose(personalSource(t, "local.personal.port", "1.0.0"), "install", "", "", "local-api")
+	if err != nil {
+		t.Fatal(err)
+	}
+	a.settings.AgentEnabled = true
+	a.agentPortDraft = "9999"
+	a.applyAgentPort()
+	got, err := a.ApplicationManager().GetInstallation(job.RequestID)
+	if err != nil || got.Status != "pending" {
+		t.Fatalf("端口变化撤销了待确认任务：%s %v", got.Status, err)
 	}
 }
 

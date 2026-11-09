@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -60,13 +61,14 @@ func (a *App) initPlugins(dir string) {
 	a.pluginLogs = map[string]*plugin.LogBuffer{}
 	a.pluginEnabled = map[string]*bool{}
 	a.pluginDrafts = map[string]*string{}
+	a.pluginSettingStatus = map[string][]plugin.SettingStatus{}
 	a.pluginLogsOpen = map[string]bool{}
 	if err := a.plugins.EnsureOfficial(); err != nil {
-		a.pluginNotice = err.Error()
+		a.pluginNotice = a.pluginErrorText(err)
 	}
 	manager, err := plugin.NewManager(a.plugins)
 	if err != nil {
-		a.pluginNotice = a.t(i18n.PluginManagerFailed, err.Error())
+		a.pluginNotice = a.t(i18n.PluginManagerFailed, a.pluginErrorText(err))
 	} else {
 		a.pluginManager = manager
 	}
@@ -82,7 +84,7 @@ func (a *App) refreshPlugins() {
 	}
 	items, err := a.plugins.List()
 	if err != nil {
-		a.pluginNotice = err.Error()
+		a.pluginNotice = a.pluginErrorText(err)
 		return
 	}
 	a.pluginItems = items
@@ -122,6 +124,33 @@ func (a *App) refreshPlugins() {
 	if a.route.kind == "plugin" && !a.pluginPageAvailable(items, a.route.id) {
 		a.closePluginPage()
 	}
+	// 设置状态缓存随列表刷新：移除的条目丢弃，仍存在的重新读取。
+	present := make(map[string]bool, len(items))
+	for _, item := range items {
+		if id := item.Manifest.ID; id != "" {
+			present[id] = true
+		}
+	}
+	for id := range a.pluginSettingStatus {
+		if !present[id] {
+			delete(a.pluginSettingStatus, id)
+			continue
+		}
+		a.loadPluginSettingStatus(id)
+	}
+}
+
+// loadPluginSettingStatus caches one app's settings status so the form never
+// reads the keychain per frame. A busy lease keeps the last known status.
+func (a *App) loadPluginSettingStatus(id string) {
+	if a.plugins == nil {
+		return
+	}
+	statuses, err := a.plugins.DescribeSettings(id)
+	if err != nil {
+		return
+	}
+	a.pluginSettingStatus[id] = statuses
 }
 
 // refreshProvenanceLocks reloads the locked-app list off the UI thread.
@@ -175,7 +204,7 @@ func (a *App) installPlugin() {
 		Directory:   true,
 	})
 	if err != nil {
-		a.pluginNotice = a.t(i18n.PluginInstallFailed, err.Error())
+		a.pluginNotice = a.t(i18n.PluginInstallFailed, a.pluginErrorText(err))
 		a.invalidate()
 		return
 	}
@@ -188,7 +217,7 @@ func (a *App) installPlugin() {
 		err = m.ValidateDir(src)
 	}
 	if err != nil {
-		a.pluginNotice = a.t(i18n.PluginInstallFailed, err.Error())
+		a.pluginNotice = a.t(i18n.PluginInstallFailed, a.pluginErrorText(err))
 		a.invalidate()
 		return
 	}
@@ -198,7 +227,7 @@ func (a *App) installPlugin() {
 		}
 		m, err := a.plugins.Install(src)
 		if err != nil {
-			a.pluginNotice = a.t(i18n.PluginInstallFailed, err.Error())
+			a.pluginNotice = a.t(i18n.PluginInstallFailed, a.pluginErrorText(err))
 			a.invalidate()
 			return
 		}
@@ -221,7 +250,7 @@ func (a *App) installPluginZip() {
 		Filters:     []mygo.FileFilter{{Name: "zip", Extensions: []string{"zip"}}},
 	})
 	if err != nil {
-		a.pluginNotice = a.t(i18n.PluginInstallFailed, err.Error())
+		a.pluginNotice = a.t(i18n.PluginInstallFailed, a.pluginErrorText(err))
 		a.invalidate()
 		return
 	}
@@ -230,13 +259,13 @@ func (a *App) installPluginZip() {
 	}
 	data, err := os.ReadFile(paths[0])
 	if err != nil {
-		a.pluginNotice = a.t(i18n.PluginInstallFailed, err.Error())
+		a.pluginNotice = a.t(i18n.PluginInstallFailed, a.pluginErrorText(err))
 		a.invalidate()
 		return
 	}
 	dir, m, err := a.plugins.UnpackLocal(data)
 	if err != nil {
-		a.pluginNotice = a.t(i18n.PluginInstallFailed, err.Error())
+		a.pluginNotice = a.t(i18n.PluginInstallFailed, a.pluginErrorText(err))
 		a.invalidate()
 		return
 	}
@@ -247,7 +276,7 @@ func (a *App) installPluginZip() {
 		}
 		m, err := a.plugins.Install(dir)
 		if err != nil {
-			a.pluginNotice = a.t(i18n.PluginInstallFailed, err.Error())
+			a.pluginNotice = a.t(i18n.PluginInstallFailed, a.pluginErrorText(err))
 			a.invalidate()
 			return
 		}
@@ -275,11 +304,17 @@ func (a *App) removeBrokenPlugin(dir string) {
 	if err != nil || res.Button != 0 {
 		return
 	}
-	if err := a.plugins.RemoveAt(dir); err != nil {
-		a.pluginNotice = err.Error()
+	remove := a.plugins.RemoveAt
+	if a.pluginManager != nil {
+		remove = a.pluginManager.RemoveAt
+	}
+	if err := remove(dir); err != nil {
+		a.pluginNotice = a.pluginErrorText(err)
 		a.invalidate()
 		return
 	}
+	a.stopRunner(name)
+	delete(a.pluginLogs, name)
 	a.pluginNotice = a.t(i18n.PluginRemoved, name)
 	a.refreshPlugins()
 	a.refreshProvenanceLocks()
@@ -293,7 +328,7 @@ func (a *App) removePlugin(id string) {
 	}
 	inst, err := a.plugins.Get(id)
 	if err != nil {
-		a.pluginNotice = err.Error()
+		a.pluginNotice = a.pluginErrorText(err)
 		a.invalidate()
 		return
 	}
@@ -313,7 +348,7 @@ func (a *App) removePlugin(id string) {
 		remove = a.pluginManager.Remove
 	}
 	if err := remove(id); err != nil {
-		a.pluginNotice = err.Error()
+		a.pluginNotice = a.pluginErrorText(err)
 		a.invalidate()
 		return
 	}
@@ -336,7 +371,7 @@ func (a *App) setPluginEnabled(id string, enabled bool) {
 		setEnabled = a.pluginManager.SetEnabled
 	}
 	if err := setEnabled(id, enabled); err != nil {
-		a.pluginNotice = err.Error()
+		a.pluginNotice = a.pluginErrorText(err)
 		a.invalidate()
 		return
 	}
@@ -367,20 +402,35 @@ func (a *App) savePluginSettings(m plugin.Manifest) {
 	_, err := set(m.ID, values)
 	// 部分系统凭据写入失败时也必须使旧设置快照失效。
 	a.stopRunner(m.ID)
+	a.loadPluginSettingStatus(m.ID)
 	if a.pluginKey().id == m.ID {
 		a.pluginGen++
 		a.pluginView = pluginPageState{}
 	}
+	// 只清空确实已应用的 secret 草稿：零写入的失败（busy、校验）保留输入，
+	// 部分失败按事务报告的 applied/failed 区分，让用户只补输失败的字段。
+	applied := map[string]bool{}
+	var writeErr *plugin.SettingsWriteError
+	if errors.As(err, &writeErr) {
+		for _, key := range writeErr.AppliedKeys {
+			applied[key] = true
+		}
+	} else if err == nil {
+		for key := range values {
+			applied[key] = true
+		}
+	}
 	for _, field := range m.Settings {
-		if field.Secret {
-			if draft := a.pluginDrafts[m.ID+"/"+field.Key]; draft != nil {
-				*draft = ""
-			}
+		if !field.Secret || !applied[field.Key] {
+			continue
+		}
+		if draft := a.pluginDrafts[m.ID+"/"+field.Key]; draft != nil {
+			*draft = ""
 		}
 	}
 	if err != nil {
 		a.invalidateInstallationVerification(m.ID, "SETTINGS_WRITE_FAILED")
-		a.pluginNotice = err.Error()
+		a.pluginNotice = a.t(i18n.PluginSettingsWriteFailed)
 		a.invalidate()
 		return
 	}
@@ -468,6 +518,7 @@ func (a *App) openPluginDetail(id string) {
 	a.pluginDetail = id
 	a.pluginTab = "installed"
 	a.route = routePlugins
+	a.loadPluginSettingStatus(id)
 	a.invalidate()
 }
 
@@ -489,7 +540,9 @@ func (a *App) openApps() {
 // loadPluginPage computes the open page in the background. The runtime is
 // created on the main thread (compiling the module is cheap and touches the
 // runner map); the call itself runs on its own goroutine, so a slow plugin
-// never freezes the window.
+// never freezes the window. The execution lease is held from before Get until
+// the page call finishes, and released via defer on every path — including a
+// panic in the synchronous section, which would otherwise wedge the app busy.
 func (a *App) loadPluginPage() {
 	key := a.pluginKey()
 	if key.id == "" || a.plugins == nil {
@@ -498,7 +551,7 @@ func (a *App) loadPluginPage() {
 	if a.pluginView.key == key && a.pluginView.loading {
 		return
 	}
-	var release func()
+	var release func() = func() {}
 	if a.pluginManager != nil {
 		var err error
 		release, err = a.pluginManager.TryExecution(key.id)
@@ -508,9 +561,15 @@ func (a *App) loadPluginPage() {
 			}
 			return
 		}
-	} else {
-		release = func() {}
 	}
+	// release 现在覆盖 Get 到 goroutine 结束的每一条路径；同步段的 panic
+	// 也会经 defer 释放租约，不会把应用永久卡在 busy。
+	defer func() {
+		if r := recover(); r != nil {
+			release()
+			panic(r)
+		}
+	}()
 	inst, err := a.plugins.Get(key.id)
 	if err != nil {
 		release()
@@ -521,7 +580,7 @@ func (a *App) loadPluginPage() {
 	if inst.Err != "" {
 		release()
 		a.stopRunner(key.id)
-		state.err = inst.Err
+		state.err = a.pluginErrText(inst.Err)
 		a.pluginView = state
 		return
 	}

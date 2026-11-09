@@ -98,7 +98,7 @@ export function page({name}) {
 				t.Fatal("运行验证改变了安装任务语义")
 			}
 			tt := ui.NewTester(a.view, windowWidth, windowHeight)
-			if !tt.HasText("首页已通过运行检查") {
+			if !tt.HasText("The first page passed the run check.") {
 				t.Fatalf("原生设置没有展示验证结果：%q", tt.Texts())
 			}
 		})
