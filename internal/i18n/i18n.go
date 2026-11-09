@@ -509,6 +509,7 @@ const (
 	ProvenanceLockedHash      Key = "provenanceLockedHash"
 	ProvenanceLockedSigned    Key = "provenanceLockedSigned"
 	ProvenanceLockedUnsigned  Key = "provenanceLockedUnsigned"
+	ProvenanceLockedBusy      Key = "provenanceLockedBusy"
 	ProvenanceLockedWarn      Key = "provenanceLockedWarn"
 	ProvenanceLockedDone      Key = "provenanceLockedDone"
 	ProvenanceLockedFailed    Key = "provenanceLockedFailed"
@@ -998,13 +999,14 @@ var messages = map[Key]map[string]string{
 	PluginManagerFailed:       {English: "App management failed to start: %s", Chinese: "应用管理初始化失败：%s"},
 	PendingExpired:            {English: "That request has finished or expired. Submit it again.", Chinese: "此请求已结束或过期，请重新提交"},
 	SecretCleared:             {English: "Cleared the secret setting.", Chinese: "已清除秘密设置"},
-	ProvenanceLockedNotice:    {English: "A personal app is locked for the local API because its install record was not saved. Confirm only an app you created yourself.", Chinese: "有个人应用的安装来源没能保存，本机 API 暂时不能修改它。请只确认你自己创建的应用。"},
+	ProvenanceLockedNotice:    {English: "A personal app is locked for the local API because its origin can't be confirmed. Confirming lets the local API and the coding agent change and uninstall it, so only confirm apps you created yourself.", Chinese: "有个人应用无法确认来源，本机 API 暂时不能修改它。确认后，本机 API 和编码代理都可以修改并卸载它，请只确认你自己创建的应用。"},
 	ProvenanceLockedAction:    {English: "Confirm %s", Chinese: "确认 %s"},
 	ProvenanceLockedTitle:     {English: "Confirm personal app", Chinese: "确认个人应用"},
 	ProvenanceLockedPath:      {English: "Path: %s", Chinese: "路径：%s"},
 	ProvenanceLockedHash:      {English: "Hash: %s", Chinese: "摘要：%s"},
 	ProvenanceLockedSigned:    {English: "Signing: signed", Chinese: "签名：已签名"},
-	ProvenanceLockedUnsigned:  {English: "Signing: unsigned", Chinese: "签名：未签名"},
+	ProvenanceLockedUnsigned:  {English: "Origin can't be confirmed", Chinese: "无法确认来源"},
+	ProvenanceLockedBusy:      {English: "Checking this app…", Chinese: "正在检查这个应用…"},
 	ProvenanceLockedWarn:      {English: "Confirming lets the local API and the coding agent change and uninstall this app. Only confirm apps you created yourself. Cancel leaves it locked.", Chinese: "确认后，本机 API 和编码代理都可以修改并卸载这个应用。请只确认你自己创建的应用。取消则保持锁定。"},
 	ProvenanceLockedDone:      {English: "Confirmed %s for the local API.", Chinese: "已确认 %s，本机 API 可以修改它。"},
 	ProvenanceLockedFailed:    {English: "Could not confirm this app. It stays locked for the local API. Reinstall it and try again.", Chinese: "无法确认这个应用。本机 API 仍然不能修改它。请重新安装后再试。"},

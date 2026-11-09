@@ -302,7 +302,7 @@ func TestSignedUpdateUsesHostProvenance(t *testing.T) {
 	}
 	t.Cleanup(func() { manager.Close() })
 	s := New(&managedData{base, manager}, "test-token")
-	installSignedApp(t, store, "local.personal.signed")
+	installSignedApp(t, store, secrets, "local.personal.signed")
 	hash, err := store.PackageHash("local.personal.signed")
 	if err != nil {
 		t.Fatal(err)
@@ -395,7 +395,7 @@ func TestDeletedSentinelAndReadErrorKeepsSignedAppClosed(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	installSignedApp(t, store, "local.personal.signed")
+	installSignedApp(t, store, sec, "local.personal.signed")
 	secret := "signed-secret"
 	if _, err := manager.SetSettings("local.personal.signed", map[string]string{"token": secret}); err != nil {
 		t.Fatal(err)

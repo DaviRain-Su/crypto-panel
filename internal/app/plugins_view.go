@@ -63,31 +63,62 @@ func (a *App) askProvenanceConfirm(id, name string) {
 	if a.plugins == nil {
 		return
 	}
-	view, err := a.plugins.SnapshotProvenance(id)
-	if err != nil || view.Signed || view.PackageHash == "" {
-		a.pluginNotice = a.t(i18n.ProvenanceLockedFailed)
-		a.invalidate()
-		a.refreshProvenanceLocks()
+	plugins := a.plugins
+	a.pluginNotice = a.t(i18n.ProvenanceLockedBusy)
+	a.invalidate()
+	a.async(func() {
+		view, err := plugins.SnapshotProvenance(id)
+		a.main(func() {
+			if err != nil || view.Signed || view.PackageHash == "" || view.ID != id || a.plugins != plugins {
+				a.pluginNotice = a.t(i18n.ProvenanceLockedFailed)
+				a.invalidate()
+				a.refreshProvenanceLocks()
+				return
+			}
+			ask := a.confirmProvenance
+			if ask == nil {
+				ask = a.openProvenanceConfirm
+			}
+			ask(view, func(ok bool) {
+				if !ok || a.plugins != plugins {
+					return
+				}
+				a.pluginNotice = a.t(i18n.ProvenanceLockedBusy)
+				a.invalidate()
+				a.async(func() {
+					err := plugins.ConfirmProvenance(view)
+					a.main(func() {
+						if err != nil || a.pluginManager != nil && a.pluginManager.APIMayMutate(id) != nil {
+							a.pluginNotice = a.t(i18n.ProvenanceLockedFailed)
+							a.invalidate()
+							a.refreshProvenanceLocks()
+							return
+						}
+						a.pluginNotice = a.t(i18n.ProvenanceLockedDone, name)
+						a.refreshPlugins()
+						a.refreshProvenanceLocks()
+						a.invalidate()
+					})
+				})
+			})
+		})
+	})
+}
+
+func (a *App) async(fn func()) {
+	if a.goAsync != nil {
+		a.goAsync(fn)
 		return
 	}
-	ask := a.confirmProvenance
-	if ask == nil {
-		ask = a.openProvenanceConfirm
+	fn()
+}
+
+func (a *App) main(fn func()) {
+	if a.runOnMain != nil {
+		a.runOnMain(fn)
+		return
 	}
-	ask(view, func(ok bool) {
-		if !ok || a.plugins == nil {
-			return
-		}
-		if err := a.plugins.ConfirmProvenance(view); err != nil || a.pluginManager != nil && a.pluginManager.APIMayMutate(id) != nil {
-			a.pluginNotice = a.t(i18n.ProvenanceLockedFailed)
-			a.invalidate()
-			a.refreshProvenanceLocks()
-			return
-		}
-		a.pluginNotice = a.t(i18n.ProvenanceLockedDone, name)
-		a.refreshPlugins()
-		a.invalidate()
-	})
+	fn()
 }
 
 // pluginTabs switches the Apps page between the launcher and the store,

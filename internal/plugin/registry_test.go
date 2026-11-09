@@ -525,3 +525,39 @@ func TestFetchRegistryAndArchive(t *testing.T) {
 		t.Fatal("a 404 was accepted")
 	}
 }
+
+func TestSignedInstallRejectsLocalIDs(t *testing.T) {
+	if err := (RegistryEntry{ID: "local.personal.store"}).Validate(); err == nil || !strings.Contains(err.Error(), "local.*") {
+		t.Fatalf("Validate: %v", err)
+	}
+	store := NewStore(t.TempDir(), nil)
+	_, priv, err := ed25519.GenerateKey(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	localDir := t.TempDir()
+	writeVersion(t, localDir, "local.personal.store", "1.0.0", `export function page(){return {title:"Local"};}`)
+	localEntry := signEntry(t, localDir, "https://example.com/local.zip", priv)
+	localZip, err := ZipDir(localDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Prepare(localZip, localEntry); err == nil || !strings.Contains(err.Error(), "local.*") {
+		t.Fatalf("Prepare: %v", err)
+	}
+	if _, err := store.Install(localDir); err != nil {
+		t.Fatalf("目录安装仍应允许 local.*: %v", err)
+	}
+	signedDir := t.TempDir()
+	writeVersion(t, signedDir, "com.example.signedapp", "1.0.0", `export function page(){return {title:"Signed"};}`)
+	signedEntry := signEntry(t, signedDir, "https://example.com/signed.zip", priv)
+	signedZip, err := ZipDir(signedDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ready, err := store.Prepare(signedZip, signedEntry)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ready.Close()
+}

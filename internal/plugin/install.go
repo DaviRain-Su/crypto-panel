@@ -44,6 +44,9 @@ func (s *Store) Prepare(data []byte, entry RegistryEntry) (*Archive, error) {
 	if err := entry.Validate(); err != nil {
 		return nil, err
 	}
+	if strings.HasPrefix(entry.ID, "local.") {
+		return nil, fmt.Errorf("%s: a signed install cannot use a local.* id", entry.ID)
+	}
 	if len(data) > MaxArchiveBytes {
 		return nil, fmt.Errorf("the download is larger than %d bytes", MaxArchiveBytes)
 	}
@@ -162,6 +165,9 @@ func (s *Store) checkInstall(entry RegistryEntry) error {
 func (ar *Archive) Install() (Manifest, error) {
 	if ar.done || ar.dir == "" || ar.store == nil {
 		return Manifest{}, errors.New("this archive was already installed or closed")
+	}
+	if strings.HasPrefix(ar.Manifest.ID, "local.") || strings.HasPrefix(ar.Entry.ID, "local.") {
+		return Manifest{}, fmt.Errorf("%s: a signed install cannot use a local.* id", ar.Manifest.ID)
 	}
 	release, err := ar.store.tryLease(ar.Manifest.ID)
 	if err != nil {

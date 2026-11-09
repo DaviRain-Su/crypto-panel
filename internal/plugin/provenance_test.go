@@ -22,26 +22,10 @@ func TestSignedAppUpdateRejectsTamperedInstallRecord(t *testing.T) {
 			id := "local.personal." + kind
 			dir := t.TempDir()
 			writeVersion(t, dir, id, "1.0.0", personalSource)
-			_, private, err := ed25519.GenerateKey(nil)
-			if err != nil {
+			if _, err := s.Install(dir); err != nil {
 				t.Fatal(err)
 			}
-			entry := signEntry(t, dir, "https://example.com/signed.zip", private)
-			archive, err := ZipDir(dir)
-			if err != nil {
-				t.Fatal(err)
-			}
-			prepared, err := s.Prepare(archive, entry)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if _, err := prepared.Install(); err != nil {
-				t.Fatal(err)
-			}
-			hash, err := s.PackageHash(id)
-			if err != nil {
-				t.Fatal(err)
-			}
+			hash := plantSignedProvenance(t, s, id)
 			record := filepath.Join(s.Dir(), id, "install.json")
 			switch kind {
 			case "missing":
@@ -69,7 +53,7 @@ func TestSignedAppUpdateRejectsTamperedInstallRecord(t *testing.T) {
 				}
 			}
 			next := personalPackage(t, id, "2.0.0")
-			_, err = m.Propose(Source{Kind: "inline", Package: &next}, "update", id, hash, "local-api")
+			_, err := m.Propose(Source{Kind: "inline", Package: &next}, "update", id, hash, "local-api")
 			requireCode(t, err, "SOURCE_NOT_ALLOWED")
 		})
 	}
@@ -914,9 +898,8 @@ func TestConfirmDoesNotDowngradeSignedApp(t *testing.T) {
 	if err := s.ConfirmProvenance(view); !errors.Is(err, ErrProvenanceSigned) {
 		t.Fatalf("已签名确认没有返回错误: %v", err)
 	}
-	rec, found, gerr := s.getProvenance(id)
-	if gerr != nil || !found || !rec.Signed {
-		t.Fatalf("已验证签名没有按已签名记录: %+v found=%v err=%v", rec, found, gerr)
+	if _, found, gerr := s.getProvenance(id); gerr != nil || found {
+		t.Fatalf("已验证签名留下了记录: found=%v err=%v", found, gerr)
 	}
 	if err := os.WriteFile(filepath.Join(dir, "install.json"), []byte("{}\n"), 0o600); err != nil {
 		t.Fatal(err)
@@ -924,9 +907,8 @@ func TestConfirmDoesNotDowngradeSignedApp(t *testing.T) {
 	if err := s.ConfirmProvenance(view); !errors.Is(err, ErrProvenanceChanged) {
 		t.Fatalf("打开窗口后换掉 install.json 仍被确认: %v", err)
 	}
-	rec, found, gerr = s.getProvenance(id)
-	if gerr != nil || !found || !rec.Signed {
-		t.Fatalf("换文件后签名记录被改掉: %+v found=%v err=%v", rec, found, gerr)
+	if _, found, gerr := s.getProvenance(id); gerr != nil || found {
+		t.Fatalf("换文件后写下了记录: found=%v err=%v", found, gerr)
 	}
 	m, err := NewManager(s)
 	if err != nil {
@@ -944,22 +926,49 @@ func TestConfirmRejectsHardLinkedInstallRecord(t *testing.T) {
 		t.Fatal(err)
 	}
 	record := filepath.Join(s.Dir(), id, "install.json")
-	forged := filepath.Join(s.Dir(), "forged.json")
-	if err := os.WriteFile(forged, []byte("{}\n"), 0o600); err != nil {
+	before, err := os.ReadFile(record)
+	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Remove(record); err != nil {
+	linked := filepath.Join(s.Dir(), "same-install.json")
+	if err := os.Link(record, linked); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Link(forged, record); err != nil {
-		t.Fatal(err)
+	after, err := os.ReadFile(record)
+	if err != nil || string(after) != string(before) {
+		t.Fatal("硬链接改变了 install.json 的内容")
 	}
-	if err := s.ConfirmProvenance(view); err == nil {
-		t.Fatal("硬链接的 install.json 被确认")
+	if err := s.ConfirmProvenance(view); !errors.Is(err, ErrProvenanceChanged) && !errors.Is(err, ErrProvenanceLinked) {
+		t.Fatalf("内容相同的硬链接被确认: %v", err)
 	}
 	if _, found, _ := s.getProvenance(id); found {
 		t.Fatal("硬链接确认写下了记录")
 	}
+	if _, err := s.SnapshotProvenance(id); !errors.Is(err, ErrProvenanceLinked) {
+		t.Fatalf("打开窗口时没有因为链接本身拒绝: %v", err)
+	}
+}
+
+func plantSignedProvenance(t *testing.T, s *Store, id string) string {
+	t.Helper()
+	dir := filepath.Join(s.Dir(), id)
+	if err := signInstall(t, dir); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := os.ReadFile(filepath.Join(dir, "install.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	hash, err := normalizedPackageHash(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.putProvenance(hostProvenance{
+		ID: id, Signed: true, Via: "store", PackageHash: hash, InstallDigest: installDigest(raw),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	return hash
 }
 
 func signInstall(t *testing.T, dir string) error {
@@ -975,4 +984,200 @@ func signInstall(t *testing.T, dir string) error {
 	pub := priv.Public().(ed25519.PublicKey)
 	body := fmt.Sprintf("{\n  \"installedVia\": \"store\",\n  \"hash\": %q,\n  \"publisher\": %q,\n  \"signature\": %q\n}\n", digest, PublicKeyString(pub), SignDigest(priv, digest))
 	return os.WriteFile(filepath.Join(dir, "install.json"), []byte(body), 0o600)
+}
+
+func TestSentinelBlocksEvenWhenCreateSucceeds(t *testing.T) {
+	prev := createMigrationSentinelFile
+	createMigrationSentinelFile = func(string) error { return nil }
+	t.Cleanup(func() { createMigrationSentinelFile = prev })
+	sec := &scriptedSecrets{m: map[string][]byte{}}
+	root := t.TempDir()
+	s := NewStore(filepath.Join(root, "plugins"), sec)
+	id := "local.personal.sentinelopen"
+	plantLoose(t, s.Dir(), id)
+	path, err := s.migrationSentinelPath()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte("1\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	m, err := NewManager(s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { m.Close() })
+	requireCode(t, m.APIMayMutate(id), "API_MUTATION_FORBIDDEN")
+	if _, found, _ := s.getProvenance(id); found {
+		t.Fatal("哨兵还在、创建却成功时，迁移相信了 install.json")
+	}
+}
+
+func TestStartedMarkerBlocksEvenWhenCreateSucceeds(t *testing.T) {
+	prev := createMigrationSentinelFile
+	createMigrationSentinelFile = func(string) error { return nil }
+	t.Cleanup(func() { createMigrationSentinelFile = prev })
+	sec := &scriptedSecrets{m: map[string][]byte{}}
+	s := NewStore(filepath.Join(t.TempDir(), "plugins"), sec)
+	id := "local.personal.startedopen"
+	plantLoose(t, s.Dir(), id)
+	if err := sec.Set(provenanceMigrationStarted, []byte("1")); err != nil {
+		t.Fatal(err)
+	}
+	m, err := NewManager(s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { m.Close() })
+	requireCode(t, m.APIMayMutate(id), "API_MUTATION_FORBIDDEN")
+	if _, found, _ := s.getProvenance(id); found {
+		t.Fatal("已开始标记还在、哨兵创建却成功时，迁移相信了 install.json")
+	}
+}
+
+func TestConfirmRejectsSnapshotFieldChanges(t *testing.T) {
+	id := "local.personal.fields"
+	s := stuckUnsigned(t, id)
+	base, err := s.SnapshotProvenance(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cases := []ProvenanceView{base, base, base, base}
+	cases[0].dev++
+	cases[1].ino++
+	cases[2].digest += "x"
+	cases[3].Signed = true
+	cases[3].PackageHash = ""
+	for i, view := range cases {
+		if i == 3 {
+			view.PackageHash = base.PackageHash
+			view.Signed = true
+		}
+		if err := s.ConfirmProvenance(view); err == nil {
+			t.Fatalf("改过的快照 %d 被确认", i)
+		}
+		if _, found, _ := s.getProvenance(id); found {
+			t.Fatalf("改过的快照 %d 写下了记录", i)
+		}
+	}
+	empty := base
+	empty.PackageHash = ""
+	if err := s.ConfirmProvenance(empty); !errors.Is(err, ErrProvenanceUnhashed) {
+		t.Fatalf("空摘要: %v", err)
+	}
+}
+
+func TestConfirmRejectsReplacedInstallRecordWithSameBytes(t *testing.T) {
+	id := "local.personal.replace"
+	s := stuckUnsigned(t, id)
+	view, err := s.SnapshotProvenance(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	record := filepath.Join(s.Dir(), id, "install.json")
+	body, err := os.ReadFile(record)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Rename(record, record+".kept"); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(record, body, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.ConfirmProvenance(view); err == nil {
+		t.Fatal("换过 inode 的 install.json 被确认")
+	}
+	if _, found, _ := s.getProvenance(id); found {
+		t.Fatal("换过 inode 的确认写下了记录")
+	}
+}
+
+func TestConfirmRejectsSignatureAddedAfterSnapshot(t *testing.T) {
+	id := "local.personal.becomesigned"
+	s := stuckUnsigned(t, id)
+	view, err := s.SnapshotProvenance(id)
+	if err != nil || view.Signed {
+		t.Fatalf("快照: %+v %v", view, err)
+	}
+	if err := signInstall(t, filepath.Join(s.Dir(), id)); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(s.Dir(), id, "index.js"), []byte(`export function page(){return {title:"Later"};}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := signInstall(t, filepath.Join(s.Dir(), id)); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.ConfirmProvenance(view); err == nil || errors.Is(err, errProvenanceUnconfirmed) {
+		t.Fatalf("窗口打开后变成已签名仍被确认: %v", err)
+	}
+	if _, found, _ := s.getProvenance(id); found {
+		t.Fatal("窗口打开后变成已签名留下了记录")
+	}
+}
+
+func TestConfirmAfterIndexChangeUsesTheNewSnapshot(t *testing.T) {
+	id := "local.personal.newhash"
+	s := stuckUnsigned(t, id)
+	if err := os.WriteFile(filepath.Join(s.Dir(), id, "index.js"), []byte(`export function page(){return {title:"Before"};}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	view, err := s.SnapshotProvenance(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.ConfirmProvenance(view); err != nil {
+		t.Fatal(err)
+	}
+	rec, found, gerr := s.getProvenance(id)
+	if gerr != nil || !found || rec.Signed || rec.PackageHash != view.PackageHash {
+		t.Fatalf("确认没有记下打开窗口时的摘要: %+v found=%v err=%v", rec, found, gerr)
+	}
+	m, err := NewManager(s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { m.Close() })
+	if err := m.APIMayMutate(id); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestConfirmRejectsZeroLinkCount(t *testing.T) {
+	id := "local.personal.zerolink"
+	s := stuckUnsigned(t, id)
+	prev := readInstallIdentity
+	readInstallIdentity = func(string, os.FileInfo) (uint64, uint64, uint64, bool) {
+		return 1, 1, 0, true
+	}
+	t.Cleanup(func() { readInstallIdentity = prev })
+	if _, err := s.SnapshotProvenance(id); !errors.Is(err, ErrProvenanceLinked) {
+		t.Fatalf("链接数为 0 被接受: %v", err)
+	}
+	if _, found, _ := s.getProvenance(id); found {
+		t.Fatal("链接数为 0 写下了记录")
+	}
+}
+
+func TestConfirmHonorsTheAppLease(t *testing.T) {
+	id := "local.personal.lease"
+	s := stuckUnsigned(t, id)
+	view, err := s.SnapshotProvenance(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	release, err := s.tryLease(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(release)
+	err = s.ConfirmProvenance(view)
+	var busy *Error
+	if !errors.As(err, &busy) || busy.Code != "APP_BUSY" {
+		t.Fatalf("占用中的确认: %v", err)
+	}
+	if _, found, _ := s.getProvenance(id); found {
+		t.Fatal("占用中的确认写下了记录")
+	}
 }

@@ -206,11 +206,7 @@ func (a *App) openProvenanceConfirm(view plugin.ProvenanceView, done func(bool))
 				ui.Text(c, view.Name).FontSize(14).FontWeight(600).MaxLines(1)
 				ui.Text(c, a.t(i18n.ProvenanceLockedPath, view.Path)).FontSize(12).MaxLines(3)
 				ui.Text(c, a.t(i18n.ProvenanceLockedHash, view.PackageHash)).FontSize(12).MaxLines(2)
-				state := a.t(i18n.ProvenanceLockedUnsigned)
-				if view.Signed {
-					state = a.t(i18n.ProvenanceLockedSigned)
-				}
-				ui.Text(c, state).FontSize(12).MaxLines(1)
+				ui.Text(c, a.t(i18n.ProvenanceLockedUnsigned)).FontSize(12).MaxLines(1)
 				ui.Text(c, a.t(i18n.ProvenanceLockedWarn)).FontSize(13).MaxLines(6)
 				ui.Row(c).Gap(8).Children(func() {
 					a.primaryButton(c, a.t(i18n.Cancel), nil, false, func() { decide(false) })

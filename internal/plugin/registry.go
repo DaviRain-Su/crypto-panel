@@ -106,6 +106,9 @@ func (e RegistryEntry) Validate() error {
 	if !idPattern.MatchString(e.ID) || len(e.ID) > 128 {
 		return fmt.Errorf("id %q must be reverse-DNS, lowercase, such as \"com.example.portfolio\"", e.ID)
 	}
+	if strings.HasPrefix(e.ID, "local.") {
+		return fmt.Errorf("%s: a signed registry install cannot use a local.* id", e.ID)
+	}
 	if strings.TrimSpace(e.Name) == "" || len([]rune(e.Name)) > 64 {
 		return fmt.Errorf("%s: the name must be 1 to 64 characters", e.ID)
 	}
