@@ -117,6 +117,8 @@ func (a *App) passkeyChainCard(c *ui.Context) {
 		}
 		ui.Text(c, pk.PublicKey).Font("monospace").FontSize(9.5).
 			TextColor(p.faint).MaxLines(1)
+		a.softButton(c, a.t(i18n.PasskeyExport), iconCopy, p.accent, func() { a.exportPasskeyRecovery() })
+		ui.Text(c, a.t(i18n.PasskeyRecoveryHint)).FontSize(10.5).TextColor(p.muted).MaxLines(4)
 		a.passkeyMessages(c)
 	})
 }
@@ -132,14 +134,14 @@ func (a *App) passkeySolanaBalance() string {
 	return a.nativeText(snap)
 }
 
-// passkeyCard is the passkey wallet before a credential exists.
+// passkeyCard is the passkey wallet before a credential exists. Once one
+// exists, the chain card shows that network's account and the recovery entry.
 func (a *App) passkeyCard(c *ui.Context) {
 	if a.settings.Passkey != nil {
 		a.passkeyChainCard(c)
 		return
 	}
 	p := a.pal
-	pk := a.settings.Passkey
 	ui.Column(c).Key("passkey").Gap(12).Padding(16).Radius(14).
 		Background(p.card).Border(1, p.hairline).Shadow(0, 1, 2, 0, p.shadow).
 		Margin(0, 0, 14, 0).Children(func() {
@@ -155,30 +157,8 @@ func (a *App) passkeyCard(c *ui.Context) {
 				})
 				ui.Text(c, a.t(i18n.PasskeyBody)).FontSize(11.5).TextColor(p.muted).MaxLines(4)
 			})
-			if pk != nil {
-				a.iconButton(c, iconTrash, a.t(i18n.PasskeyForget), a.confirmRemovePasskey)
-			}
 		})
-		if pk == nil {
-			a.passkeyCreateRow(c)
-			return
-		}
-		a.passkeyAccountRow(c, a.t(i18n.PasskeyNearAccount), pk.NEARAccount, a.passkeyNearBalance(), true)
-		evm, evmCopyable := pk.EVMAddress, true
-		if evm == "" {
-			evm, evmCopyable = a.t(i18n.PasskeyDeriving), false
-		}
-		a.passkeyAccountRow(c, a.t(i18n.PasskeyEVMAccount), evm, a.passkeyEVMBalance(), evmCopyable)
-		ui.Text(c, pk.PublicKey).Font("monospace").FontSize(9.5).
-			TextColor(p.faint).MaxLines(1)
-		a.softButton(c, a.t(i18n.PasskeyExport), iconCopy, p.accent, func() { a.exportPasskeyRecovery() })
-		ui.Text(c, a.t(i18n.PasskeyRecoveryHint)).FontSize(10.5).TextColor(p.muted).MaxLines(4)
-		if a.network().Family != chain.Near || a.network().ChainName != "mainnet" {
-			ui.Text(c, a.t(i18n.PasskeyMainnetOnly)).FontSize(11).TextColor(p.muted).MaxLines(2)
-		} else {
-			a.passkeyActions(c)
-		}
-		a.passkeyMessages(c)
+		a.passkeyCreateRow(c)
 	})
 }
 

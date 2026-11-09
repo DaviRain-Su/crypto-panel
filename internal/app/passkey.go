@@ -448,7 +448,7 @@ func (a *App) deployPasskey() {
 	description := a.t(i18n.PasskeyDeployNote, relayer.AccountID)
 	rejected := a.t(i18n.PasskeyRejected)
 	alreadyOnChain := a.t(i18n.PasskeyAlreadyOnChain)
-	reader, approve := a.reader, a.approver()
+	reader := a.reader
 	state := passkeyRelayState{passkey: pk, networkID: network.ID, rpcURL: a.settings.RPCURL, relayer: relayer}
 	op := a.beginPasskeyOperation(true)
 	a.passkeySendErr, a.passkeySendNotice, a.passkeySendHash = "", "", ""
@@ -479,10 +479,14 @@ func (a *App) deployPasskey() {
 			})
 			return
 		}
-		if !approve(approvalRequest{
+		if !a.approvePasskey(op, approvalRequest{
 			pluginName: "Crypto Panel", sourceKind: "wallet", description: description,
 			network: network, near: summary, fromAddr: pk.NEARAccount, fromLabel: "Passkey",
 		}) {
+			if err := op.ctx.Err(); err != nil {
+				a.failPasskeySend(op, err)
+				return
+			}
 			a.failPasskeySend(op, errors.New(rejected))
 			return
 		}
@@ -584,7 +588,6 @@ func (a *App) sendPasskeyNear() {
 	rejected := a.t(i18n.PasskeyRejected)
 	stateInit := passkeywallet.StateInit(pub)
 	reader := a.reader
-	approve := a.approver()
 	newCeremony, open := a.newCeremony, a.openExternal
 	state := passkeyRelayState{passkey: pk, networkID: network.ID, rpcURL: a.settings.RPCURL, relayer: relayer}
 	op := a.beginPasskeyOperation(true)
@@ -597,7 +600,7 @@ func (a *App) sendPasskeyNear() {
 			a.failPasskeySend(op, err)
 			return
 		}
-		if !approve(approvalRequest{
+		if !a.approvePasskey(op, approvalRequest{
 			pluginName:  "Crypto Panel",
 			sourceKind:  "wallet",
 			description: description,
@@ -606,6 +609,10 @@ func (a *App) sendPasskeyNear() {
 			fromAddr:    pk.NEARAccount,
 			fromLabel:   "Passkey",
 		}) {
+			if err := op.ctx.Err(); err != nil {
+				a.failPasskeySend(op, err)
+				return
+			}
 			a.failPasskeySend(op, errors.New(rejected))
 			return
 		}

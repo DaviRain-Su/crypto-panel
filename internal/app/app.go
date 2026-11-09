@@ -193,9 +193,13 @@ type App struct {
 	// installOpen is set while the permission prompt is on screen.
 	installOpen bool
 	// confirmConnect asks the user to let a DApp see the NEAR accounts, and
-	// approve shows a transaction's decode. Tests replace both.
+	// approve shows a transaction's decode when tests replace the window.
+	// Production leaves approve nil: approver() uses askApproval, and passkey
+	// deploy/send use approvePasskey so a canceled operation can close or
+	// dequeue that prompt. openApproval, when set, replaces the passkey window.
 	confirmConnect func(origin string) bool
 	approve        func(approvalRequest) bool
+	openApproval   func(approvalRequest, func(bool)) func()
 
 	// approvalMu shows one approval window at a time, however many plugins
 	// or pages ask at once.
@@ -276,7 +280,9 @@ func New() (*App, error) {
 	a.goAsync = func(fn func()) { go fn() }
 	a.confirmInstall = a.askInstall
 	a.confirmConnect = a.askConnect
-	a.approve = a.askApproval
+	// approve stays nil. Plugins, the wallet, and NEAR send go through
+	// approver(), which falls back to askApproval. Passkey deploy and send
+	// use approvePasskey instead, so cancellation reaches the native wait.
 	a.approveIntents = a.askIntentsApproval
 	a.passkeyKind = passkey.Check()
 	a.authenticate = passkey.Authenticate

@@ -34,7 +34,8 @@ func (a *App) beginPasskeyOperation(sending bool) *passkeyOperation {
 }
 
 // cancelPasskeyOperations 在锁定、关闭、移除或切换网络时由 UI 线程调用。
-// 随后解锁也不能恢复已经取消的操作。
+// 随后解锁也不能恢复已经取消的操作。批准等待观察这个 context：取消会关掉
+// 已经打开的原生批准窗，也会让还在排队的等待直接返回并放开 approvalMu。
 func (a *App) cancelPasskeyOperations() {
 	op := a.passkeyOp
 	if op == nil {
@@ -50,6 +51,27 @@ func (a *App) cancelPasskeyOperations() {
 		a.passkeyErr = a.t(i18n.PasskeyCanceled)
 	}
 	a.invalidate()
+}
+
+// approvePasskey 等待 shell 的批准，并在 op 被取消时结束等待。测试通过
+// a.approve 代替窗口。生产环境 a.approve 为空，走和 DApp 相同的可取消等待：
+// 取消后不再打开提示，已打开的提示会被销毁，approvalMu 也会放开。
+// 迟到的批准返回 false，调用方因此不会签名或广播；即便返回 true，
+// checkPasskeyRelay 和 passkeyOp != op 仍会拒绝过期操作。
+func (a *App) approvePasskey(op *passkeyOperation, req approvalRequest) bool {
+	if a.approve != nil {
+		if op.ctx.Err() != nil {
+			return false
+		}
+		return a.approve(req) && op.ctx.Err() == nil
+	}
+	open := a.openApproval
+	if open == nil {
+		open = a.openPasskeyApproval
+	}
+	return a.approvalDecision(op.ctx, func(done func(bool)) func() {
+		return open(req, done)
+	})
 }
 
 func (a *App) finishPasskeyOperation(op *passkeyOperation, err error, done func(error)) {

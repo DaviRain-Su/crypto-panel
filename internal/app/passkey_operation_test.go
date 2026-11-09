@@ -6,6 +6,9 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/egoist/mygo"
 
 	"github.com/davirain-su/crypto-panel/internal/chain"
 	"github.com/davirain-su/crypto-panel/internal/chains"
@@ -212,6 +215,92 @@ func TestSendPasskeyNearRejectsAnotherReturnedCredential(t *testing.T) {
 	if rpc.broadcast != nil || !strings.Contains(a.passkeySendErr, "another credential") {
 		t.Fatalf("broadcast=%v, error=%q", rpc.broadcast != nil, a.passkeySendErr)
 	}
+}
+
+func TestPasskeyApprovalCancelReleasesPromptAndLock(t *testing.T) {
+	a := newTestApp(t)
+	a.approve = nil
+	a.win = new(mygo.Window)
+	op := a.beginPasskeyOperation(true)
+	opened := make(chan struct{})
+	closed := make(chan struct{})
+	var late func(bool)
+	a.openApproval = func(_ approvalRequest, done func(bool)) func() {
+		late = done
+		close(opened)
+		return func() { close(closed) }
+	}
+	result := make(chan bool, 1)
+	go func() {
+		result <- a.approvePasskey(op, approvalRequest{pluginName: "Crypto Panel", sourceKind: "wallet"})
+	}()
+	<-opened
+	// Hide the stand-in window so cancel does not call Invalidate.
+	win := a.win
+	a.win = nil
+	a.cancelPasskeyOperations()
+	a.win = win
+	late(true) // A click that lands after cancel must not approve.
+	if <-result {
+		t.Fatal("a canceled passkey approval was accepted")
+	}
+	select {
+	case <-closed:
+	case <-time.After(time.Second):
+		t.Fatal("a canceled passkey approval left its window open")
+	}
+	if !a.approvalMu.TryLock() {
+		t.Fatal("a canceled passkey approval retained the shared approval lock")
+	}
+	defer a.approvalMu.Unlock()
+
+	op = a.beginPasskeyOperation(true)
+	queued := make(chan bool, 1)
+	a.openApproval = func(_ approvalRequest, _ func(bool)) func() {
+		t.Error("a canceled waiter opened a passkey approval")
+		return func() {}
+	}
+	go func() {
+		queued <- a.approvePasskey(op, approvalRequest{})
+	}()
+	a.win = nil
+	a.cancelPasskeyOperations()
+	a.win = win
+	select {
+	case ok := <-queued:
+		if ok {
+			t.Fatal("a canceled queue waiter succeeded")
+		}
+	case <-time.After(time.Second):
+		t.Fatal("a canceled passkey approval remained queued behind another approval")
+	}
+}
+
+func TestPasskeySendCancelDuringNativeApprovalDoesNotBroadcast(t *testing.T) {
+	a, rpc, _, _ := newPasskeyApp(t)
+	a.approve = nil
+	a.win = new(mygo.Window)
+	destroyed := false
+	a.openApproval = func(_ approvalRequest, done func(bool)) func() {
+		win := a.win
+		a.win = nil
+		a.cancelPasskeyOperations()
+		a.win = win
+		done(true)
+		return func() { destroyed = true }
+	}
+	a.passkeySendTo, a.passkeySendAmount = "bob.near", "1"
+	a.sendPasskeyNear()
+	if !destroyed {
+		t.Fatal("cancel during native approval left the prompt open")
+	}
+	if rpc.broadcast != nil || a.passkeySendHash != "" {
+		t.Fatal("a late approval after cancel signed or broadcast")
+	}
+	if !a.approvalMu.TryLock() {
+		t.Fatal("a canceled passkey approval retained the shared approval lock")
+	}
+	a.approvalMu.Unlock()
 }
 
 func TestCreatePasskeyCanceledBeforeLateRegistrationIsNotStored(t *testing.T) {

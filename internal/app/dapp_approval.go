@@ -94,6 +94,12 @@ func (a *App) askDappConnect(ctx context.Context, origin string) bool {
 // dappDecision 共用 shell 的批准锁，等待期间可以取消，取消时销毁原生提示窗。
 // 文档或请求失效后，不再留下等待 approvalMu 的废弃协程。
 func (a *App) dappDecision(ctx context.Context, open func(func(bool)) func()) bool {
+	return a.approvalDecision(ctx, open)
+}
+
+// approvalDecision 是 DApp 与 Passkey 共用的可取消批准等待。取消时销毁已经
+// 打开的提示，排队中的等待直接返回，不占用 approvalMu。
+func (a *App) approvalDecision(ctx context.Context, open func(func(bool)) func()) bool {
 	tick := time.NewTicker(20 * time.Millisecond)
 	defer tick.Stop()
 	for !a.approvalMu.TryLock() {
