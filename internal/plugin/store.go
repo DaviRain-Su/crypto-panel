@@ -57,6 +57,10 @@ type Store struct {
 	provenanceMu  sync.Mutex
 	provenanceMem map[string][]byte
 	provBackoff   time.Time
+	// seenHash is the package hash first observed while an app was locked.
+	// A later confirm uses it to refuse a tree that changed before the window
+	// opened, instead of storing a record for that tree.
+	seenHash map[string]string
 }
 
 // NewStore returns a store rooted at dir, which is created on first write.

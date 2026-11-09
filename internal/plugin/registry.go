@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"log"
 	"net/http"
 	"net/url"
 	"os"
@@ -87,8 +88,15 @@ func ParseRegistry(data []byte) (Registry, error) {
 		return Registry{}, fmt.Errorf("registry: more than %d plugins", maxRegistryPlugins)
 	}
 	seen := make(map[string]bool, len(reg.Plugins))
+	kept := reg.Plugins[:0]
 	for i := range reg.Plugins {
-		entry := &reg.Plugins[i]
+		entry := reg.Plugins[i]
+		if strings.HasPrefix(entry.ID, "local.") {
+			// One old local.* catalog row must not hide every other app.
+			// Signed install of that id is still rejected by Prepare.
+			log.Printf("lintel: skipping registry entry %s: a signed install cannot use a local.* id", entry.ID)
+			continue
+		}
 		if err := entry.Validate(); err != nil {
 			return Registry{}, fmt.Errorf("registry entry %d: %w", i+1, err)
 		}
@@ -96,7 +104,9 @@ func ParseRegistry(data []byte) (Registry, error) {
 			return Registry{}, fmt.Errorf("registry: %s is listed twice", entry.ID)
 		}
 		seen[entry.ID] = true
+		kept = append(kept, entry)
 	}
+	reg.Plugins = kept
 	return reg, nil
 }
 

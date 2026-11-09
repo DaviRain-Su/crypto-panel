@@ -1,6 +1,9 @@
 package app
 
 import (
+	"crypto/ed25519"
+	"crypto/rand"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -8,6 +11,7 @@ import (
 
 	"github.com/egoist/mygo/ui"
 
+	"github.com/davirain-su/lintel/internal/i18n"
 	"github.com/davirain-su/lintel/internal/plugin"
 )
 
@@ -51,6 +55,9 @@ func TestProvenanceLockNoticeAndConfirm(t *testing.T) {
 	if !sawBusy {
 		t.Fatal("确认没有先显示忙碌状态")
 	}
+	if strings.Contains(a.pluginNotice, "Checking this app") {
+		t.Fatal("取消后仍显示正在检查")
+	}
 	if _, ok := sec[plugin.ProvenanceAccount(id)]; ok {
 		t.Fatal("取消确认写下了来源记录")
 	}
@@ -58,9 +65,27 @@ func TestProvenanceLockNoticeAndConfirm(t *testing.T) {
 		t.Fatal("取消确认后本机 API 被放行")
 	}
 	a.confirmProvenance = nil
+	a.installOpen = true
 	a.askProvenanceConfirm(id, "Locked")
+	a.installOpen = false
+	if strings.Contains(a.pluginNotice, "Checking this app") {
+		t.Fatal("第二个确认窗被拒绝后仍显示正在检查")
+	}
 	if _, ok := sec[plugin.ProvenanceAccount(id)]; ok {
-		t.Fatal("没有窗口时的取消回调确认了应用")
+		t.Fatal("被拒绝的第二个确认窗写下了记录")
+	}
+	keep := a.plugins
+	a.confirmProvenance = func(_ plugin.ProvenanceView, done func(bool)) {
+		a.plugins = plugin.NewStore(t.TempDir(), memStore{})
+		done(true)
+	}
+	a.askProvenanceConfirm(id, "Locked")
+	a.plugins = keep
+	if _, ok := sec[plugin.ProvenanceAccount(id)]; ok {
+		t.Fatal("应用目录已经换掉后仍确认了原来的应用")
+	}
+	if strings.Contains(a.pluginNotice, "Checking this app") {
+		t.Fatal("换掉应用目录后仍显示正在检查")
 	}
 	a.confirmProvenance = func(view plugin.ProvenanceView, done func(bool)) {
 		if view.ID != id || view.Path == "" || view.PackageHash == "" || view.Signed {
@@ -111,13 +136,132 @@ func TestAppsPageDoesNotReadProvenanceOnRender(t *testing.T) {
 	}
 }
 
+func TestConfirmKeychainStaysOffTheUIThread(t *testing.T) {
+	onUI := false
+	sec := &countingSecrets{inner: memStore{}, onUI: &onUI}
+	a := &App{
+		settings:      DefaultSettings(),
+		settingsPath:  filepath.Join(t.TempDir(), "settings.json"),
+		systemLocale:  i18n.English,
+		pluginSecrets: sec,
+	}
+	a.newReader()
+	a.runOnMain = func(fn func()) {
+		onUI = true
+		fn()
+		onUI = false
+	}
+	a.goAsync = func(fn func()) {
+		prev := onUI
+		onUI = false
+		fn()
+		onUI = prev
+	}
+	a.confirmProvenance = func(_ plugin.ProvenanceView, done func(bool)) { done(false) }
+	a.initPlugins(t.TempDir())
+	delete(sec.inner, "provenance:migration")
+	id := "local.personal.locked"
+	appDir := filepath.Join(a.plugins.Dir(), id)
+	if err := os.MkdirAll(appDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	manifest := []byte(`{"id":"local.personal.locked","name":"Locked","version":"1.0.0","main":"index.js","permissions":{"storageKb":1},"navigation":[{"title":"Overview","page":"overview"}]}`)
+	if err := os.WriteFile(filepath.Join(appDir, "plugin.json"), manifest, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(appDir, "index.js"), []byte(`export function page(){return {title:"Locked"};}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(appDir, "install.json"), []byte("{\"installedVia\":\"folder\"}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	a.refreshPlugins()
+	a.refreshProvenanceLocks()
+	sec.uiGets = 0
+	a.confirmProvenance = func(_ plugin.ProvenanceView, done func(bool)) { done(true) }
+	a.askProvenanceConfirm(id, "Locked")
+	if sec.uiGets != 0 {
+		t.Fatalf("确认在界面线程读取了凭据服务 %d 次", sec.uiGets)
+	}
+	if err := a.pluginManager.APIMayMutate(id); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestConfirmFailureWhenAPIStaysClosed(t *testing.T) {
+	a := newTestApp(t)
+	sec := a.pluginSecrets.(memStore)
+	delete(sec, "provenance:migration")
+	id := "local.personal.locked"
+	appDir := filepath.Join(a.plugins.Dir(), id)
+	if err := os.MkdirAll(appDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	manifest := []byte(`{"id":"local.personal.locked","name":"Locked","version":"1.0.0","main":"index.js","permissions":{"storageKb":1},"navigation":[{"title":"Overview","page":"overview"}]}`)
+	for name, body := range map[string][]byte{
+		"plugin.json": manifest,
+		"index.js":    []byte(`export function page(){return {title:"Locked"};}`),
+	} {
+		if err := os.WriteFile(filepath.Join(appDir, name), body, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(appDir, "install.json"), []byte("{\"installedVia\":\"folder\"}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	otherDir := filepath.Join(t.TempDir(), "plugins", id)
+	if err := os.MkdirAll(otherDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(otherDir, "plugin.json"), manifest, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(otherDir, "index.js"), []byte(`export function page(){return {title:"Locked"};}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	digest, err := plugin.DigestDir(otherDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, priv, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pub := priv.Public().(ed25519.PublicKey)
+	signed := fmt.Sprintf("{\n  \"installedVia\": \"store\",\n  \"hash\": %q,\n  \"publisher\": %q,\n  \"signature\": %q\n}\n", digest, plugin.PublicKeyString(pub), plugin.SignDigest(priv, digest))
+	if err := os.WriteFile(filepath.Join(otherDir, "install.json"), []byte(signed), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	other, err := plugin.NewManager(plugin.NewStore(filepath.Dir(otherDir), memStore{}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { other.Close() })
+	a.pluginManager = other
+	a.refreshPlugins()
+	a.refreshProvenanceLocks()
+	a.confirmProvenance = func(_ plugin.ProvenanceView, done func(bool)) { done(true) }
+	a.askProvenanceConfirm(id, "Locked")
+	if strings.Contains(a.pluginNotice, "Confirmed") {
+		t.Fatal("本机 API 仍然拒绝时显示了已确认")
+	}
+	if !strings.Contains(a.pluginNotice, "Could not confirm") {
+		t.Fatalf("没有失败提示: %q", a.pluginNotice)
+	}
+}
+
 type countingSecrets struct {
-	inner memStore
-	gets  int
+	inner  memStore
+	gets   int
+	uiGets int
+	onUI   *bool
 }
 
 func (c *countingSecrets) Get(key string) ([]byte, error) {
 	c.gets++
+	if c.onUI != nil && *c.onUI {
+		c.uiGets++
+	}
 	return c.inner.Get(key)
 }
 

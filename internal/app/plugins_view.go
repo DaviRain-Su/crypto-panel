@@ -81,14 +81,19 @@ func (a *App) askProvenanceConfirm(id, name string) {
 			}
 			ask(view, func(ok bool) {
 				if !ok || a.plugins != plugins {
+					a.clearProvenanceBusy()
 					return
 				}
 				a.pluginNotice = a.t(i18n.ProvenanceLockedBusy)
 				a.invalidate()
 				a.async(func() {
 					err := plugins.ConfirmProvenance(view)
+					var mutateErr error
+					if err == nil && a.pluginManager != nil {
+						mutateErr = a.pluginManager.APIMayMutate(id)
+					}
 					a.main(func() {
-						if err != nil || a.pluginManager != nil && a.pluginManager.APIMayMutate(id) != nil {
+						if err != nil || mutateErr != nil {
 							a.pluginNotice = a.t(i18n.ProvenanceLockedFailed)
 							a.invalidate()
 							a.refreshProvenanceLocks()
@@ -103,6 +108,13 @@ func (a *App) askProvenanceConfirm(id, name string) {
 			})
 		})
 	})
+}
+
+func (a *App) clearProvenanceBusy() {
+	if a.pluginNotice == a.t(i18n.ProvenanceLockedBusy) {
+		a.pluginNotice = ""
+	}
+	a.invalidate()
 }
 
 func (a *App) async(fn func()) {

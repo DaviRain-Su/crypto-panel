@@ -561,3 +561,44 @@ func TestSignedInstallRejectsLocalIDs(t *testing.T) {
 	}
 	ready.Close()
 }
+
+func TestParseRegistrySkipsLocalEntries(t *testing.T) {
+	dir := t.TempDir()
+	writeVersion(t, dir, "com.example.catalog", "1.0.0", `export function page(){return {title:"Catalog"};}`)
+	_, priv, err := ed25519.GenerateKey(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	good := signEntry(t, dir, "https://example.com/catalog.zip", priv)
+	local := good
+	local.ID = "local.personal.legacy"
+	broken := good
+	broken.ID = "com.example.broken"
+	broken.Hash = ""
+	body, err := json.Marshal(Registry{Version: 1, Name: "Mixed", Plugins: []RegistryEntry{local, good}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	reg, err := ParseRegistry(body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(reg.Plugins) != 1 || reg.Plugins[0].ID != good.ID {
+		t.Fatalf("目录 = %+v", reg.Plugins)
+	}
+	onlyLocal, err := json.Marshal(Registry{Version: 1, Name: "Old", Plugins: []RegistryEntry{local}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	reg, err = ParseRegistry(onlyLocal)
+	if err != nil || len(reg.Plugins) != 0 {
+		t.Fatalf("只有 local.* 的目录: %+v %v", reg.Plugins, err)
+	}
+	bad, err := json.Marshal(Registry{Version: 1, Name: "Bad", Plugins: []RegistryEntry{broken}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ParseRegistry(bad); err == nil {
+		t.Fatal("非 local.* 的无效条目被跳过了")
+	}
+}

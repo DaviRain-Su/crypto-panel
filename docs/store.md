@@ -52,7 +52,8 @@ The app also refuses:
 - an archive that escapes its folder, contains a symlink or a special file,
   or brings more than 200 files / 8 MB / 2 MB per file;
 - an update to an older version, or to the same version with other contents;
-- an update signed by a different publisher key than the installed one.
+- an update signed by a different publisher key than the installed one;
+- a catalog entry whose id starts with `local.`. That row is skipped and logged, and the rest of the catalog still loads. A `local.*` app that was signed-installed before this rule cannot be updated through the store.
 
 An install is recorded in the plugin's folder as `install.json` (source, hash,
 signature, publisher). The shell checks the digest again whenever it reads the
