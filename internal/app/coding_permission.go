@@ -51,14 +51,7 @@ func (a *App) requestCodingPermission(ctx context.Context, request acp.Permissio
 		var win codingPermissionWindow
 		decided := false
 		decide := func(id string) {
-			if decided {
-				return
-			}
-			decided = true
-			answer <- codingOption(request, id)
-			if win != nil {
-				win.Close()
-			}
+			finishCodingPermission(&decided, answer, win, request, id)
 		}
 		dismiss = func() { decide("") }
 		var formatted bytes.Buffer
@@ -69,38 +62,7 @@ func (a *App) requestCodingPermission(ctx context.Context, request acp.Permissio
 		detail := safeAgentText(string(raw), 20<<10)
 		win = openCodingPermissionWindow(mygo.WindowOptions{
 			Title: a.t(i18n.CodingWindowTitle), Width: 620, Height: 620, MinWidth: 460, MinHeight: 500, Parent: a.win, Modal: true, BackgroundColor: "light-dark(#f6f4ef, #141513)",
-			Content: ui.View(func(c *ui.Context) {
-				t := c.Theme()
-				p := paletteFor(t)
-				useAccent(t, p)
-				c.Root().Background(p.bg)
-				ui.Column(c).Fill().Padding(20).Gap(12).Children(func() {
-					ui.Text(c, a.t(i18n.CodingPermissionTitle)).FontSize(20).FontWeight(700)
-					ui.Text(c, safeAgentText(request.ToolCall.Title, 200)).FontSize(14).FontWeight(600).MaxLines(4)
-					ui.Text(c, a.t(i18n.CodingPermissionBody)).FontSize(12).TextColor(p.muted).MaxLines(4)
-					ui.Text(c, a.t(i18n.CodingPermissionNotWallet)).FontSize(12).TextColor(p.danger)
-					ui.TextArea(c.Key("coding-permission-detail"), &detail).ReadOnly(true).Grow(1).Font("monospace").FontSize(10.5)
-					ui.Row(c).Gap(8).Wrap().Justify(ui.End).Children(func() {
-						ui.Button(c, a.t(i18n.CodingDeny)).OnClick(func() { decide("") })
-						for _, option := range request.Options {
-							option := option
-							label := safeAgentText(option.Name, 80)
-							click := func() {
-								if ctx.Err() != nil {
-									decide("")
-								} else {
-									decide(option.OptionID)
-								}
-							}
-							if strings.Contains(strings.ToLower(option.Kind), "allow") {
-								ui.PrimaryButton(c, label).OnClick(click)
-								continue
-							}
-							ui.Button(c, label).OnClick(click)
-						}
-					})
-				})
-			}),
+			Content: ui.View(codingPermissionView(a, ctx, request, detail, decide)),
 		})
 		win.OnClose(func(*mygo.CloseEvent) { decide("") })
 		win.Focus()
@@ -118,5 +80,51 @@ func (a *App) requestCodingPermission(ctx context.Context, request acp.Permissio
 			}
 		})
 		return "", ctx.Err()
+	}
+}
+
+func finishCodingPermission(decided *bool, answer chan<- string, win codingPermissionWindow, request acp.PermissionRequest, id string) {
+	if *decided {
+		return
+	}
+	*decided = true
+	answer <- codingOption(request, id)
+	if win != nil {
+		win.Close()
+	}
+}
+
+func codingPermissionView(a *App, ctx context.Context, request acp.PermissionRequest, detail string, decide func(string)) func(c *ui.Context) {
+	return func(c *ui.Context) {
+		t := c.Theme()
+		p := paletteFor(t)
+		useAccent(t, p)
+		c.Root().Background(p.bg)
+		ui.Column(c).Fill().Padding(20).Gap(12).Children(func() {
+			ui.Text(c, a.t(i18n.CodingPermissionTitle)).FontSize(20).FontWeight(700)
+			ui.Text(c, safeAgentText(request.ToolCall.Title, 200)).FontSize(14).FontWeight(600).MaxLines(4)
+			ui.Text(c, a.t(i18n.CodingPermissionBody)).FontSize(12).TextColor(p.muted).MaxLines(4)
+			ui.Text(c, a.t(i18n.CodingPermissionNotWallet)).FontSize(12).TextColor(p.danger)
+			ui.TextArea(c.Key("coding-permission-detail"), &detail).ReadOnly(true).Grow(1).Font("monospace").FontSize(10.5)
+			ui.Row(c).Gap(8).Wrap().Justify(ui.End).Children(func() {
+				ui.Button(c, a.t(i18n.CodingDeny)).OnClick(func() { decide("") })
+				for _, option := range request.Options {
+					option := option
+					label := safeAgentText(option.Name, 80)
+					click := func() {
+						if ctx.Err() != nil {
+							decide("")
+						} else {
+							decide(option.OptionID)
+						}
+					}
+					if strings.Contains(strings.ToLower(option.Kind), "allow") {
+						ui.PrimaryButton(c, label).OnClick(click)
+						continue
+					}
+					ui.Button(c, label).OnClick(click)
+				}
+			})
+		})
 	}
 }

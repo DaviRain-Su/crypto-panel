@@ -256,6 +256,37 @@ func loadInstallInfo(dir string) (installInfo, error) {
 	return info, nil
 }
 
+// readInstallInfoNoFollow 只接受普通 install.json。缺失、符号链接、目录和其他
+// 非普通文件都是错误，而且不会打开链接目标。
+func readInstallInfoNoFollow(dir string) (installInfo, error) {
+	path := filepath.Join(dir, "install.json")
+	info, err := os.Lstat(path)
+	if err != nil {
+		return installInfo{}, err
+	}
+	if info.Mode()&fs.ModeSymlink != 0 || !info.Mode().IsRegular() {
+		return installInfo{}, errors.New("install record is not a regular file")
+	}
+	f, err := openInstallRecord(path)
+	if err != nil {
+		return installInfo{}, err
+	}
+	defer f.Close()
+	opened, err := f.Stat()
+	if err != nil || !opened.Mode().IsRegular() || !os.SameFile(info, opened) {
+		return installInfo{}, errors.New("install record changed")
+	}
+	data, err := io.ReadAll(io.LimitReader(f, 1<<20))
+	if err != nil {
+		return installInfo{}, err
+	}
+	var record installInfo
+	if err := json.Unmarshal(data, &record); err != nil {
+		return installInfo{}, err
+	}
+	return record, nil
+}
+
 func saveInstallInfo(dir string, info installInfo) error {
 	data, err := json.MarshalIndent(info, "", "  ")
 	if err != nil {

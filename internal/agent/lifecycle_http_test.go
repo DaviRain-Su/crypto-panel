@@ -367,6 +367,98 @@ func TestCorruptInstallRecordIsNotAPIMutable(t *testing.T) {
 	}
 }
 
+func localRecordSource(id string) plugin.Source {
+	manifest := []byte(fmt.Sprintf(`{"id":%q,"name":"Record","version":"1.0.0","main":"index.js","permissions":{"storageKb":1},"settings":[{"key":"plain","label":"Plain"},{"key":"token","label":"Token","secret":true}],"navigation":[{"title":"Overview","page":"overview"}]}`, id))
+	return plugin.Source{Kind: "inline", Package: &plugin.Package{Plugin: manifest, Main: `export function page(){return {title:"Record"};}`}}
+}
+
+func TestLocalAPIRequiresRegularInstallRecord(t *testing.T) {
+	for _, kind := range []string{"regular", "missing", "symlink", "directory", "unparsable"} {
+		t.Run(kind, func(t *testing.T) {
+			secrets := credentialMemory{}
+			_, base := newTestServer(t)
+			base.plugins = nil
+			store := plugin.NewStore(t.TempDir(), secrets)
+			manager, err := plugin.NewManager(store)
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { manager.Close() })
+			s := New(&managedData{base, manager}, "test-token")
+			id := "local.personal." + kind
+			job, err := manager.Propose(localRecordSource(id), "install", "", "", "local-api")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := manager.Decide(job.RequestID, true); err != nil {
+				t.Fatal(err)
+			}
+			secret := "secret-" + kind
+			if _, err := manager.SetSettings(id, map[string]string{"plain": "original", "token": secret}); err != nil {
+				t.Fatal(err)
+			}
+			record := filepath.Join(store.Dir(), id, "install.json")
+			switch kind {
+			case "regular":
+			case "missing":
+				if err := os.Remove(record); err != nil {
+					t.Fatal(err)
+				}
+			case "symlink":
+				if err := os.Remove(record); err != nil {
+					t.Fatal(err)
+				}
+				forged := filepath.Join(t.TempDir(), "forged.json")
+				body := `{"installedVia":"local-api","packageHash":"sha256:` + strings.Repeat("ab", 32) + `"}`
+				if err := os.WriteFile(forged, []byte(body), 0o600); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.Symlink(forged, record); err != nil {
+					t.Fatal(err)
+				}
+			case "directory":
+				if err := os.Remove(record); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.Mkdir(record, 0o700); err != nil {
+					t.Fatal(err)
+				}
+			case "unparsable":
+				if err := os.WriteFile(record, []byte("{"), 0o600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			changed := jsonRequest(t, s, http.MethodPut, "/v0/plugins/"+id+"/settings", map[string]any{"values": map[string]string{"plain": "hacked"}})
+			plain, err := store.Setting(id, "plain")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if kind == "regular" {
+				if changed.Code != http.StatusOK || plain != "hacked" || !secretStored(secrets, secret) {
+					t.Fatalf("可读安装记录被拒绝：%d plain=%q body=%s", changed.Code, plain, changed.Body)
+				}
+			} else if changed.Code != http.StatusForbidden || codeOf(t, changed) != "API_MUTATION_FORBIDDEN" || plain != "original" || !secretStored(secrets, secret) {
+				t.Fatalf("%s 设置被接受：%d plain=%q secret=%v body=%s", kind, changed.Code, plain, secretStored(secrets, secret), changed.Body)
+			}
+			if kind != "regular" {
+				removed := do(t, s, http.MethodDelete, "/v0/plugins/"+id, "test-token")
+				if removed.Code != http.StatusForbidden || codeOf(t, removed) != "API_MUTATION_FORBIDDEN" || !secretStored(secrets, secret) {
+					t.Fatalf("%s 卸载被接受：%d %s", kind, removed.Code, removed.Body)
+				}
+				if _, err := os.Stat(filepath.Join(store.Dir(), id, "plugin.json")); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := manager.Remove(id); err != nil || secretStored(secrets, secret) {
+				t.Fatalf("原生卸载失败：%v secret=%v", err, secretStored(secrets, secret))
+			}
+			if _, err := store.Get(id); err != plugin.ErrNotInstalled {
+				t.Fatal(err)
+			}
+		})
+	}
+}
+
 func TestAPIListingHidesACPRequestIDs(t *testing.T) {
 	s, manager, _ := managementServer(t)
 	manifest := []byte(`{"id":"local.personal.acp-only","name":"ACP","version":"1.0.0","main":"index.js","navigation":[{"title":"Overview","page":"overview"}]}`)
