@@ -155,17 +155,17 @@ func (a *App) passkeyCard(c *ui.Context) {
 					ui.Text(c, a.t(i18n.PasskeyBadge)).FontSize(9.5).FontWeight(700).
 						TextColor(p.accent).Padding(3, 6).Radius(99).Background(p.accentSoft)
 				})
-				ui.Text(c, a.t(i18n.PasskeyBody)).FontSize(11.5).TextColor(p.muted).MaxLines(4)
 			})
 		})
 		a.passkeyCreateRow(c)
 	})
 }
 
-// passkeyCreateRow is the card before a passkey exists.
+// passkeyCreateRow is one line until the reader asks for the recovery
+// explanation. The long copy used to sit above the accounts.
 func (a *App) passkeyCreateRow(c *ui.Context) {
 	p := a.pal
-	ui.Row(c).Gap(10).AlignItems(ui.Center).Children(func() {
+	ui.Row(c).Gap(10).AlignItems(ui.Center).Wrap().Children(func() {
 		a.primaryButton(c, a.t(i18n.PasskeyCreate), iconFingerprint, a.passkeyBusy, a.createPasskey)
 		if a.passkeyBusy {
 			ui.Spinner(c).Size(14, 14)
@@ -174,10 +174,17 @@ func (a *App) passkeyCreateRow(c *ui.Context) {
 			a.softButton(c, a.t(i18n.Cancel), nil, p.muted, a.cancelPasskeyOperations)
 		} else {
 			a.softButton(c, a.t(i18n.PasskeyRestore), iconFingerprint, p.accent, a.choosePasskeyRecovery)
+			a.softButton(c, a.t(i18n.PasskeyDetails), nil, p.muted, func() {
+				a.passkeyDetails = !a.passkeyDetails
+				a.invalidate()
+			})
 		}
 	})
-	ui.Text(c, a.t(i18n.PasskeyFine)).FontSize(10.5).TextColor(p.faint).MaxLines(4)
-	ui.Text(c, a.t(i18n.PasskeyRecoveryHint)).FontSize(10.5).TextColor(p.muted).MaxLines(4)
+	if a.passkeyDetails {
+		ui.Text(c, a.t(i18n.PasskeyBody)).FontSize(12).TextColor(p.muted).MaxLines(4)
+		ui.Text(c, a.t(i18n.PasskeyFine)).FontSize(12).TextColor(p.muted).MaxLines(4)
+		ui.Text(c, a.t(i18n.PasskeyRecoveryHint)).FontSize(12).TextColor(p.muted).MaxLines(4)
+	}
 	a.passkeyMessages(c)
 }
 
@@ -186,8 +193,8 @@ func (a *App) passkeyCreateRow(c *ui.Context) {
 func (a *App) passkeyAccountRow(c *ui.Context, label, value, balance string, copyable bool) {
 	p := a.pal
 	ui.Row(c).Gap(10).AlignItems(ui.Center).Children(func() {
-		ui.Text(c, label).FontSize(10.5).FontWeight(600).TextColor(p.muted).Width(96)
-		ui.Text(c, value).Font("monospace").FontSize(10.5).Grow(1).MaxLines(1)
+		ui.Text(c, label).FontSize(12).FontWeight(600).TextColor(p.muted).Width(152)
+		ui.Text(c, value).Font("monospace").FontSize(12).Grow(1).MaxLines(1)
 		if balance != "" {
 			ui.Text(c, balance).FontSize(10.5).TextColor(p.muted).MaxLines(1)
 		}

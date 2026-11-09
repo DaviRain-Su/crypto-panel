@@ -13,12 +13,12 @@ func TestCodingAgentSettingsAndCreateEntry(t *testing.T) {
 	a.initAuthoring()
 	a.route = routeSettings
 	tt := ui.NewTester(a.view, windowWidth, windowHeight)
-	if !tt.HasText("编码 Agent") || !tt.HasText("Claude Code (ACP)") {
+	if !tt.HasText("CODING AGENT") || !tt.HasText("Claude Code (ACP)") {
 		t.Fatal("设置没有编码agent入口")
 	}
 	a.openCreator("")
 	tt.Frame()
-	if !tt.HasText("创建个人应用") || !tt.HasText("开始生成") {
+	if !tt.HasText("Create a personal app") || !tt.HasText("Generate") {
 		t.Fatal("没有原生创建入口")
 	}
 }

@@ -3,7 +3,6 @@ package app
 import (
 	"encoding/hex"
 	"errors"
-	"fmt"
 	"strings"
 
 	"github.com/egoist/mygo"
@@ -155,7 +154,7 @@ func (a *App) slot(kind wallet.Kind, label string) int {
 	}
 	name := strings.TrimSpace(label)
 	if name == "" {
-		name = fmt.Sprintf("Wallet %d", len(a.settings.Wallets)+1)
+		name = a.t(i18n.WalletDefaultName, len(a.settings.Wallets)+1)
 	}
 	a.settings.Wallets = append(a.settings.Wallets, wallet.Container{
 		ID:   wallet.NewID(),

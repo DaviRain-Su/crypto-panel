@@ -278,7 +278,7 @@ func (ip *installPrompt) view(c *ui.Context) {
 			if ip.req.update {
 				label = i18n.StoreUpdate
 			}
-			ui.Button(c, ip.t(label)).OnClick(func() { ip.decide(true) })
+			ui.PrimaryButton(c, ip.t(label)).OnClick(func() { ip.decide(true) })
 		})
 	})
 }

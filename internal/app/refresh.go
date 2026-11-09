@@ -161,6 +161,26 @@ func (a *App) refreshLoop() {
 // totalNative sums the native balances the last snapshot holds. ok is false
 // when no account's balance is known, so an all-failed refresh is not shown
 // as zero.
+// totalsPartial reports that the headline total leaves some watched
+// address out: its refresh failed, or it has no balance yet while another
+// address does.
+func (a *App) totalsPartial() bool {
+	if a.snap == nil {
+		return false
+	}
+	known := false
+	missing := false
+	for _, acc := range a.settings.WatchedOf(a.network().Family) {
+		snap := a.accountSnapshot(acc.Addr)
+		if snap == nil || snap.err != "" || snap.native == nil {
+			missing = true
+			continue
+		}
+		known = true
+	}
+	return known && missing
+}
+
 func (a *App) totalNative() (*big.Int, bool) {
 	if a.snap == nil || len(a.snap.accounts) == 0 {
 		return nil, false

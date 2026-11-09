@@ -14,6 +14,10 @@ import (
 	"sync"
 )
 
+// ErrBrokenManifest is the error a folder gets when its plugin.json cannot
+// be read. The shell translates it; other errors stay as the checker wrote them.
+const ErrBrokenManifest = "the app manifest could not be read"
+
 // Secrets keeps the values of settings a manifest marks secret, outside the
 // plugin's folder, in the OS credential store. The app passes mygo.Secrets;
 // tests pass a memory store.
@@ -80,7 +84,7 @@ func (s *Store) List() ([]Installed, error) {
 		dir := filepath.Join(s.dir, name)
 		m, err := LoadManifest(dir)
 		if err != nil {
-			out = append(out, Installed{Dir: dir, Err: "应用清单无法读取或无效"})
+			out = append(out, Installed{Dir: dir, Err: ErrBrokenManifest})
 			continue
 		}
 		st, _ := loadState(dir)

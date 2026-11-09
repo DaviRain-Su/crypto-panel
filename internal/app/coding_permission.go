@@ -4,11 +4,13 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"strings"
 
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
 
 	"github.com/davirain-su/lintel/internal/acp"
+	"github.com/davirain-su/lintel/internal/i18n"
 )
 
 func codingOption(request acp.PermissionRequest, id string) string {
@@ -55,28 +57,35 @@ func (a *App) requestCodingPermission(ctx context.Context, request acp.Permissio
 		}
 		detail := safeAgentText(string(raw), 20<<10)
 		win = mygo.NewWindow(mygo.WindowOptions{
-			Title: "编码工具许可", Width: 620, Height: 620, MinWidth: 460, MinHeight: 500, Parent: a.win, Modal: true, BackgroundColor: "light-dark(#f6f4ef, #141513)",
+			Title: a.t(i18n.CodingWindowTitle), Width: 620, Height: 620, MinWidth: 460, MinHeight: 500, Parent: a.win, Modal: true, BackgroundColor: "light-dark(#f6f4ef, #141513)",
 			Content: ui.View(func(c *ui.Context) {
 				t := c.Theme()
 				p := paletteFor(t)
 				useAccent(t, p)
 				c.Root().Background(p.bg)
 				ui.Column(c).Fill().Padding(20).Gap(12).Children(func() {
-					ui.Text(c, "编码工具许可").FontSize(20).FontWeight(700)
+					ui.Text(c, a.t(i18n.CodingPermissionTitle)).FontSize(20).FontWeight(700)
 					ui.Text(c, safeAgentText(request.ToolCall.Title, 200)).FontSize(14).FontWeight(600).MaxLines(4)
-					ui.Text(c, "本机 Agent 请求执行工具操作。工作目录不是系统沙箱，请检查它将访问的路径和执行的命令。").FontSize(12).TextColor(p.muted).MaxLines(4)
-					ui.Text(c, "此许可不批准应用安装或钱包交易。").FontSize(12).TextColor(p.danger)
+					ui.Text(c, a.t(i18n.CodingPermissionBody)).FontSize(12).TextColor(p.muted).MaxLines(4)
+					ui.Text(c, a.t(i18n.CodingPermissionNotWallet)).FontSize(12).TextColor(p.danger)
 					ui.TextArea(c.Key("coding-permission-detail"), &detail).ReadOnly(true).Grow(1).Font("monospace").FontSize(10.5)
 					ui.Row(c).Gap(8).Wrap().Justify(ui.End).Children(func() {
-						ui.Button(c, "拒绝").OnClick(func() { decide("") })
+						ui.Button(c, a.t(i18n.CodingDeny)).OnClick(func() { decide("") })
 						for _, option := range request.Options {
-							ui.Button(c, safeAgentText(option.Name, 80)+" · "+safeAgentText(option.Kind, 40)).OnClick(func() {
+							option := option
+							label := safeAgentText(option.Name, 80)
+							click := func() {
 								if ctx.Err() != nil {
 									decide("")
 								} else {
 									decide(option.OptionID)
 								}
-							})
+							}
+							if strings.Contains(strings.ToLower(option.Kind), "allow") {
+								ui.PrimaryButton(c, label).OnClick(click)
+								continue
+							}
+							ui.Button(c, label).OnClick(click)
 						}
 					})
 				})

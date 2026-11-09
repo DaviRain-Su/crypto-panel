@@ -172,6 +172,18 @@ func renderChart(c *ui.Context, spec *Chart) {
 		chart.Plot(c, axes, func(area ui.Element) {
 			if spec.Kind == "line" {
 				area.Draw(func(p *ui.Painter, r ui.Rect) {
+					if len(values) == 0 {
+						return
+					}
+					base := chart.Y(r, y.At(lo))
+					fill := &ui.Path{}
+					fill.MoveTo(chart.X(r, x.At(0)), base)
+					for i, v := range values {
+						fill.LineTo(chart.X(r, x.At(i)), chart.Y(r, y.At(v)))
+					}
+					fill.LineTo(chart.X(r, x.At(len(values)-1)), base)
+					fill.Close()
+					p.FillPath(fill, t.Accent.Alpha(0.16))
 					for i := 1; i < len(values); i++ {
 						p.Line(
 							chart.X(r, x.At(i-1)), chart.Y(r, y.At(values[i-1])),
@@ -185,23 +197,48 @@ func renderChart(c *ui.Context, spec *Chart) {
 			for i, v := range values {
 				chart.Rect(c, x.Band(i), y.Span(0, v)).Background(t.Accent).Radius(2)
 			}
-		}).Height(150).Gap(6)
+		}).Height(220).Gap(6)
 	})
 }
 
-// xTicks labels at most five points, so a 60-point chart stays readable.
+// xTicks labels a chart's horizontal axis. A long series keeps the first,
+// middle and last labels so two neighbours cannot collide. A shorter one
+// keeps at most five, and replaces the previous tick with the last point
+// when they would sit on adjacent samples.
 func xTicks(x chart.Band) []chart.Tick {
 	n := len(x.Labels)
+	if n == 0 {
+		return nil
+	}
 	if n <= 5 {
 		return x.Ticks()
 	}
+	if n > 12 {
+		at := []int{0, n / 2, n - 1}
+		out := make([]chart.Tick, len(at))
+		for i, idx := range at {
+			out[i] = chart.Tick{At: x.At(idx), Label: x.Labels[idx]}
+		}
+		return out
+	}
 	step := (n - 1) / 4
+	if step < 1 {
+		step = 1
+	}
 	out := make([]chart.Tick, 0, 5)
+	prev := 0
 	for i := 0; i < n; i += step {
 		out = append(out, chart.Tick{At: x.At(i), Label: x.Labels[i]})
+		prev = i
 	}
-	if last := n - 1; (n-1)%step != 0 {
-		out = append(out, chart.Tick{At: x.At(last), Label: x.Labels[last]})
+	last := n - 1
+	if prev == last {
+		return out
 	}
-	return out
+	tick := chart.Tick{At: x.At(last), Label: x.Labels[last]}
+	if last-prev < step {
+		out[len(out)-1] = tick
+		return out
+	}
+	return append(out, tick)
 }

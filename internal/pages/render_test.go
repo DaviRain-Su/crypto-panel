@@ -1,10 +1,29 @@
 package pages
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/egoist/mygo/ui"
+	"github.com/egoist/mygo/ui/chart"
 )
+
+func TestXTicksKeepsTheEndsApart(t *testing.T) {
+	labels := make([]string, 30)
+	for i := range labels {
+		labels[i] = fmt.Sprintf("d%02d", i)
+	}
+	ticks := xTicks(chart.NewBand(labels...))
+	if len(ticks) != 3 {
+		t.Fatalf("30 points got %d ticks, want first, middle and last", len(ticks))
+	}
+	if ticks[0].Label != "d00" || ticks[2].Label != "d29" {
+		t.Fatalf("ends = %q %q", ticks[0].Label, ticks[2].Label)
+	}
+	if ticks[1].Label == "d28" {
+		t.Fatal("the middle tick sits on the neighbour of the last label")
+	}
+}
 
 func TestRender(t *testing.T) {
 	p, err := Decode([]byte(validPage))

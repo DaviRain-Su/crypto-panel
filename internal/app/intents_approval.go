@@ -58,8 +58,9 @@ func (ap *intentsApproval) view(c *ui.Context) {
 			Border(1, p.hairline).Children(func() {
 			for _, row := range ap.rows() {
 				ui.Row(c).Gap(10).AlignItems(ui.Start).Children(func() {
-					ui.Text(c, row.label).FontSize(11).FontWeight(600).TextColor(p.muted).Width(96)
-					ui.Text(c, row.value).Font("monospace").FontSize(11.5).Grow(1).MaxLines(3)
+					shown, tip := shortIfAddress(row.value)
+					ui.Text(c, row.label).FontSize(12).FontWeight(600).TextColor(p.muted).Width(156)
+					ui.Text(c, shown).Font("monospace").FontSize(12).Grow(1).MaxLines(3).Tooltip(tip)
 				})
 			}
 		})

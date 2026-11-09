@@ -38,6 +38,9 @@ const (
 	sidebarWidth    = 232
 	// sidebarRailWidth is the collapsed sidebar: the icon rail.
 	sidebarRailWidth = 64
+	// contentMaxWidth is how wide the page column grows. The header and
+	// the body share it, so a wider window uses the room up to this cap.
+	contentMaxWidth = 1100
 )
 
 // route is what the sidebar has selected: one of the shell's pages, or a
@@ -70,6 +73,11 @@ type App struct {
 	quitting bool
 	// pal is the appearance's colors, set for each frame the view draws.
 	pal palette
+	// pageBox is the page column, so the launcher can count columns from
+	// the width the last frame gave it.
+	pageBox ui.Handle
+	// passkeyDetails unfolds the passkey explanation on the wallet page.
+	passkeyDetails bool
 
 	draftAddr   string
 	draftLabel  string

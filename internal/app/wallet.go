@@ -3,7 +3,6 @@ package app
 import (
 	"encoding/hex"
 	"errors"
-	"fmt"
 	"strings"
 
 	"github.com/egoist/mygo"
@@ -144,7 +143,7 @@ func (a *App) createWalletAccount() {
 		a.invalidate()
 		return
 	}
-	name := fmt.Sprintf("Wallet %d", len(a.settings.Wallets)+1)
+	name := a.t(i18n.WalletDefaultName, len(a.settings.Wallets)+1)
 	container := wallet.Container{
 		ID:     wallet.NewID(),
 		Name:   name,
