@@ -50,7 +50,7 @@ func (a *App) createNearAccount() {
 		a.invalidate()
 		return
 	}
-	a.settings.NearWallet = append(a.settings.NearWallet, acc)
+	a.placeNear(acc)
 	a.settings = a.settings.Validate()
 	a.save()
 	a.nearErr = ""
@@ -84,7 +84,7 @@ func (a *App) importNearAccount() {
 		a.invalidate()
 		return
 	}
-	a.settings.NearWallet = append(a.settings.NearWallet, acc)
+	a.placeNear(acc)
 	a.settings = a.settings.Validate()
 	a.draftNearKey, a.draftNearAccount, a.draftNearLabel = "", "", ""
 	a.save()
@@ -123,20 +123,9 @@ func (a *App) removeNearAccount(accountID string) {
 			return
 		}
 	}
-	kept := a.settings.NearWallet[:0]
-	for _, acc := range a.settings.NearWallet {
-		if acc.AccountID != accountID {
-			kept = append(kept, acc)
-		}
-	}
-	a.settings.NearWallet = kept
+	a.dropChainAccount(wallet.Near, accountID)
 	a.settings = a.settings.Validate()
-	if a.revealedAddr == accountID {
-		a.revealedKey, a.revealedAddr = "", ""
-	}
-	if a.newKeyAddr == accountID {
-		a.newKey, a.newKeyAddr = "", ""
-	}
+	a.clearShown(accountID)
 	a.save()
 	a.nearErr = ""
 	a.walletNotice = a.t(i18n.WalletRemoved, name)
@@ -211,6 +200,7 @@ func (a *App) finishNearReveal(accountID string) {
 	a.revealedAddr = accountID
 	a.revealedKey = neartx.SecretKeyString(key)
 	a.newKey, a.newKeyAddr = "", ""
+	a.shownKeys = nil
 	a.nearErr = ""
 	a.invalidate()
 }

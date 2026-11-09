@@ -134,7 +134,10 @@ func TestCreatePasskeyStoresAndWatchesTheAccounts(t *testing.T) {
 	if evm.calls == 0 {
 		t.Fatal("the factory was not read")
 	}
-	if !a.settings.Has(pk.NEARAccount) || !a.settings.Has(pk.EVMAddress) {
+	if pk.SolanaAddress == "" {
+		t.Fatal("the Solana vault was not derived")
+	}
+	if !a.settings.Has(pk.NEARAccount) || !a.settings.Has(pk.EVMAddress) || !a.settings.Has(pk.SolanaAddress) {
 		t.Fatalf("accounts = %+v", a.settings.Accounts)
 	}
 	if a.passkeyNotice == "" || a.passkeyErr != "" {
@@ -142,6 +145,50 @@ func TestCreatePasskeyStoresAndWatchesTheAccounts(t *testing.T) {
 	}
 	if a.passkeyBusy {
 		t.Fatal("the card is still busy")
+	}
+	if !a.passkeyPrepared {
+		t.Fatal("the address list was not opened")
+	}
+	a.route = routeWallet
+	tt := ui.NewTester(a.view, windowWidth, windowHeight)
+	for _, want := range []string{
+		"One passkey, every network",
+		"Ethereum", "Base", "NEAR Testnet", "NEAR", "Solana",
+		pk.NEARAccount, pk.SolanaAddress,
+		"0x1111111111111111111111111111111111111111",
+	} {
+		if !tt.HasText(want) {
+			t.Errorf("missing %q in %q", want, tt.Texts())
+		}
+	}
+	a.dismissPasskeyPrepared()
+	tt = ui.NewTester(a.view, windowWidth, windowHeight)
+	if tt.HasText("One passkey, every network") {
+		t.Fatal("the address list stayed on screen")
+	}
+	if !tt.HasText("0x1111111111111111111111111111111111111111") {
+		t.Fatal("Ethereum does not show the smart account")
+	}
+	if tt.HasText(pk.NEARAccount) || tt.HasText(pk.SolanaAddress) {
+		t.Fatal("another network's address is shown on Ethereum")
+	}
+	a.setNetwork(chains.Base.ID)
+	tt = ui.NewTester(a.view, windowWidth, windowHeight)
+	if !tt.HasText("Base") || !tt.HasText(wallet.Checksum(pk.EVMAddress)) {
+		t.Fatalf("Base does not show the same smart account: %q", tt.Texts())
+	}
+	a.setNetwork(chains.SolanaMainnet.ID)
+	tt = ui.NewTester(a.view, windowWidth, windowHeight)
+	if !tt.HasText(pk.SolanaAddress) {
+		t.Fatal("Solana does not show the vault")
+	}
+	if tt.HasText(pk.NEARAccount) {
+		t.Fatal("the NEAR account is shown on Solana")
+	}
+	a.setNetwork(chains.NearMainnet.ID)
+	tt = ui.NewTester(a.view, windowWidth, windowHeight)
+	if !tt.HasText(pk.NEARAccount) || !tt.HasText("Sign and send") {
+		t.Fatalf("NEAR mainnet is not the passkey account: %q", tt.Texts())
 	}
 }
 
@@ -285,7 +332,7 @@ func TestPasskeyCardView(t *testing.T) {
 
 	tt := ui.NewTester(a.view, windowWidth, windowHeight)
 	for _, want := range []string{
-		"Passkey wallet", "NEAR + EVM", "NEAR account", "EVM account",
+		"Passkey wallet", "NEAR + EVM + Solana", "NEAR account",
 		"Create account", "Sign and send",
 	} {
 		if !tt.HasText(want) {
@@ -316,6 +363,9 @@ func TestValidatePasskeyKeepsAValidOne(t *testing.T) {
 	got := s.Validate().Passkey
 	if got == nil || got.NEARAccount != pk.NEARAccount || got.PublicKey != pk.PublicKey {
 		t.Fatalf("passkey = %+v", got)
+	}
+	if got.SolanaAddress == "" {
+		t.Fatal("the Solana vault was not derived")
 	}
 }
 

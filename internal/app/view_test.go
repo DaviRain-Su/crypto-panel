@@ -32,6 +32,7 @@ func newTestApp(t *testing.T) *App {
 	a.initPlugins(t.TempDir())
 	a.keyring = wallet.NewKeyring(memStore{}, nil)
 	a.nearKeyring = wallet.NewNearKeyring(memStore{}, nil)
+	a.solanaKeyring = wallet.NewSolanaKeyring(memStore{}, nil)
 	a.startRefresh = func(int, chain.Reader, []string) {}
 	a.runOnMain = func(fn func()) { fn() }
 	a.goAsync = func(fn func()) { fn() }

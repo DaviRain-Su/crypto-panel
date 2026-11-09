@@ -3,6 +3,7 @@ module github.com/davirain-su/crypto-panel
 go 1.27.3
 
 require (
+	filippo.io/edwards25519 v1.1.0
 	github.com/MoeForge/moejs v0.1.0-alpha.11
 	github.com/defuse-protocol/one-click-sdk-go v0.1.17
 	github.com/ebitengine/purego v0.11.1

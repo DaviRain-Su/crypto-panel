@@ -6,15 +6,17 @@ import (
 	"github.com/egoist/mygo/ui"
 
 	"github.com/davirain-su/crypto-panel/internal/chain"
+	"github.com/davirain-su/crypto-panel/internal/chains"
 	"github.com/davirain-su/crypto-panel/internal/i18n"
 	"github.com/davirain-su/crypto-panel/internal/passkey"
 	"github.com/davirain-su/crypto-panel/internal/wallet"
 )
 
-// walletView is the native wallet's page: the accounts it holds, each with
-// its balance and lock state, the system check that guards them, and the
-// forms that add accounts. A key is shown only when it was just created or
-// the user asked to see it.
+// walletView is the native wallet's page. A wallet is a named container.
+// The network menu chooses which of that container's accounts is on
+// screen: balance, lock, and send when that network's family already has
+// it. Import writes a key into the wallet that is open, in the format of
+// the network that is open.
 func (a *App) walletView(c *ui.Context) {
 	p := a.pal
 	a.walletKeyCard(c)
@@ -23,46 +25,74 @@ func (a *App) walletView(c *ui.Context) {
 			Margin(0, 0, 10, 0).MaxLines(2)
 	}
 	a.walletSecurityCard(c)
-	a.passkeyCard(c)
-	if a.network().Family == chain.Solana {
-		ui.Text(c, a.t(i18n.WalletEVMOnly)).FontSize(11.5).TextColor(p.muted).
-			Margin(12, 0, 0, 0).MaxLines(2)
+	if a.settings.Passkey == nil {
+		a.passkeyCard(c)
 	}
-	evm := a.walletAccounts()
-	near := a.nearAccounts()
-	if len(evm)+len(near) == 0 {
-		// The passkey card is its own wallet; it does not need the
-		// add-an-account prompt.
-		if a.settings.Passkey == nil {
-			a.emptyWallet(c)
-		}
+	a.walletPickers(c)
+	if a.passkeyPrepared && a.settings.Passkey != nil {
+		a.passkeyPreparedCard(c)
+		return
+	}
+	if len(a.settings.Wallets) == 0 && !a.viewingPasskey() {
+		a.emptyWallet(c)
+		a.walletImportForm(c)
+		return
+	}
+	if a.viewingPasskey() {
+		a.passkeyChainCard(c)
+		a.walletImportForm(c)
+		return
+	}
+	w, _, ok := a.activeKeyWallet()
+	if !ok {
+		a.emptyWallet(c)
+		a.walletImportForm(c)
+		return
+	}
+	kind := kindForFamily(a.network().Family)
+	if !w.Has(kind) {
+		a.missingChain(c, w)
 	} else {
-		if len(evm) > 0 {
-			a.sectionTitle(c, a.t(i18n.WalletEVMSection))
-			ui.Column(c).Gap(10).Children(func() {
-				for _, acc := range evm {
-					a.walletAccountCard(c, acc)
-				}
-			})
-		}
-		if len(near) > 0 {
-			a.sectionTitle(c, a.t(i18n.WalletNearSection))
-			ui.Column(c).Gap(10).Children(func() {
-				for _, acc := range near {
-					a.nearAccountCard(c, acc)
-				}
-			})
+		switch kind {
+		case wallet.Near:
+			a.nearAccountCard(c, *w.Near)
 			a.nearSendForm(c)
+		case wallet.Solana:
+			a.solanaAccountCard(c, *w.Solana)
+		default:
+			a.walletAccountCard(c, *w.EVM)
 		}
 	}
 	a.walletImportForm(c)
-	a.nearImportForm(c)
 }
 
 // walletKeyCard shows a key that must not be missed: a new account's key,
 // which is shown once, or one the user asked to see.
 func (a *App) walletKeyCard(c *ui.Context) {
 	p := a.pal
+	if len(a.shownKeys) > 0 {
+		ui.Column(c).Gap(10).Padding(16).Radius(14).Background(p.dangerSoft).
+			Border(1, p.hairline).Margin(0, 0, 14, 0).Children(func() {
+			ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
+				ui.Icon(c, iconKey).Size(15, 15).TextColor(p.danger)
+				title := a.t(i18n.WalletNewTitle)
+				if len(a.shownKeys) > 1 {
+					title = a.t(i18n.WalletNewTitleMany)
+				}
+				ui.Text(c, title).FontSize(13).FontWeight(700).MaxLines(1)
+			})
+			for _, key := range a.shownKeys {
+				key := key
+				ui.Text(c, key.Chain+" · "+wallet.Short(key.Addr)).FontSize(11).
+					FontWeight(600).TextColor(p.danger).MaxLines(1)
+				ui.Text(c, key.Key).Font("monospace").FontSize(12).TextColor(p.text).MaxLines(3)
+				a.softButton(c, a.t(i18n.WalletCopy), iconCopy, p.text, func() { a.copyKey(key.Key) })
+			}
+			ui.Text(c, a.t(i18n.WalletKeyWarning)).FontSize(11).TextColor(p.danger).MaxLines(2)
+			a.softButton(c, a.t(i18n.WalletHide), nil, p.muted, a.hideKey)
+		})
+		return
+	}
 	var key, title, warning string
 	switch {
 	case a.newKey != "":
@@ -80,12 +110,99 @@ func (a *App) walletKeyCard(c *ui.Context) {
 			ui.Icon(c, iconKey).Size(15, 15).TextColor(p.danger)
 			ui.Text(c, title).FontSize(13).FontWeight(700).MaxLines(1)
 		})
-		ui.Text(c, key).Font("monospace").FontSize(12).TextColor(p.text).MaxLines(2)
+		ui.Text(c, key).Font("monospace").FontSize(12).TextColor(p.text).MaxLines(3)
 		ui.Text(c, warning).FontSize(11).TextColor(p.danger).MaxLines(2)
 		ui.Row(c).Gap(8).Children(func() {
 			a.softButton(c, a.t(i18n.WalletCopy), iconCopy, p.text, func() { a.copyKey(key) })
 			a.softButton(c, a.t(i18n.WalletHide), nil, p.muted, a.hideKey)
 		})
+	})
+}
+
+// walletPickers is the wallet menu and the network menu. The network menu
+// lists every preset, not a family tab: Ethereum and Base are separate
+// choices that share one EVM account, and the two NEAR networks share one
+// NEAR account.
+func (a *App) walletPickers(c *ui.Context) {
+	p := a.pal
+	type choice struct {
+		id, label string
+	}
+	var wallets []choice
+	for _, w := range a.settings.Wallets {
+		label := w.Name
+		if label == "" {
+			label = wallet.Short(w.ID)
+		}
+		wallets = append(wallets, choice{id: w.ID, label: label})
+	}
+	if a.settings.Passkey != nil {
+		wallets = append(wallets, choice{id: wallet.PasskeyContainerID, label: a.t(i18n.PasskeyTitle)})
+	}
+	networks := chains.All()
+	names := make([]string, len(networks))
+	nidx := 0
+	for i, n := range networks {
+		names[i] = n.Name
+		if n.ID == a.settings.NetworkID {
+			nidx = i
+		}
+	}
+	network := names[nidx]
+	ui.Row(c).Gap(16).Margin(14, 0, 12, 0).Children(func() {
+		if len(wallets) >= 2 {
+			labels := make([]string, len(wallets))
+			idx := 0
+			active := a.settings.ActiveWallet
+			if active == "" && len(a.settings.Wallets) > 0 {
+				active = a.settings.Wallets[0].ID
+			}
+			if a.viewingPasskey() {
+				active = wallet.PasskeyContainerID
+			}
+			for i, choice := range wallets {
+				labels[i] = choice.label
+				if choice.id == active {
+					idx = i
+				}
+			}
+			selected := labels[idx]
+			ui.Column(c).Gap(6).Grow(1).MaxWidth(360).Children(func() {
+				ui.Text(c, a.t(i18n.WalletSwitch)).FontSize(11).FontWeight(600).
+					TextColor(p.muted).MaxLines(1)
+				if ui.Select(c.Key("wallet-switch"), &selected, labels).Changed() {
+					for i, label := range labels {
+						if label == selected {
+							a.selectWallet(wallets[i].id)
+							break
+						}
+					}
+				}
+			})
+		}
+		ui.Column(c).Gap(6).Grow(1).MaxWidth(360).Children(func() {
+			ui.Text(c, a.t(i18n.WalletNetwork)).FontSize(11).FontWeight(600).
+				TextColor(p.muted).MaxLines(1)
+			if ui.Select(c.Key("wallet-network"), &network, names).Changed() {
+				for i, name := range names {
+					if name == network {
+						a.setNetwork(networks[i].ID)
+						break
+					}
+				}
+			}
+		})
+	})
+}
+
+func (a *App) missingChain(c *ui.Context, w wallet.Container) {
+	p := a.pal
+	ui.Column(c).Gap(8).Padding(22).Center().Radius(14).
+		Background(p.card).Border(1, p.hairline).Margin(0, 0, 12, 0).Children(func() {
+		ui.Text(c, a.t(i18n.WalletNoChain, w.Name, a.network().Name)).
+			FontSize(13).FontWeight(600).TextAlign(ui.Center).MaxLines(3)
+		ui.Text(c, a.t(i18n.WalletNoChainWhy)).FontSize(12).TextColor(p.muted).
+			TextAlign(ui.Center).MaxLines(3)
 	})
 }
 
@@ -131,11 +248,8 @@ func (a *App) emptyWallet(c *ui.Context) {
 		})
 		ui.Text(c, a.t(i18n.WalletEmpty)).FontSize(15).FontWeight(700)
 		ui.Text(c, a.t(i18n.WalletEmptyWhy)).FontSize(12.5).TextColor(p.muted).
-			TextAlign(ui.Center).MaxLines(3)
-		ui.Row(c).Gap(8).Children(func() {
-			a.primaryButton(c, a.t(i18n.WalletNew), nil, false, a.createWalletAccount)
-			a.primaryButton(c, a.t(i18n.WalletNearNew), nil, false, a.createNearAccount)
-		})
+			TextAlign(ui.Center).MaxLines(4)
+		a.primaryButton(c, a.t(i18n.WalletNew), nil, false, a.createWalletAccount)
 	})
 }
 
@@ -170,8 +284,9 @@ func (a *App) walletAccountCard(c *ui.Context, acc wallet.Account) {
 			})
 			ui.Column(c).AlignItems(ui.End).Gap(1).Children(func() {
 				ui.Text(c, a.nativeText(snap)).FontSize(15).FontWeight(700)
-				ui.Text(c, "ETH").FontSize(10).TextColor(p.faint)
+				ui.Text(c, a.network().Symbol).FontSize(10).TextColor(p.faint)
 			})
+			a.iconButton(c, iconCopy, a.t(i18n.WalletCopy), func() { a.copyKey(a.displayAddress(acc.Addr)) })
 			a.iconButton(c, iconTrash, a.t(i18n.Remove), func() {
 				a.confirmRemoveWalletAccount(acc.Addr)
 			})
@@ -204,26 +319,75 @@ func (a *App) walletAccountCard(c *ui.Context, acc wallet.Account) {
 
 func (a *App) walletImportForm(c *ui.Context) {
 	p := a.pal
-	a.sectionTitle(c, a.t(i18n.WalletImport))
+	title := a.t(i18n.WalletImport)
+	if w, _, ok := a.activeKeyWallet(); ok {
+		title = a.t(i18n.WalletImportInto, w.Name)
+	}
+	family := a.network().Family
+	a.sectionTitle(c, title)
 	ui.Column(c).Gap(10).Padding(16).Radius(14).MaxWidth(600).
 		Background(p.card).Border(1, p.hairline).Shadow(0, 1, 2, 0, p.shadow).Children(func() {
+		ui.Text(c, a.t(i18n.WalletImportChain, a.network().Name)).FontSize(12).
+			TextColor(p.muted).MaxLines(2)
+		if family == chain.Near {
+			ui.TextInput(c.Key("near-account"), &a.draftNearAccount).
+				Placeholder(a.t(i18n.WalletNearAccountPlaceholder)).
+				Label(a.t(i18n.WalletNearAccountLabel))
+		}
 		ui.TextInput(c.Key("wallet-key"), &a.draftKey).
 			Password().
-			Placeholder(a.t(i18n.WalletKeyPlaceholder)).
-			Label(a.t(i18n.WalletKeyLabel)).
-			OnSubmit(a.importWalletAccount)
+			Placeholder(a.importKeyPlaceholder()).
+			Label(a.importKeyLabel()).
+			OnSubmit(a.importWalletKey)
 		ui.TextInput(c.Key("wallet-label"), &a.draftWalletLabel).
 			Placeholder(a.t(i18n.LabelPlaceholder)).
 			Label(a.t(i18n.LabelLabel))
 		ui.Row(c).AlignItems(ui.Center).Gap(10).Children(func() {
 			a.primaryButton(c, a.t(i18n.WalletImportButton), nil,
-				strings.TrimSpace(a.draftKey) == "", a.importWalletAccount)
-			if a.walletErr != "" {
-				ui.Text(c, a.walletErr).FontSize(11).TextColor(p.danger).Grow(1).MaxLines(2)
+				strings.TrimSpace(a.draftKey) == "", a.importWalletKey)
+			errText := a.walletErr
+			if family == chain.Near && a.nearErr != "" {
+				errText = a.nearErr
+			}
+			if errText != "" {
+				ui.Text(c, errText).FontSize(11).TextColor(p.danger).Grow(1).MaxLines(3)
 			}
 		})
-		ui.Text(c, a.t(i18n.WalletImportNote)).FontSize(11).TextColor(p.muted).MaxLines(2)
+		ui.Text(c, a.importKeyNote()).FontSize(11).TextColor(p.muted).MaxLines(3)
 	})
+}
+
+func (a *App) importKeyPlaceholder() string {
+	switch a.network().Family {
+	case chain.Near:
+		return a.t(i18n.WalletNearKeyPlaceholder)
+	case chain.Solana:
+		return a.t(i18n.WalletSolanaKeyPlaceholder)
+	default:
+		return a.t(i18n.WalletKeyPlaceholder)
+	}
+}
+
+func (a *App) importKeyLabel() string {
+	switch a.network().Family {
+	case chain.Near:
+		return a.t(i18n.WalletNearKeyLabel)
+	case chain.Solana:
+		return a.t(i18n.WalletSolanaKeyLabel)
+	default:
+		return a.t(i18n.WalletKeyLabel)
+	}
+}
+
+func (a *App) importKeyNote() string {
+	switch a.network().Family {
+	case chain.Near:
+		return a.t(i18n.WalletNearImportNote)
+	case chain.Solana:
+		return a.t(i18n.WalletSolanaImportNote)
+	default:
+		return a.t(i18n.WalletImportNote)
+	}
 }
 
 // nearAccountCard is one NEAR account: its ed25519 public key, its balance
@@ -265,6 +429,7 @@ func (a *App) nearAccountCard(c *ui.Context, acc wallet.NearAccount) {
 				ui.Text(c, a.nearNativeText(snap)).FontSize(15).FontWeight(700)
 				ui.Text(c, "NEAR").FontSize(10).TextColor(p.faint)
 			})
+			a.iconButton(c, iconCopy, a.t(i18n.WalletCopy), func() { a.copyKey(acc.AccountID) })
 			a.iconButton(c, iconTrash, a.t(i18n.Remove), func() {
 				a.confirmRemoveNearAccount(acc.AccountID)
 			})
@@ -299,9 +464,13 @@ func (a *App) nearAccountCard(c *ui.Context, acc wallet.NearAccount) {
 // the selected network's explorer.
 func (a *App) nearSendForm(c *ui.Context) {
 	p := a.pal
-	accounts := a.nearAccounts()
-	if len(accounts) == 0 {
+	w, _, ok := a.activeKeyWallet()
+	if !ok || w.Near == nil {
 		return
+	}
+	accounts := []wallet.NearAccount{*w.Near}
+	if a.nearSendFrom != w.Near.AccountID {
+		a.nearSendFrom = w.Near.AccountID
 	}
 	ui.Column(c).Gap(10).Padding(16).Radius(14).MaxWidth(600).
 		Background(p.card).Border(1, p.hairline).Shadow(0, 1, 2, 0, p.shadow).
@@ -381,31 +550,74 @@ func (a *App) nearNativeText(snap *accountSnapshot) string {
 	return chain.FormatAmount(snap.native, nearDecimals, 4) + " NEAR"
 }
 
-// nearImportForm adds a NEAR account from a key. The account id is optional
-// for an implicit account and required for a named one.
-func (a *App) nearImportForm(c *ui.Context) {
+// solanaAccountCard is the open wallet's Solana account. The key can be
+// unlocked and revealed. Sending a Solana transaction is not wired.
+func (a *App) solanaAccountCard(c *ui.Context, acc wallet.SolanaAccount) {
 	p := a.pal
-	a.sectionTitle(c, a.t(i18n.WalletNearImport))
-	ui.Column(c).Gap(10).Padding(16).Radius(14).MaxWidth(600).
+	snap := a.accountSnapshot(acc.Address)
+	unlocked := a.solanaKeyring != nil && a.solanaKeyring.Unlocked(acc.Address)
+	name := acc.Label
+	if name == "" {
+		if w, _, ok := a.activeKeyWallet(); ok && w.Name != "" {
+			name = w.Name
+		} else {
+			name = wallet.Short(acc.Address)
+		}
+	}
+	busy := a.authBusy == "solana-unlock:"+acc.Address || a.authBusy == "solana-reveal:"+acc.Address
+	ui.Column(c).Key("solana:"+acc.Address).Gap(12).Padding(16).Radius(14).
 		Background(p.card).Border(1, p.hairline).Shadow(0, 1, 2, 0, p.shadow).Children(func() {
-		ui.TextInput(c.Key("near-account"), &a.draftNearAccount).
-			Placeholder(a.t(i18n.WalletNearAccountPlaceholder)).
-			Label(a.t(i18n.WalletNearAccountLabel))
-		ui.TextInput(c.Key("near-key"), &a.draftNearKey).
-			Password().
-			Placeholder(a.t(i18n.WalletNearKeyPlaceholder)).
-			Label(a.t(i18n.WalletNearKeyLabel)).
-			OnSubmit(a.importNearAccount)
-		ui.TextInput(c.Key("near-label"), &a.draftNearLabel).
-			Placeholder(a.t(i18n.LabelPlaceholder)).
-			Label(a.t(i18n.LabelLabel))
-		ui.Row(c).AlignItems(ui.Center).Gap(10).Children(func() {
-			a.primaryButton(c, a.t(i18n.WalletImportButton), nil,
-				strings.TrimSpace(a.draftNearKey) == "", a.importNearAccount)
-			if a.nearErr != "" {
-				ui.Text(c, a.nearErr).FontSize(11).TextColor(p.danger).Grow(1).MaxLines(2)
+		ui.Row(c).AlignItems(ui.Center).Gap(12).Children(func() {
+			a.identicon(c, acc.Address)
+			ui.Column(c).Grow(1).Gap(3).Children(func() {
+				ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
+					ui.Text(c, name).FontSize(13.5).FontWeight(600).MaxLines(1)
+					ui.Text(c, "Solana").FontSize(9.5).FontWeight(700).
+						TextColor(p.accent).Padding(3, 6).Radius(99).Background(p.accentSoft)
+					badge, color, soft := a.t(i18n.WalletLocked), p.muted, p.inset
+					if unlocked {
+						badge, color, soft = a.t(i18n.WalletUnlocked), p.success, p.successSoft
+					}
+					ui.Row(c).Gap(4).Padding(3, 7).Radius(99).Background(soft).
+						AlignItems(ui.Center).Children(func() {
+						ui.Box(c).Size(5, 5).Radius(2.5).Background(color)
+						ui.Text(c, badge).FontSize(9.5).FontWeight(700).TextColor(color)
+					})
+				})
+				ui.Text(c, acc.Address).Font("monospace").FontSize(10.5).
+					TextColor(p.muted).MaxLines(1)
+			})
+			ui.Column(c).AlignItems(ui.End).Gap(1).Children(func() {
+				ui.Text(c, a.nativeText(snap)).FontSize(15).FontWeight(700)
+				ui.Text(c, "SOL").FontSize(10).TextColor(p.faint)
+			})
+			a.iconButton(c, iconCopy, a.t(i18n.WalletCopy), func() { a.copyKey(acc.Address) })
+			a.iconButton(c, iconTrash, a.t(i18n.Remove), func() {
+				a.confirmRemoveSolanaAccount(acc.Address)
+			})
+		})
+		ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
+			switch {
+			case busy:
+				ui.Row(c).Gap(7).AlignItems(ui.Center).Children(func() {
+					ui.Spinner(c).Size(14, 14)
+					ui.Text(c, a.t(i18n.AuthWaiting, a.authName())).FontSize(11.5).
+						TextColor(p.muted).MaxLines(1)
+				})
+			case unlocked:
+				a.softButton(c, a.t(i18n.WalletLock), iconLock, p.text, func() { a.lockSolanaAccount(acc.Address) })
+				a.softButton(c, a.t(i18n.WalletReveal), iconKey, p.muted, func() { a.revealSolanaKey(acc.Address) })
+			default:
+				icon := iconLockOpen
+				if a.presenceRequired() {
+					icon = iconFingerprint
+				}
+				a.softButton(c, a.t(i18n.WalletUnlock), icon, p.accent, func() { a.unlockSolanaAccount(acc.Address) })
 			}
 		})
-		ui.Text(c, a.t(i18n.WalletNearImportNote)).FontSize(11).TextColor(p.muted).MaxLines(3)
+		ui.Text(c, a.t(i18n.WalletSolanaNote)).FontSize(11).TextColor(p.muted).MaxLines(3)
+		if snap != nil && snap.err != "" {
+			ui.Text(c, snap.err).FontSize(11).TextColor(p.danger).MaxLines(2)
+		}
 	})
 }

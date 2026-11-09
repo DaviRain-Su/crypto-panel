@@ -213,8 +213,8 @@ func TestScreenshots(t *testing.T) {
 	tt.Key(0, ui.KeyDown)
 	save(t, tt, "new-intents-picker")
 
-	// The passkey wallet: one credential with a NEAR account and an EVM smart
-	// account.
+	// The passkey wallet on NEAR mainnet: the same credential's NEAR account.
+	// EVM and Solana are the other chain positions of that passkey.
 	a = newTestApp(t)
 	auth := newSoftAuthenticator(t)
 	a.settings.Passkey = softPasskey(t, auth)
@@ -230,6 +230,22 @@ func TestScreenshots(t *testing.T) {
 	tt = ui.NewTester(a.view, windowWidth, windowHeight)
 	tt.SetDark(true)
 	save(t, tt, "new-wallet-passkey-dark")
+
+	// The one-time list of every network's address, then the same passkey
+	// on Ethereum and on Solana.
+	a.passkeyPrepared = true
+	save(t, ui.NewTester(a.view, windowWidth, windowHeight), "new-wallet-passkey-ready")
+	a.passkeyPrepared = false
+	a.settings.NetworkID = chains.Ethereum.ID
+	a.settings = a.settings.Validate()
+	a.snap.accounts = append(a.snap.accounts, accountSnapshot{
+		addr:   a.settings.Passkey.EVMAddress,
+		native: big.NewInt(500_000_000_000_000_000),
+	})
+	save(t, ui.NewTester(a.view, windowWidth, windowHeight), "new-wallet-passkey-ethereum")
+	a.settings.NetworkID = chains.SolanaMainnet.ID
+	a.settings = a.settings.Validate()
+	save(t, ui.NewTester(a.view, windowWidth, windowHeight), "new-wallet-passkey-solana")
 
 	a = newTestApp(t)
 	a.passkeyKind = passkey.KindTouchID

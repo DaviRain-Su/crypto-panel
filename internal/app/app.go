@@ -90,6 +90,8 @@ type App struct {
 	draftNearAccount string
 	draftNearLabel   string
 	nearErr          string
+	// solanaKeyring holds the wallet's Solana accounts and their ed25519 keys.
+	solanaKeyring *wallet.SolanaKeyring
 	// The wallet's own NEAR transfer: the account it leaves, the form, and
 	// the last transaction's hash.
 	nearSendFrom   string
@@ -100,12 +102,14 @@ type App struct {
 	nearSendHash   string
 	nearSendBusy   bool
 	// newKey is a key just created, shown once so the user can save it;
-	// revealedKey is a key the user asked to see. Both are cleared as soon as
-	// they are no longer on screen.
+	// revealedKey is a key the user asked to see. shownKeys is the same for
+	// a wallet that was created with one key per chain. All of them are
+	// cleared as soon as they are no longer on screen.
 	newKey       string
 	newKeyAddr   string
 	revealedKey  string
 	revealedAddr string
+	shownKeys    []shownKey
 	// passkeyKind is the system check the wallet can require; authenticate
 	// asks for it, and tests replace it. authBusy names the account whose
 	// prompt is up.
@@ -116,9 +120,12 @@ type App struct {
 	// The passkey wallet: the browser ceremony that creates and uses the
 	// credential, the form for sending from its NEAR account, and the state
 	// the card shows. The credential's private key never enters the app.
-	passkeyBusy       bool
-	passkeyErr        string
-	passkeyNotice     string
+	passkeyBusy   bool
+	passkeyErr    string
+	passkeyNotice string
+	// passkeyPrepared is the one-time list of every network's address, shown
+	// after a passkey is created and cleared when the user dismisses it.
+	passkeyPrepared   bool
 	passkeyDeployHash string
 	passkeySendTo     string
 	passkeySendAmount string
@@ -256,8 +263,10 @@ func New() (*App, error) {
 	a.newReader()
 	a.initPlugins(dir)
 	a.agentSecrets = mygo.Secrets.Service("crypto-panel-agent")
-	a.keyring = wallet.NewKeyring(mygo.Secrets.Service("crypto-panel-wallet"), settings.Wallet)
-	a.nearKeyring = wallet.NewNearKeyring(mygo.Secrets.Service("crypto-panel-wallet"), settings.NearWallet)
+	secrets := mygo.Secrets.Service("crypto-panel-wallet")
+	a.keyring = wallet.NewKeyring(secrets, settings.Wallet)
+	a.nearKeyring = wallet.NewNearKeyring(secrets, settings.NearWallet)
+	a.solanaKeyring = wallet.NewSolanaKeyring(secrets, settings.SolanaAccounts())
 	a.intentsClient = intents.New()
 	a.priceSource = prices.New()
 	a.startRefresh = a.fetch
@@ -316,6 +325,7 @@ func (a *App) Ready() {
 	go a.refreshLoop()
 	a.requestRefresh()
 	a.refreshPasskeyEVMAddress()
+	a.watchPasskeyChains()
 }
 
 // createWindow opens the app's one window: a sidebar of pages beside the
@@ -377,6 +387,7 @@ func (a *App) Settings() Settings {
 	s.Accounts = append([]wallet.Address(nil), a.settings.Accounts...)
 	s.Wallet = append([]wallet.Account(nil), a.settings.Wallet...)
 	s.NearWallet = append([]wallet.NearAccount(nil), a.settings.NearWallet...)
+	s.Wallets = append([]wallet.Container(nil), a.settings.Wallets...)
 	if s.Passkey != nil {
 		p := *s.Passkey
 		s.Passkey = &p
@@ -410,7 +421,10 @@ func (a *App) goTo(r route) {
 	}
 	if a.route.kind == "wallet" && r.kind != "wallet" {
 		a.revealedKey, a.revealedAddr = "", ""
+		a.newKey, a.newKeyAddr = "", ""
+		a.shownKeys = nil
 		a.walletNotice = ""
+		a.passkeyPrepared = false
 	}
 	if a.route.kind == "plugins" && r.kind != "plugins" {
 		a.pluginDetail = ""
