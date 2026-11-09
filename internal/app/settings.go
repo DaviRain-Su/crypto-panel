@@ -47,15 +47,22 @@ type Settings struct {
 	// no field, keeps it on.
 	HideFiat bool             `json:"hideFiat,omitempty"`
 	Accounts []wallet.Address `json:"accounts"`
-	// Wallet is the native wallet's accounts: addresses and labels only. The
-	// keys are in the OS keychain, never in this file.
+	// Wallets is the native wallet: named containers, each holding at most
+	// one account per chain family. Keys are in the OS keychain, never here.
+	Wallets []wallet.Container `json:"wallets,omitempty"`
+	// ActiveWallet is the container the Wallet page shows, or
+	// wallet.PasskeyContainerID when the passkey identity is selected.
+	ActiveWallet string `json:"activeWallet,omitempty"`
+	// Wallet is the EVM accounts of Wallets, in container order. It is
+	// rebuilt from Wallets on every load. An old file that has only this
+	// field is migrated into Wallets.
 	Wallet []wallet.Account `json:"wallet,omitempty"`
-	// NearWallet is the wallet's NEAR accounts. Their ed25519 keys are in the
-	// keychain under near:key:<accountId>, never in this file.
+	// NearWallet is the NEAR accounts of Wallets. Their ed25519 keys are in
+	// the keychain under near:key:<accountId>, never in this file.
 	NearWallet []wallet.NearAccount `json:"nearWallet,omitempty"`
 	// Passkey is the public half of the passkey the shell created: its
-	// credential id, its P-256 public key, and the NEAR and EVM accounts the
-	// key controls. The private key stays in the authenticator.
+	// credential id, its P-256 public key, and the NEAR, EVM and Solana
+	// accounts the key controls. The private key stays in the authenticator.
 	Passkey *PasskeyAccount `json:"passkey,omitempty"`
 }
 
@@ -187,47 +194,211 @@ func (s Settings) Validate() Settings {
 		seen[addr] = true
 		accounts = append(accounts, wallet.Address{Addr: addr, Label: trimLabel(a.Label)})
 	}
-	// The wallet holds EVM accounts for now; Solana signing comes later.
-	seenWallet := make(map[string]bool, len(s.Wallet))
-	walletAccounts := make([]wallet.Account, 0, len(s.Wallet))
+	s.Wallets, s.ActiveWallet = normalizeWallets(s.Wallets, s.Wallet, s.NearWallet, s.ActiveWallet)
+	s.Wallet, s.NearWallet = projectWallets(s.Wallets)
+	seenWallet := make(map[string]bool, len(s.Wallet)+len(s.NearWallet))
 	for _, a := range s.Wallet {
-		addr, err := wallet.Normalize(wallet.EVM, a.Addr)
-		if err != nil || seenWallet[addr] {
-			continue
-		}
-		seenWallet[addr] = true
-		walletAccounts = append(walletAccounts, wallet.Account{Addr: addr, Label: trimLabel(a.Label)})
+		seenWallet[a.Addr] = true
 	}
-	seenNear := make(map[string]bool, len(s.NearWallet))
-	nearAccounts := make([]wallet.NearAccount, 0, len(s.NearWallet))
 	for _, a := range s.NearWallet {
-		accountID, err := wallet.Normalize(wallet.Near, a.AccountID)
-		if err != nil || seenNear[accountID] {
-			continue
+		seenWallet[a.AccountID] = true
+	}
+	for _, w := range s.Wallets {
+		if w.Solana != nil {
+			seenWallet[w.Solana.Address] = true
 		}
-		publicKey, err := neartx.ParsePublicKey(a.PublicKey)
-		if err != nil {
-			continue
-		}
-		seenNear[accountID] = true
-		nearAccounts = append(nearAccounts, wallet.NearAccount{
-			AccountID: accountID,
-			PublicKey: publicKey.String(),
-			Label:     trimLabel(a.Label),
-		})
 	}
 	kept := accounts[:0]
 	for _, a := range accounts {
-		if seenWallet[a.Addr] || seenNear[a.Addr] {
+		if seenWallet[a.Addr] {
 			continue
 		}
 		kept = append(kept, a)
 	}
 	s.Accounts = kept
-	s.Wallet = walletAccounts
-	s.NearWallet = nearAccounts
 	s.Passkey = validatePasskey(s.Passkey)
 	return s
+}
+
+// normalizeWallets turns an old flat wallet into containers, then drops
+// accounts that are not valid or that repeat an address already kept.
+// Containers are the source of truth after the first load. Legacy slices are
+// migrated only when no container was stored, so a later edit of those slices
+// cannot resurrect an account the user removed from a container.
+func normalizeWallets(wallets []wallet.Container, legacyEVM []wallet.Account, legacyNear []wallet.NearAccount, active string) ([]wallet.Container, string) {
+	// nil means an old settings file that has not been migrated. An empty
+	// slice means the user has no wallets; do not rebuild them from the
+	// projected fields, or deleting the last account would put it back.
+	if wallets == nil {
+		wallets = migrateLegacyWallets(legacyEVM, legacyNear)
+	}
+	seenEVM := map[string]bool{}
+	seenNear := map[string]bool{}
+	seenSol := map[string]bool{}
+	seenID := map[string]bool{}
+	out := make([]wallet.Container, 0, len(wallets))
+	for _, w := range wallets {
+		c := wallet.Container{Name: trimLabel(w.Name)}
+		c.ID = cleanWalletID(w.ID)
+		if c.ID == "" || c.ID == wallet.PasskeyContainerID || seenID[c.ID] {
+			c.ID = fallbackWalletID(w, seenID)
+		}
+		seenID[c.ID] = true
+		if w.EVM != nil {
+			addr, err := wallet.Normalize(wallet.EVM, w.EVM.Addr)
+			if err == nil && !seenEVM[addr] {
+				seenEVM[addr] = true
+				acc := wallet.Account{Addr: addr, Label: trimLabel(w.EVM.Label)}
+				c.EVM = &acc
+			}
+		}
+		if w.Near != nil {
+			accountID, err := wallet.Normalize(wallet.Near, w.Near.AccountID)
+			publicKey, err2 := neartx.ParsePublicKey(w.Near.PublicKey)
+			if err == nil && err2 == nil && !seenNear[accountID] {
+				seenNear[accountID] = true
+				acc := wallet.NearAccount{
+					AccountID: accountID,
+					PublicKey: publicKey.String(),
+					Label:     trimLabel(w.Near.Label),
+				}
+				c.Near = &acc
+			}
+		}
+		if w.Solana != nil {
+			addr, err := wallet.Normalize(wallet.Solana, w.Solana.Address)
+			if err == nil && !seenSol[addr] {
+				seenSol[addr] = true
+				acc := wallet.SolanaAccount{Address: addr, Label: trimLabel(w.Solana.Label)}
+				c.Solana = &acc
+			}
+		}
+		if c.Name == "" {
+			c.Name = fmt.Sprintf("Wallet %d", len(out)+1)
+		}
+		if !c.Empty() {
+			out = append(out, c)
+		}
+	}
+	if active == wallet.PasskeyContainerID {
+		return out, active
+	}
+	for _, w := range out {
+		if w.ID == active {
+			return out, active
+		}
+	}
+	if len(out) == 0 {
+		return out, ""
+	}
+	return out, out[0].ID
+}
+
+// migrateLegacyWallets gives each old single-chain account its own container.
+// They were not created as one identity, so they are not paired together.
+func migrateLegacyWallets(legacyEVM []wallet.Account, legacyNear []wallet.NearAccount) []wallet.Container {
+	out := make([]wallet.Container, 0, len(legacyEVM)+len(legacyNear))
+	n := 1
+	for _, acc := range legacyEVM {
+		addr, err := wallet.Normalize(wallet.EVM, acc.Addr)
+		if err != nil {
+			continue
+		}
+		name := trimLabel(acc.Label)
+		if name == "" {
+			name = fmt.Sprintf("Wallet %d", n)
+		}
+		n++
+		kept := wallet.Account{Addr: addr, Label: trimLabel(acc.Label)}
+		out = append(out, wallet.Container{
+			ID:   "legacy-evm-" + strings.TrimPrefix(addr, "0x"),
+			Name: name,
+			EVM:  &kept,
+		})
+	}
+	for _, acc := range legacyNear {
+		accountID, err := wallet.Normalize(wallet.Near, acc.AccountID)
+		if err != nil {
+			continue
+		}
+		if _, err := neartx.ParsePublicKey(acc.PublicKey); err != nil {
+			continue
+		}
+		name := trimLabel(acc.Label)
+		if name == "" {
+			name = fmt.Sprintf("Wallet %d", n)
+		}
+		n++
+		kept := acc
+		kept.AccountID = accountID
+		kept.Label = trimLabel(acc.Label)
+		out = append(out, wallet.Container{
+			ID:   "legacy-near-" + accountID,
+			Name: name,
+			Near: &kept,
+		})
+	}
+	return out
+}
+
+func projectWallets(wallets []wallet.Container) ([]wallet.Account, []wallet.NearAccount) {
+	var evm []wallet.Account
+	var near []wallet.NearAccount
+	for _, w := range wallets {
+		if w.EVM != nil {
+			evm = append(evm, *w.EVM)
+		}
+		if w.Near != nil {
+			near = append(near, *w.Near)
+		}
+	}
+	return evm, near
+}
+
+func cleanWalletID(id string) string {
+	id = strings.TrimSpace(id)
+	if id == "" || len(id) > 80 {
+		return ""
+	}
+	for _, c := range id {
+		switch {
+		case c >= 'a' && c <= 'z', c >= 'A' && c <= 'Z', c >= '0' && c <= '9', c == '-', c == '_':
+		default:
+			return ""
+		}
+	}
+	return id
+}
+
+func fallbackWalletID(w wallet.Container, seen map[string]bool) string {
+	raw := w.Name
+	if w.EVM != nil {
+		raw += w.EVM.Addr
+	}
+	if w.Near != nil {
+		raw += w.Near.AccountID
+	}
+	if w.Solana != nil {
+		raw += w.Solana.Address
+	}
+	sum := wallet.Keccak256([]byte(raw))
+	id := "w-" + hexPrefix(sum)
+	for seen[id] {
+		raw += "\x00"
+		sum = wallet.Keccak256([]byte(raw))
+		id = "w-" + hexPrefix(sum)
+	}
+	return id
+}
+
+func hexPrefix(b []byte) string {
+	const hexdigits = "0123456789abcdef"
+	out := make([]byte, 16)
+	for i := 0; i < 8 && i < len(b); i++ {
+		out[i*2] = hexdigits[b[i]>>4]
+		out[i*2+1] = hexdigits[b[i]&0x0f]
+	}
+	return string(out)
 }
 
 // trimLabel keeps a label to the length a row can show.
@@ -274,10 +445,10 @@ func (s Settings) Has(addr string) bool {
 			return true
 		}
 	}
-	return s.IsWallet(addr)
+	return s.IsWalletAccount(addr)
 }
 
-// IsWallet reports whether addr is an account of the native wallet.
+// IsWallet reports whether addr is an EVM account of a wallet container.
 func (s Settings) IsWallet(addr string) bool {
 	for _, a := range s.Wallet {
 		if a.Addr == addr {
@@ -285,6 +456,27 @@ func (s Settings) IsWallet(addr string) bool {
 		}
 	}
 	return false
+}
+
+// IsSolanaWallet reports whether addr is a Solana account of a wallet container.
+func (s Settings) IsSolanaWallet(addr string) bool {
+	for _, w := range s.Wallets {
+		if w.Solana != nil && w.Solana.Address == addr {
+			return true
+		}
+	}
+	return false
+}
+
+// SolanaAccounts lists the Solana accounts of every wallet, in container order.
+func (s Settings) SolanaAccounts() []wallet.SolanaAccount {
+	var out []wallet.SolanaAccount
+	for _, w := range s.Wallets {
+		if w.Solana != nil {
+			out = append(out, *w.Solana)
+		}
+	}
+	return out
 }
 
 // IsNearWallet reports whether accountID is a NEAR account of the wallet.
@@ -297,22 +489,21 @@ func (s Settings) IsNearWallet(accountID string) bool {
 	return false
 }
 
-// IsWalletAccount reports whether addr is an account of the wallet, of
-// either family.
+// IsWalletAccount reports whether addr is an account of a wallet container.
 func (s Settings) IsWalletAccount(addr string) bool {
-	return s.IsWallet(addr) || s.IsNearWallet(addr)
+	return s.IsWallet(addr) || s.IsNearWallet(addr) || s.IsSolanaWallet(addr)
 }
 
 // WatchedOf lists every address of one family the app reads: the watch list
 // and the wallet's own accounts of that family.
 func (s Settings) WatchedOf(family chain.Family) []wallet.Address {
 	out := s.AccountsOf(family)
-	seen := make(map[string]bool, len(out)+len(s.Wallet)+len(s.NearWallet))
+	seen := make(map[string]bool, len(out)+len(s.Wallets))
 	for _, a := range out {
 		seen[a.Addr] = true
 	}
 	add := func(addr, label string) {
-		if seen[addr] {
+		if addr == "" || seen[addr] {
 			return
 		}
 		seen[addr] = true
@@ -326,6 +517,10 @@ func (s Settings) WatchedOf(family chain.Family) []wallet.Address {
 	case chain.Near:
 		for _, a := range s.NearWallet {
 			add(a.AccountID, a.Label)
+		}
+	case chain.Solana:
+		for _, a := range s.SolanaAccounts() {
+			add(a.Address, a.Label)
 		}
 	}
 	return out

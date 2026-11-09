@@ -237,12 +237,29 @@ block is an object), and it refuses `eth_send*`, `eth_sign*`, `personal_*`,
 
 ### The native wallet
 
-The Wallet page is the shell's own: accounts are created (a fresh key) or
-imported (a private key), each stored in the OS keychain under `key:<address>`,
-never in `settings.json`. The settings file keeps only addresses and labels, and
-the keyring reads a key into memory only while its account is unlocked. Wallet
-accounts are watched like any other address, so their balances join the
-portfolio; a wallet address cannot also be added as a watch-only one.
+The Wallet page is the shell's own. A wallet is a named container — "Wallet 1"
+— not an EVM key and not a NEAR key. Creating one prepares three independent
+keys, with no seed phrase tying them together:
+
+- an EVM account (secp256k1), stored under `key:<address>`
+- a NEAR implicit account (ed25519), stored under `near:key:<accountId>`
+- a Solana account (ed25519), stored under `solana:key:<address>`
+
+The keys are in the OS keychain, never in `settings.json`. The settings file
+keeps the container's name and each account's address and label. The keyring
+reads a key into memory only while that account is unlocked. Switching the
+selected network changes which of the container's accounts the page shows:
+balance, lock, reveal, and send where that chain already sends (NEAR).
+Importing a private key targets the open wallet and the chain on screen; the
+field is 64 hex for EVM, `ed25519:` (plus an optional account id) for NEAR,
+and a base58 64-byte keypair for Solana. An older settings file that stored
+flat EVM and NEAR lists is migrated into one container per account, because
+those keys were not created as one identity.
+
+Wallet accounts are watched like any other address, so their balances join the
+portfolio; a wallet address cannot also be added as a watch-only one. Solana
+keys can be created, imported, locked and revealed. Sending a Solana
+transaction is not wired.
 
 The wallet's second factor is the system's own check. On macOS,
 `internal/passkey` calls LocalAuthentication through purego — no cgo, so the
@@ -269,7 +286,7 @@ reports a hash other than the signed transaction's is refused.
 ### Passkey wallet
 
 The passkey wallet is a real WebAuthn credential, separate from the system
-presence check above. One P-256 passkey owns two accounts:
+presence check above. One P-256 passkey controls three accounts:
 
 - a **NEAR deterministic account** (`0s` + the NEP-616 StateInit hash)
   running the NEP-591 `p256-passkey-wallet-contract.trezu.near` global
@@ -278,6 +295,20 @@ presence check above. One P-256 passkey owns two accounts:
   key, at the same address on every EVM chain. The app reads the
   counterfactual address from the factory and watches it; sending needs a
   bundler and is not wired.
+- a **Solana vault** derived from the same public key. It is not an ed25519
+  address. It is the vault PDA of LazorKit v1
+  (`LazorjRFNavitUaBu5m3WaNPjU1maipvSW2rZfAFAKi`, deployed on mainnet): user
+  seed `SHA-256("crypto-panel passkey solana v1" || 0x00 || compressed
+  P-256 key)`, wallet PDA `["wallet", seed]`, vault `["vault", wallet]`.
+  The vault is the address that program would sign for after the secp256r1
+  precompile (`Secp256r1SigVerify1111111111111111111111111`) accepts the
+  passkey. `internal/solanapasskey` derives it and the app stores it on the
+  passkey record. It does not submit `createWallet`, so the account does not
+  exist yet and must not be funded: the program does not bind the seed to the
+  owner, and a sunset v1 binary refuses new creates. v2 mainnet is a different
+  program id and was not deployed when this was written. Devnet uses another
+  program id, so its vault is a different address; the panel watches Solana
+  mainnet. Sending SOL is not wired.
 
 The ceremony runs in the system browser, on a page the app serves on
 `http://localhost:<random port>`: WebAuthn needs a secure context and the
@@ -402,6 +433,7 @@ crypto-panel/
   internal/pages/         declarative page tree → ui
   internal/passkey/       the system check: LocalAuthentication via purego
   internal/passkeywallet/ NEAR passkey wallet: StateInit, RequestMessage, proof
+  internal/solanapasskey/ LazorKit v1 vault PDA derived from the passkey's P-256 key
   internal/webauthn/      WebAuthn registration and assertion verification
   internal/smartaccount/  ERC-4337 user operations, WebAuthn signatures, bundler
   internal/prices/        approximate USD prices from CoinGecko

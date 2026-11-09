@@ -22,6 +22,7 @@ import (
 	"github.com/davirain-su/crypto-panel/internal/neartx"
 	"github.com/davirain-su/crypto-panel/internal/passkeywallet"
 	"github.com/davirain-su/crypto-panel/internal/smartaccount"
+	"github.com/davirain-su/crypto-panel/internal/solanapasskey"
 	"github.com/davirain-su/crypto-panel/internal/wallet"
 	"github.com/davirain-su/crypto-panel/internal/webauthn"
 )
@@ -47,12 +48,17 @@ type PasskeyAccount struct {
 	// PublicKey is the P-256 key as "p256:<base58 compressed>".
 	PublicKey string `json:"publicKey"`
 	// NEARAccount is the NEP-616 account the key controls: "0s" followed by
-	// the StateInit hash. The same key also owns the EVM smart account.
+	// the StateInit hash. The same key also owns the EVM smart account and
+	// the Solana vault.
 	NEARAccount string `json:"nearAccount"`
 	// EVMAddress is the Coinbase Smart Wallet address the key owns. It is the
 	// same on every EVM chain; empty until it has been read from the factory.
-	EVMAddress string    `json:"evmAddress,omitempty"`
-	CreatedAt  time.Time `json:"createdAt,omitempty"`
+	EVMAddress string `json:"evmAddress,omitempty"`
+	// SolanaAddress is the LazorKit v1 vault PDA derived from the same P-256
+	// key. It is recomputed on load. The vault is not created by this app,
+	// and sending SOL from it is not wired.
+	SolanaAddress string    `json:"solanaAddress,omitempty"`
+	CreatedAt     time.Time `json:"createdAt,omitempty"`
 }
 
 // publicKey parses the stored P-256 key.
@@ -105,6 +111,14 @@ func validatePasskey(p *PasskeyAccount) *PasskeyAccount {
 		} else {
 			p.EVMAddress = addr
 		}
+	}
+	// The Solana vault is derived, the same way the NEAR account id is. A
+	// stored value that disagrees is corrected rather than trusted. A failure
+	// here leaves the field empty; it does not drop the passkey.
+	if vault, err := solanapasskey.VaultAddress(pub); err == nil {
+		p.SolanaAddress = vault
+	} else {
+		p.SolanaAddress = ""
 	}
 	return p
 }
@@ -184,10 +198,15 @@ func (a *App) createPasskey() {
 			NEARAccount: account,
 			CreatedAt:   time.Now(),
 		}
+		if vault, err := solanapasskey.VaultAddress(pub); err == nil {
+			pk.SolanaAddress = vault
+		}
 		a.onMain(func() {
 			a.passkeyBusy = false
 			a.settings.Passkey = pk
+			a.settings.ActiveWallet = wallet.PasskeyContainerID
 			a.watchPasskeyAccount(account, "Passkey")
+			a.watchPasskeyAccount(pk.SolanaAddress, "Passkey")
 			a.save()
 			a.passkeyNotice = created
 			a.touch()
@@ -215,9 +234,15 @@ func (a *App) removePasskey() {
 		return
 	}
 	a.settings.Passkey = nil
+	if a.settings.ActiveWallet == wallet.PasskeyContainerID {
+		a.settings.ActiveWallet = ""
+	}
 	a.forgetPasskeyAccount(pk.NEARAccount)
 	if pk.EVMAddress != "" {
 		a.forgetPasskeyAccount(pk.EVMAddress)
+	}
+	if pk.SolanaAddress != "" {
+		a.forgetPasskeyAccount(pk.SolanaAddress)
 	}
 	a.passkeyErr = ""
 	a.passkeyNotice = ""
@@ -228,6 +253,23 @@ func (a *App) removePasskey() {
 	a.touch()
 	a.requestRefresh()
 	a.invalidate()
+}
+
+// watchPasskeyChains adds every address the passkey controls to the watch
+// list. The Solana vault is derived locally, so an older settings file gains
+// it the next time the app starts.
+func (a *App) watchPasskeyChains() {
+	pk := a.settings.Passkey
+	if pk == nil {
+		return
+	}
+	before := len(a.settings.Accounts)
+	a.watchPasskeyAccount(pk.NEARAccount, "Passkey")
+	a.watchPasskeyAccount(pk.EVMAddress, "Passkey")
+	a.watchPasskeyAccount(pk.SolanaAddress, "Passkey")
+	if len(a.settings.Accounts) != before {
+		a.save()
+	}
 }
 
 // watchPasskeyAccount adds addr to the watch list once.

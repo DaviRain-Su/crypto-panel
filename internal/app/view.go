@@ -256,11 +256,7 @@ func (a *App) pageHeader(c *ui.Context) {
 			if a.walletUnlocked() > 0 {
 				a.softButton(c, a.t(i18n.WalletLockAll), iconLock, p.muted, a.lockAll)
 			}
-			if a.network().Family == chain.Near {
-				a.primaryButton(c, a.t(i18n.WalletNearNew), nil, false, a.createNearAccount)
-			} else {
-				a.primaryButton(c, a.t(i18n.WalletNew), nil, false, a.createWalletAccount)
-			}
+			a.primaryButton(c, a.t(i18n.WalletNew), nil, false, a.createWalletAccount)
 		case "plugins":
 			if a.pluginTab == "store" {
 				a.iconButton(c, iconRefresh, a.t(i18n.StoreRefresh), a.loadStore)
@@ -811,6 +807,8 @@ func familyName(f chain.Family) string {
 	switch f {
 	case chain.EVM:
 		return "EVM"
+	case chain.Near:
+		return "NEAR"
 	case chain.Solana:
 		return "Solana"
 	}

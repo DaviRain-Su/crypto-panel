@@ -92,6 +92,16 @@ const (
 	WalletKeyPlaceholder         Key = "walletKeyPlaceholder"
 	WalletImportNote             Key = "walletImportNote"
 	WalletNewTitle               Key = "walletNewTitle"
+	WalletNewTitleMany           Key = "walletNewTitleMany"
+	WalletSwitch                 Key = "walletSwitch"
+	WalletImportInto             Key = "walletImportInto"
+	WalletImportChain            Key = "walletImportChain"
+	WalletNoChain                Key = "walletNoChain"
+	WalletNoChainWhy             Key = "walletNoChainWhy"
+	WalletSolanaKeyLabel         Key = "walletSolanaKeyLabel"
+	WalletSolanaKeyPlaceholder   Key = "walletSolanaKeyPlaceholder"
+	WalletSolanaImportNote       Key = "walletSolanaImportNote"
+	WalletSolanaNote             Key = "walletSolanaNote"
 	WalletRevealTitle            Key = "walletRevealTitle"
 	WalletKeyWarning             Key = "walletKeyWarning"
 	WalletRevealWarning          Key = "walletRevealWarning"
@@ -149,6 +159,9 @@ const (
 	PasskeyUnavailable    Key = "passkeyUnavailable"
 	PasskeyNearAccount    Key = "passkeyNearAccount"
 	PasskeyEVMAccount     Key = "passkeyEVMAccount"
+	PasskeyEVMNote        Key = "passkeyEVMNote"
+	PasskeySolanaAccount  Key = "passkeySolanaAccount"
+	PasskeySolanaNote     Key = "passkeySolanaNote"
 	PasskeyDeriving       Key = "passkeyDeriving"
 	PasskeyMainnetOnly    Key = "passkeyMainnetOnly"
 	PasskeyDeploy         Key = "passkeyDeploy"
@@ -459,12 +472,12 @@ var messages = map[Key]map[string]string{
 
 	WalletSummary:                {English: "%d accounts · %d unlocked", Chinese: "%d 个账户 · %d 个已解锁"},
 	WalletSummaryOne:             {English: "1 account · %d unlocked", Chinese: "1 个账户 · %d 个已解锁"},
-	WalletEmptySummary:           {English: "No accounts yet", Chinese: "还没有账户"},
-	WalletNew:                    {English: "New account", Chinese: "新建账户"},
+	WalletEmptySummary:           {English: "No wallets yet", Chinese: "还没有钱包"},
+	WalletNew:                    {English: "New wallet", Chinese: "新建钱包"},
 	WalletSecurityTitle:          {English: "Keys stay in the system keychain", Chinese: "密钥保存在系统钥匙串中"},
 	WalletSecurityBody:           {English: "Plugins never see a key. Every signature is decoded by the shell and approved by you.", Chinese: "插件永远看不到密钥。每一笔签名都由本应用解码，并由你确认。"},
-	WalletEmpty:                  {English: "No accounts in the wallet", Chinese: "钱包里还没有账户"},
-	WalletEmptyWhy:               {English: "Create an account or import a private key. Its key goes to the system keychain, never to settings.json.", Chinese: "新建一个账户，或导入私钥。私钥会存入系统钥匙串，绝不会写进 settings.json。"},
+	WalletEmpty:                  {English: "No wallets yet", Chinese: "还没有钱包"},
+	WalletEmptyWhy:               {English: "Create a wallet to hold an EVM, NEAR, and Solana account together, or import a key for one chain. Keys go to the system keychain, never to settings.json.", Chinese: "新建一个钱包，同时持有 EVM、NEAR 和 Solana 账户，或为某一条链导入私钥。私钥会存入系统钥匙串，绝不会写进 settings.json。"},
 	WalletUnlocked:               {English: "Unlocked", Chinese: "已解锁"},
 	WalletLocked:                 {English: "Locked", Chinese: "已锁定"},
 	WalletLock:                   {English: "Lock", Chinese: "锁定"},
@@ -477,6 +490,16 @@ var messages = map[Key]map[string]string{
 	WalletKeyPlaceholder:         {English: "64 hex characters", Chinese: "64 位十六进制字符"},
 	WalletImportNote:             {English: "The key is written to the system keychain, never to settings.json.", Chinese: "私钥会写入系统钥匙串，绝不会写进 settings.json。"},
 	WalletNewTitle:               {English: "Save this private key", Chinese: "请保存这个私钥"},
+	WalletNewTitleMany:           {English: "Save these private keys", Chinese: "请保存这些私钥"},
+	WalletSwitch:                 {English: "Wallet", Chinese: "钱包"},
+	WalletImportInto:             {English: "Import a private key into %s", Chinese: "向 %s 导入私钥"},
+	WalletImportChain:            {English: "This key is for %s. Switch chain above to import a different one.", Chinese: "这把私钥属于 %s。要导入其他链，请先在上方切换。"},
+	WalletNoChain:                {English: "%s has no %s account", Chinese: "%s 还没有 %s 账户"},
+	WalletNoChainWhy:             {English: "Import a key for this chain below, or create a new wallet to generate one.", Chinese: "在下方为这条链导入私钥，或新建一个钱包来生成。"},
+	WalletSolanaKeyLabel:         {English: "Solana secret key", Chinese: "Solana 私钥"},
+	WalletSolanaKeyPlaceholder:   {English: "base58 64-byte keypair", Chinese: "base58 编码的 64 字节密钥对"},
+	WalletSolanaImportNote:       {English: "Phantom and solana-keygen export a base58 64-byte keypair. A JSON array of those 64 bytes, or a 32-byte seed, also works. The key is written to the system keychain, never to settings.json.", Chinese: "Phantom 和 solana-keygen 导出的是 base58 编码的 64 字节密钥对。64 字节的 JSON 数组或 32 字节种子也可以。私钥会写入系统钥匙串，绝不会写进 settings.json。"},
+	WalletSolanaNote:             {English: "The key is in the system keychain. Sending a Solana transaction is not wired in this version.", Chinese: "私钥在系统钥匙串里。此版本还不能发送 Solana 交易。"},
 	WalletRevealTitle:            {English: "Private key for %s", Chinese: "%s 的私钥"},
 	WalletKeyWarning:             {English: "Save it now. Anyone who has it controls the account.", Chinese: "请立即保存。任何拿到它的人都能控制这个账户。"},
 	WalletRevealWarning:          {English: "Anyone who sees this key controls the account.", Chinese: "任何看到这个私钥的人都能控制这个账户。"},
@@ -524,16 +547,19 @@ var messages = map[Key]map[string]string{
 	ApproveWalletWarning:         {English: "This transfer comes from your own wallet. Check the recipient and the amount before you approve.", Chinese: "这笔转账来自你自己的钱包。批准前请核对收款账户和金额。"},
 
 	PasskeyTitle:          {English: "Passkey wallet", Chinese: "Passkey 钱包"},
-	PasskeyBadge:          {English: "NEAR + EVM", Chinese: "NEAR + EVM"},
-	PasskeyBody:           {English: "One passkey, held by your device or password manager, controls a NEAR account and an EVM smart account at the same address on every EVM chain.", Chinese: "一个由设备或密码管理器保管的 Passkey，控制一个 NEAR 账户，以及在所有 EVM 链上地址相同的 EVM 智能账户。"},
+	PasskeyBadge:          {English: "NEAR + EVM + Solana", Chinese: "NEAR + EVM + Solana"},
+	PasskeyBody:           {English: "One passkey, held by your device or password manager, controls a NEAR account, an EVM smart account at the same address on every EVM chain, and a Solana vault.", Chinese: "一个由设备或密码管理器保管的 Passkey，控制一个 NEAR 账户、在所有 EVM 链上地址相同的 EVM 智能账户，以及一个 Solana 金库。"},
 	PasskeyCreate:         {English: "Create passkey", Chinese: "创建 Passkey"},
 	PasskeyWaiting:        {English: "Waiting for your passkey…", Chinese: "等待 Passkey 确认…"},
 	PasskeyFine:           {English: "The private key never leaves the authenticator. Crypto Panel stores only the public key.", Chinese: "私钥不会离开认证器。Crypto Panel 只保存公钥。"},
-	PasskeyCreated:        {English: "Passkey created. Its NEAR account is ready to be funded.", Chinese: "Passkey 已创建。其 NEAR 账户可以充值了。"},
+	PasskeyCreated:        {English: "Passkey created. Its NEAR account can be funded. The Solana vault is not created on chain yet.", Chinese: "Passkey 已创建。其 NEAR 账户可以充值。Solana 金库尚未在链上创建。"},
 	PasskeyFailed:         {English: "The passkey ceremony failed:", Chinese: "Passkey 流程失败："},
 	PasskeyUnavailable:    {English: "Passkeys are unavailable in this build.", Chinese: "此版本无法使用 Passkey。"},
 	PasskeyNearAccount:    {English: "NEAR account", Chinese: "NEAR 账户"},
 	PasskeyEVMAccount:     {English: "EVM account", Chinese: "EVM 账户"},
+	PasskeyEVMNote:        {English: "Sending from this smart account needs a bundler and is not wired.", Chinese: "从这个智能账户发送需要 bundler，当前尚未接入。"},
+	PasskeySolanaAccount:  {English: "Solana vault", Chinese: "Solana 金库"},
+	PasskeySolanaNote:     {English: "LazorKit v1 vault on Solana mainnet, derived from this passkey. Creating the account and sending SOL are not wired — do not send funds here yet.", Chinese: "由这把 Passkey 推导出的 Solana 主网 LazorKit v1 金库。创建账户和发送 SOL 都尚未接入——先不要往这里转账。"},
 	PasskeyDeriving:       {English: "Reading from the factory…", Chinese: "正在从工厂合约读取…"},
 	PasskeyMainnetOnly:    {English: "The NEAR passkey wallet contract is on mainnet. Switch to NEAR mainnet to create or send.", Chinese: "NEAR Passkey 钱包合约部署在主网。请切换到 NEAR 主网后再创建或发送。"},
 	PasskeyDeploy:         {English: "Create account", Chinese: "创建账户"},
@@ -550,8 +576,8 @@ var messages = map[Key]map[string]string{
 	PasskeyForgetTitle:    {English: "Forget this passkey?", Chinese: "移除此 Passkey？"},
 	PasskeyForgetBody:     {English: "Crypto Panel will stop watching its accounts. The passkey itself stays in your device or password manager.", Chinese: "Crypto Panel 将不再监视它的账户。Passkey 本身仍保留在设备或密码管理器中。"},
 	PasskeySettingsTitle:  {English: "Passkey wallet", Chinese: "Passkey 钱包"},
-	PasskeySettingsBody:   {English: "Create a passkey that owns a NEAR account and an EVM smart account.", Chinese: "创建一个同时拥有 NEAR 账户和 EVM 智能账户的 Passkey。"},
-	PasskeySettingsHave:   {English: "Controlled by the passkey for %s.", Chinese: "由 %s 的 Passkey 控制。"},
+	PasskeySettingsBody:   {English: "Create a passkey that owns a NEAR account, an EVM smart account, and a Solana vault.", Chinese: "创建一个同时拥有 NEAR 账户、EVM 智能账户和 Solana 金库的 Passkey。"},
+	PasskeySettingsHave:   {English: "Controlled by the passkey for %s, plus an EVM smart account and a Solana vault.", Chinese: "由 %s 的 Passkey 控制，同时还有一个 EVM 智能账户和一个 Solana 金库。"},
 
 	AuthTouchID:      {English: "Touch ID", Chinese: "触控 ID"},
 	AuthFaceID:       {English: "Face ID", Chinese: "面容 ID"},

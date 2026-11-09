@@ -15,9 +15,10 @@ JavaScript，页面是数据，钥匙留在系统钥匙串，每一次签名都�
 这次黑客松把 NEAR 接成第一条能真正签名、能连接网页应用的链：测试网 NEAR 钱包、
 原生 NEAR 批准窗、受限的 function-call access key、隔离 WebView 里的
 `window.nearWallet` 桥、只跑 `dry: true` 的 NEAR Intents 报价，以及一个真正的
-WebAuthn Passkey 钱包：同一把 Passkey 控制一个 NEAR 主网 `0s…` 账户和一个在所有
-EVM 链上地址相同的 ERC-4337 智能账户。Passkey 的私钥留在认证器里，NEAR 交易由
-钱包自己的中继账户代付 gas。
+WebAuthn Passkey 钱包：同一把 Passkey 控制一个 NEAR 主网 `0s…` 账户、一个在所有
+EVM 链上地址相同的 ERC-4337 智能账户，以及一个 Solana 主网上的 LazorKit v1
+金库地址。Passkey 的私钥留在认证器里。NEAR 交易由钱包自己的中继账户代付 gas；
+EVM 发送和 Solana 金库的创建、发送都还没有接入。
 
 ## The hackathon slice
 
@@ -33,11 +34,13 @@ EVM 链上地址相同的 ERC-4337 智能账户。Passkey 的私钥留在认证�
   works once the repository is public and both tags are pushed.
 
 What the slice deliberately does **not** do: no mnemonic/HD wallet, no Solana
-signing, no Phoenix/Hyperliquid, no Chain Signatures, no mainnet Intents
-without the user's explicit consent, no loosening of the plugin sandbox, and
-no auto-approval. The Touch ID prompt is a system check, **not** the Passkey
-wallet: that is a separate WebAuthn credential, and its EVM smart account is
-shown and watched but not yet used to send (that needs a bundler).
+transaction signing, no Phoenix/Hyperliquid, no Chain Signatures, no mainnet
+Intents without the user's explicit consent, no loosening of the plugin
+sandbox, and no auto-approval. The Touch ID prompt is a system check, **not**
+the Passkey wallet: that is a separate WebAuthn credential. Its EVM smart
+account is shown and watched but not yet used to send (that needs a bundler).
+Its Solana address is the LazorKit v1 vault derived from the same P-256 key;
+creating that vault and sending SOL are not wired.
 
 ## What it is
 
@@ -59,15 +62,19 @@ shown and watched but not yet used to send (that needs a bundler).
   localhost) in an isolated web view with a small injected NEAR wallet bridge.
   The page can ask to connect and to sign; it cannot read a key, call a Go
   method, open a window, download a file, or draw an approval.
-- **The wallet is native.** EVM and NEAR accounts are created or imported on
-  the Wallet page; their keys live in the OS keychain and never reach a plugin
-  or a web page. Signing is only ever the shell's own decoded approval.
+- **The wallet is native.** A wallet is a named container, not a single key.
+  Creating one prepares an EVM account, a NEAR implicit account, and a Solana
+  account together. Their keys live in the OS keychain and never reach a
+  plugin or a web page. The Wallet page shows the account for the network
+  that is selected. Importing a private key targets that wallet and that
+  chain. Signing is only ever the shell's own decoded approval.
 - **A passkey wallet.** One WebAuthn passkey, created in the system browser,
-  controls a NEAR mainnet deterministic account (`0s…`, NEP-616) and an
-  ERC-4337 smart account at the same address on every EVM chain. The NEAR
-  account's transactions are relayed by the wallet's own unlocked NEAR
-  account; the passkey signs in the browser and its private key never enters
-  the app.
+  controls a NEAR mainnet deterministic account (`0s…`, NEP-616), an ERC-4337
+  smart account at the same address on every EVM chain, and a Solana vault
+  derived from the same P-256 key. The NEAR account's transactions are relayed
+  by the wallet's own unlocked NEAR account; the passkey signs in the browser
+  and its private key never enters the app. EVM send and Solana vault creation
+  are not wired.
 - **A read-only local API** (opt-in): a loopback HTTP server with a bearer
   token, so a local agent can read the portfolio and the installed apps. It
   cannot sign, approve or install.
@@ -255,6 +262,19 @@ separate credential, created on the Wallet page:
   v0.7) at the same address on every EVM chain. The app reads the
   counterfactual address from the factory and watches it. Sending from the EVM
   account needs a bundler and is **not** wired in this build.
+- **Solana vault**: the same P-256 key determines a LazorKit v1 vault PDA on
+  Solana mainnet. The program is
+  `LazorjRFNavitUaBu5m3WaNPjU1maipvSW2rZfAFAKi` (deployed). The user seed is
+  SHA-256 of a domain label and the compressed public key; the wallet PDA is
+  `["wallet", seed]` and the vault, which is the address shown, is
+  `["vault", wallet]`. A passkey cannot be an ed25519 Solana address. The
+  app stores the credential id and the public key and derives the vault; it
+  does not submit `createWallet`, so the vault is not created and must not be
+  funded yet. The program does not bind that seed to the passkey, and v1 may
+  refuse new creates once its sunset binary is deployed. v2 mainnet
+  (`LazorFroi…`, seeds prefixed `lk2:`) was not deployed when this was
+  written. Devnet v1 is a different program id and a different vault; the
+  panel's Solana network is mainnet. Sending SOL is **not** wired.
 
 The recovery rules are these, and they are not optional:
 
@@ -286,10 +306,13 @@ network access to the NEAR testnet RPC and 1Click.
 2. **Switch to NEAR Testnet.** Settings → Chain type → NEAR → Chain → NEAR
    Testnet. The sidebar footer shows the selected network.
 
-3. **Create or import an account.** Wallet → **New NEAR account**. The key is
-   shown once; save it. The account ID is the 64-hex implicit account. To use
-   a named testnet account instead, create it with `near-cli` or a testnet
-   wallet and import its `ed25519:` key on the same page.
+3. **Create or import a wallet.** Wallet → **New wallet**. That prepares an
+   EVM key, a NEAR implicit account, and a Solana key together, and shows each
+   secret once; save them. There is no seed phrase. Switch the chain control
+   on the page (or the network in Settings) to see that wallet's account on
+   NEAR. To use a named testnet account instead, create it with `near-cli` or
+   a testnet wallet, switch to NEAR, and import its `ed25519:` key into the
+   open wallet.
 
 4. **Fund it.** Open <https://near-faucet.io>, enter the 64-hex account ID,
    and request testnet NEAR. With `near-cli`, the faucet command is
@@ -341,12 +364,13 @@ network access to the NEAR testnet RPC and 1Click.
     relayer. Switch to NEAR mainnet, import and unlock that account, then
     Wallet → **Create passkey**. The system browser opens a local page and the
     platform authenticator creates the credential. The card shows the
-    deterministic `0s…` NEAR account and the EVM smart account address the
-    same key owns. **Create account** deploys the NEAR account through the
-    relayer; **Sign and send** approves a transfer, then asks the passkey to
-    sign it in the browser. The approval window shows the inner transfer, not
-    the relayer's envelope; the passkey's signature covers exactly that
-    transfer.
+    deterministic `0s…` NEAR account. Switch chain to see the EVM smart
+    account and the Solana vault the same key determines. **Create account**
+    deploys the NEAR account through the relayer; **Sign and send** approves a
+    transfer, then asks the passkey to sign it in the browser. The approval
+    window shows the inner transfer, not the relayer's envelope; the passkey's
+    signature covers exactly that transfer. Solana shows the vault address and
+    does not send.
 
 11. **Ask a plugin for a NEAR signature (optional).** Install a plugin whose
     manifest grants `sign` and a NEAR chain; its `host.requestNearSign` opens
@@ -395,10 +419,13 @@ Other useful tests: `TestDappOrigin` (https / loopback only),
 
 ## Known limitations
 
-- **No mnemonic / HD wallet.** NEAR keys are ed25519 key pairs; EVM keys are
-  raw hex. A mnemonic is not an acceptance item for this slice.
-- **Solana is read-only.** EVM and Solana signing are not part of this slice;
-  only NEAR signs.
+- **No mnemonic / HD wallet.** A wallet is a named group of independent keys:
+  NEAR and Solana are ed25519 key pairs, EVM is a raw secp256k1 hex key. A
+  mnemonic is not an acceptance item for this slice.
+- **Solana keys are held, not used to sign.** Creating or importing a Solana
+  account puts an ed25519 key in the keychain and the Wallet page can show
+  its balance. Building and sending a Solana transaction is not part of this
+  slice; only NEAR signs.
 - **Named NEAR accounts are imported, not created.** The app creates implicit
   accounts; a named account's key must be imported.
 - **The DApp bridge is a small custom `window.nearWallet`**, not the full
@@ -410,9 +437,11 @@ Other useful tests: `TestDappOrigin` (https / loopback only),
 - **The passkey wallet is NEAR-mainnet-only for signing.** The NEAR wallet
   contract is deployed on mainnet; testnet has no matching contract. The EVM
   smart account address is derived and watched, but sending from it needs an
-  ERC-4337 bundler and is not wired. Recovery depends on whether the passkey
-  is synced and on having a second key; a device-bound passkey can be lost,
-  and a passkey cannot be exported.
+  ERC-4337 bundler and is not wired. The Solana vault address is derived from
+  the LazorKit v1 program and watched, but the account is not created and
+  sending is not wired; do not fund that address yet. Recovery depends on
+  whether the passkey is synced and on having a second key; a device-bound
+  passkey can be lost, and a passkey cannot be exported.
 - **macOS-first.** The system check is macOS-only; the app builds elsewhere
   but the presence check is unavailable.
 - **No hardware wallet or menu bar panel.** Those are later milestones.
@@ -448,8 +477,9 @@ go run ./tools/icon    # regenerate resources/icon.png
 
 To write an app, see [`docs/plugins.md`](docs/plugins.md); to publish and sign
 one, see [`docs/store.md`](docs/store.md). To try the wallet,
-open **Wallet** and choose **New account** (EVM) or **New NEAR account**; the
-key is shown once, so save it.
+open **Wallet** and choose **New wallet**. That creates an EVM, NEAR, and
+Solana account together and shows each key once, so save them. The chain
+control on the page chooses which account is shown.
 
 ## Milestones
 
@@ -461,8 +491,8 @@ key is shown once, so save it.
 | **M3** | Native wallet: hot wallet in the OS keychain, decoded approvals, `host.requestSign` — **done** |
 | **Hackathon** | NEAR wallet and approvals, function-call key limits, DApp web view and bridge, plugin NEAR requests, Intents dry quote — **this slice** |
 | **M4 (part)** | Read-only local agent API: loopback HTTP, bearer token in the keychain, `/v0/portfolio`, `/v0/plugins`, `POST /v0/plugins/{id}/refresh` — **done** |
-| **Passkey** | WebAuthn passkey wallet: NEP-616 NEAR account, NEP-591 contract, relayed deploy and send; the same key's ERC-4337 address on EVM — **done** |
-| **Next** | EVM passkey sending through a bundler, hardware wallet, menu bar panel |
+| **Passkey** | WebAuthn passkey wallet: NEP-616 NEAR account, NEP-591 contract, relayed deploy and send; the same key's ERC-4337 address on EVM; a LazorKit v1 Solana vault address derived from that key (create and send not wired) — **done** |
+| **Next** | EVM passkey sending through a bundler, Solana passkey vault creation, hardware wallet, menu bar panel |
 
 ## License
 

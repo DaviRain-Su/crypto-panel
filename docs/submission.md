@@ -70,7 +70,7 @@
 | 时间 | 画面 | 旁白 |
 |---|---|---|
 | 0–10s | 打开 crypto-panel，侧边栏扫过 Portfolio / Wallet / Apps / Intents / DApp | 用链上产品时，你不必先搞懂钱包和哪条链。这个桌面壳把钥匙和批准留在本机，链在背后。 |
-| 10–25s | Wallet → New NEAR account，显示 64 位隐式账户和余额 | 新建一个 NEAR 测试网账户。钥匙在系统钥匙串里，插件和网页都看不到。 |
+| 10–25s | Wallet → New wallet，切到 NEAR，显示 64 位隐式账户和余额 | 新建钱包会同时准备 EVM、NEAR 和 Solana 的钥匙。切到 NEAR 看到隐式账户。钥匙在系统钥匙串里，插件和网页都看不到。 |
 | 25–45s | Send NEAR → 输入 `0.1` → 批准窗（网络、账户、接收方、NEAR 和 yoctoNEAR、来源）→ Approve → 点 View transaction 打开 nearblocks | 转一笔测试网 NEAR。壳自己解码并画出批准窗；批准后签名广播，拒绝就什么都不发。 |
 | 45–60s | DApp → 打开 `http://localhost:8080` → Connect wallet → Send 0.01 NEAR → 原生批准窗 | 网页只能申请。它拿不到钥匙，也不能自己点通过；批准窗是壳画的。 |
 | 60–75s | 用受限的 function-call key 触发一次超额或未授权方法，界面显示拒绝 | 如果钥匙被限制在某个合约、某些方法和额度内，超出的请求在弹窗前就被拒绝。 |

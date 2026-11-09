@@ -140,15 +140,19 @@ func TestNearWalletPageShowsAccounts(t *testing.T) {
 	a.createNearAccount()
 	acc := a.settings.NearWallet[0]
 	a.newKey, a.newKeyAddr = "", ""
+	a.settings.NetworkID = "near:testnet"
 	a.route = routeWallet
 	tt := ui.NewTester(a.view, windowWidth, windowHeight)
 	for _, want := range []string{
-		"NEAR accounts", acc.AccountID, acc.PublicKey,
-		"Import a NEAR key", "ed25519 private key", "Unlocked",
+		acc.AccountID, acc.PublicKey, "Unlocked",
+		"ed25519", "Account ID (optional)",
 	} {
 		if !tt.HasText(want) {
 			t.Errorf("missing %q in %q", want, tt.Texts())
 		}
+	}
+	if tt.HasText("EVM accounts") || tt.HasText("NEAR accounts") {
+		t.Fatalf("the page is still split by chain section: %q", tt.Texts())
 	}
 }
 

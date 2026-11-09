@@ -3,6 +3,7 @@ package app
 import (
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"strings"
 
 	"github.com/egoist/mygo"
@@ -16,7 +17,7 @@ import (
 // key enters the app only through Import or Create, goes straight to the OS
 // keychain, and is read back only while its account is unlocked.
 
-// walletAccounts returns the wallet's accounts in stored order.
+// walletAccounts returns every container's EVM account, in stored order.
 func (a *App) walletAccounts() []wallet.Account {
 	return append([]wallet.Account(nil), a.settings.Wallet...)
 }
@@ -24,12 +25,17 @@ func (a *App) walletAccounts() []wallet.Account {
 // walletAddresses lists the wallet's accounts as watched addresses, for
 // host.accounts.
 func (a *App) walletAddresses() []wallet.Address {
-	out := make([]wallet.Address, 0, len(a.settings.Wallet)+len(a.settings.NearWallet))
-	for _, acc := range a.settings.Wallet {
-		out = append(out, wallet.Address{Addr: acc.Addr, Label: acc.Label})
-	}
-	for _, acc := range a.settings.NearWallet {
-		out = append(out, wallet.Address{Addr: acc.AccountID, Label: acc.Label})
+	out := make([]wallet.Address, 0, len(a.settings.Wallets)*3)
+	for _, w := range a.settings.Wallets {
+		if w.EVM != nil {
+			out = append(out, wallet.Address{Addr: w.EVM.Addr, Label: w.EVM.Label})
+		}
+		if w.Near != nil {
+			out = append(out, wallet.Address{Addr: w.Near.AccountID, Label: w.Near.Label})
+		}
+		if w.Solana != nil {
+			out = append(out, wallet.Address{Addr: w.Solana.Address, Label: w.Solana.Label})
+		}
 	}
 	return out
 }
@@ -62,13 +68,20 @@ func (a *App) walletUnlocked() int {
 			}
 		}
 	}
+	if a.solanaKeyring != nil {
+		for _, acc := range a.settings.SolanaAccounts() {
+			if a.solanaKeyring.Unlocked(acc.Address) {
+				n++
+			}
+		}
+	}
 	return n
 }
 
 // walletSummary heads the wallet page. The passkey counts as an account
 // that is always ready: its key is in the authenticator, not in memory.
 func (a *App) walletSummary() string {
-	n := len(a.settings.Wallet) + len(a.settings.NearWallet)
+	n := len(a.settings.Wallet) + len(a.settings.NearWallet) + len(a.settings.SolanaAccounts())
 	unlocked := a.walletUnlocked()
 	if a.settings.Passkey != nil {
 		n++
@@ -100,30 +113,58 @@ func (a *App) walletFailure(err error) string {
 	}
 }
 
-// createWalletAccount makes a new key and shows it once, so the user can
-// write it down. The key is already in the keychain by then.
+// createWalletAccount makes a new wallet and a fresh key for every chain the
+// panel can sign for: EVM (secp256k1), NEAR (ed25519 implicit) and Solana
+// (ed25519). The keys are already in the keychain, and they are shown once
+// so the user can write them down. There is no seed phrase tying them together.
 func (a *App) createWalletAccount() {
-	if a.keyring == nil {
+	if a.keyring == nil || a.nearKeyring == nil || a.solanaKeyring == nil {
 		a.walletErr = a.t(i18n.WalletUnavailable)
 		a.invalidate()
 		return
 	}
-	acc, err := a.keyring.Create("")
+	evm, err := a.keyring.Create("")
 	if err != nil {
 		a.walletErr = a.walletFailure(err)
 		a.invalidate()
 		return
 	}
-	a.settings.Wallet = append(a.settings.Wallet, acc)
+	near, err := a.nearKeyring.Create("")
+	if err != nil {
+		_ = a.keyring.Remove(evm.Addr)
+		a.walletErr = a.walletFailure(err)
+		a.invalidate()
+		return
+	}
+	sol, err := a.solanaKeyring.Create("")
+	if err != nil {
+		_ = a.keyring.Remove(evm.Addr)
+		_ = a.nearKeyring.Remove(near.AccountID)
+		a.walletErr = a.walletFailure(err)
+		a.invalidate()
+		return
+	}
+	name := fmt.Sprintf("Wallet %d", len(a.settings.Wallets)+1)
+	container := wallet.Container{
+		ID:     wallet.NewID(),
+		Name:   name,
+		EVM:    &evm,
+		Near:   &near,
+		Solana: &sol,
+	}
+	a.settings.Wallets = append(a.settings.Wallets, container)
+	a.settings.ActiveWallet = container.ID
 	a.settings = a.settings.Validate()
 	a.save()
 	a.walletErr = ""
-	a.walletNotice = a.t(i18n.WalletCreated, wallet.Short(acc.Addr))
+	a.walletNotice = a.t(i18n.WalletCreated, name)
 	a.revealedKey, a.revealedAddr = "", ""
-	if key, ok := a.keyring.Key(acc.Addr); ok {
-		a.newKey = hex.EncodeToString(ethcrypto.FromECDSA(key))
-		a.newKeyAddr = acc.Addr
+	a.shownKeys = []shownKey{
+		{Chain: "EVM", Addr: evm.Addr, Key: evmKeyHex(a, evm.Addr)},
+		{Chain: "NEAR", Addr: near.AccountID, Key: nearKeyText(a, near.AccountID)},
+		{Chain: "Solana", Addr: sol.Address, Key: solanaKeyText(a, sol.Address)},
 	}
+	a.newKey, a.newKeyAddr = a.shownKeys[0].Key, evm.Addr
 	a.touch()
 	a.requestRefresh()
 	a.invalidate()
@@ -146,7 +187,7 @@ func (a *App) importWalletAccount() {
 		a.invalidate()
 		return
 	}
-	a.settings.Wallet = append(a.settings.Wallet, acc)
+	a.placeEVM(acc)
 	a.settings = a.settings.Validate()
 	a.draftKey, a.draftWalletLabel = "", ""
 	a.save()
@@ -185,20 +226,9 @@ func (a *App) removeWalletAccount(addr string) {
 			return
 		}
 	}
-	kept := a.settings.Wallet[:0]
-	for _, acc := range a.settings.Wallet {
-		if acc.Addr != addr {
-			kept = append(kept, acc)
-		}
-	}
-	a.settings.Wallet = kept
+	a.dropChainAccount(wallet.EVM, addr)
 	a.settings = a.settings.Validate()
-	if a.revealedAddr == addr {
-		a.revealedKey, a.revealedAddr = "", ""
-	}
-	if a.newKeyAddr == addr {
-		a.newKey, a.newKeyAddr = "", ""
-	}
+	a.clearShown(addr)
 	a.save()
 	a.walletErr = ""
 	a.walletNotice = a.t(i18n.WalletRemoved, name)
@@ -251,9 +281,13 @@ func (a *App) lockAll() {
 	if a.nearKeyring != nil {
 		a.nearKeyring.Lock()
 	}
+	if a.solanaKeyring != nil {
+		a.solanaKeyring.Lock()
+	}
 	a.authBusy = ""
 	a.revealedKey, a.revealedAddr = "", ""
 	a.newKey, a.newKeyAddr = "", ""
+	a.shownKeys = nil
 	a.walletErr = ""
 	a.invalidate()
 }
@@ -288,6 +322,7 @@ func (a *App) finishReveal(addr string) {
 	a.revealedAddr = addr
 	a.revealedKey = hex.EncodeToString(ethcrypto.FromECDSA(key))
 	a.newKey, a.newKeyAddr = "", ""
+	a.shownKeys = nil
 	a.walletErr = ""
 	a.invalidate()
 }
@@ -296,6 +331,7 @@ func (a *App) finishReveal(addr string) {
 func (a *App) hideKey() {
 	a.revealedKey, a.revealedAddr = "", ""
 	a.newKey, a.newKeyAddr = "", ""
+	a.shownKeys = nil
 	a.invalidate()
 }
 

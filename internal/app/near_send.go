@@ -36,6 +36,11 @@ func (a *App) sendNear() {
 		return
 	}
 	from := a.nearSendFrom
+	if from == "" {
+		if w, _, ok := a.activeKeyWallet(); ok && w.Near != nil {
+			from = w.Near.AccountID
+		}
+	}
 	if from == "" && len(a.settings.NearWallet) > 0 {
 		from = a.settings.NearWallet[0].AccountID
 	}

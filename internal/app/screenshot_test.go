@@ -214,8 +214,8 @@ func TestScreenshots(t *testing.T) {
 	tt.Key(0, ui.KeyDown)
 	save(t, tt, "new-intents-picker")
 
-	// The passkey wallet: one credential with a NEAR account and an EVM smart
-	// account.
+	// The passkey wallet on NEAR mainnet: the same credential's NEAR account.
+	// EVM and Solana are the other chain positions of that passkey.
 	a = newTestApp(t)
 	auth := newSoftAuthenticator(t)
 	a.settings.Passkey = softPasskey(t, auth)

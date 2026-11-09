@@ -134,7 +134,10 @@ func TestCreatePasskeyStoresAndWatchesTheAccounts(t *testing.T) {
 	if evm.calls == 0 {
 		t.Fatal("the factory was not read")
 	}
-	if !a.settings.Has(pk.NEARAccount) || !a.settings.Has(pk.EVMAddress) {
+	if pk.SolanaAddress == "" {
+		t.Fatal("the Solana vault was not derived")
+	}
+	if !a.settings.Has(pk.NEARAccount) || !a.settings.Has(pk.EVMAddress) || !a.settings.Has(pk.SolanaAddress) {
 		t.Fatalf("accounts = %+v", a.settings.Accounts)
 	}
 	if a.passkeyNotice == "" || a.passkeyErr != "" {
@@ -285,7 +288,7 @@ func TestPasskeyCardView(t *testing.T) {
 
 	tt := ui.NewTester(a.view, windowWidth, windowHeight)
 	for _, want := range []string{
-		"Passkey wallet", "NEAR + EVM", "NEAR account", "EVM account",
+		"Passkey wallet", "NEAR + EVM + Solana", "NEAR account",
 		"Create account", "Sign and send",
 	} {
 		if !tt.HasText(want) {
@@ -316,6 +319,9 @@ func TestValidatePasskeyKeepsAValidOne(t *testing.T) {
 	got := s.Validate().Passkey
 	if got == nil || got.NEARAccount != pk.NEARAccount || got.PublicKey != pk.PublicKey {
 		t.Fatalf("passkey = %+v", got)
+	}
+	if got.SolanaAddress == "" {
+		t.Fatal("the Solana vault was not derived")
 	}
 }
 
