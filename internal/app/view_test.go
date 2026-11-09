@@ -84,6 +84,70 @@ func TestViewSidebarCollapses(t *testing.T) {
 	}
 }
 
+func TestViewSidebarRailCentersIcons(t *testing.T) {
+	a := newTestApp(t)
+	a.settings.SidebarCollapsed = true
+	tt := ui.NewTester(a.view, windowWidth, windowHeight)
+	info, ok := tt.AccessByRole(ui.RoleButton, "Settings")
+	if !ok {
+		t.Fatal("no Settings control")
+	}
+	cx := info.Bounds.X + info.Bounds.W/2
+	// The rail is 64 DIPs. The control should sit on its center, and be
+	// large enough to hold a 22pt icon.
+	if cx < 26 || cx > 38 {
+		t.Fatalf("settings rail control not centered: %+v", info.Bounds)
+	}
+	if info.Bounds.W < 40 || info.Bounds.H < 40 {
+		t.Fatalf("settings rail control too small: %+v", info.Bounds)
+	}
+}
+
+func TestViewSidebarSelectionUsesAccent(t *testing.T) {
+	a := newTestApp(t)
+	tt := ui.NewTester(a.view, windowWidth, windowHeight)
+	info, ok := tt.AccessByRole(ui.RoleButton, "Portfolio")
+	if !ok {
+		t.Fatal("no Portfolio control")
+	}
+	tt.ClickAt(info.Bounds.X+4, info.Bounds.Y+info.Bounds.H/2)
+	tt.Frame()
+	info, ok = tt.AccessByRole(ui.RoleButton, "Portfolio")
+	if !ok {
+		t.Fatal("Portfolio control disappeared")
+	}
+	// Sample the row's fill, in from the right edge, clear of the label.
+	x := int(info.Bounds.X + info.Bounds.W - 6)
+	y := int(info.Bounds.Y + info.Bounds.H/2)
+	r, g, b, _ := tt.Image().At(x, y).RGBA()
+	// Accent in light mode is #4e6b52: green, darker than the paper sidebar.
+	if g>>8 < 0x40 || g < r || g < b {
+		t.Fatalf("focused selection is not the accent at (%d,%d): #%02x%02x%02x", x, y, r>>8, g>>8, b>>8)
+	}
+}
+
+func TestViewSidebarKeys(t *testing.T) {
+	a := newTestApp(t)
+	tt := ui.NewTester(a.view, windowWidth, windowHeight)
+	info, ok := tt.AccessByRole(ui.RoleButton, "Portfolio")
+	if !ok {
+		t.Fatal("no Portfolio control")
+	}
+	tt.ClickAt(info.Bounds.X+info.Bounds.W/2, info.Bounds.Y+info.Bounds.H/2)
+	tt.Key(0, ui.KeyDown)
+	if a.route.kind != "wallet" {
+		t.Fatalf("down from Portfolio went to %q", a.route.kind)
+	}
+	tt.Key(0, ui.KeyEnd)
+	if a.route.kind != "settings" {
+		t.Fatalf("end went to %q", a.route.kind)
+	}
+	tt.Key(0, ui.KeyHome)
+	if a.route.kind != "" {
+		t.Fatalf("home went to %q", a.route.kind)
+	}
+}
+
 func TestViewShowsFiatValues(t *testing.T) {
 	a := newTestApp(t)
 	a.settings.Accounts = []wallet.Address{{Addr: viewAddr}}

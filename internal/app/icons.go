@@ -1,34 +1,102 @@
 package app
 
-import "github.com/egoist/mygo/ui"
+import (
+	"embed"
 
-// Icons drawn on a 24-point grid, in the color of the text, in a 1.75-point
-// stroke.
+	"github.com/egoist/mygo/plugins/sfsymbols"
+	"github.com/egoist/mygo/ui"
+)
 
-func strokeIcon(paths string) *ui.SVG {
-	return ui.MustParseSVG([]byte(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">` + paths + `</svg>`))
+// Icons are one set. On macOS, sfsymbols.Symbol draws the system SF Symbol
+// at the size and weight asked for. Everywhere else, and on a macOS that
+// lacks that symbol, it draws the Lucide SVG embedded beside this file
+// (icons/LICENSE). ui.SidebarItem cannot host a Symbol — it only takes an
+// SVG, at a fixed 16pt — so the sidebar builds its own rows and calls
+// drawNav, which is larger and heavier on the icon rail.
+
+//go:embed icons/*.svg
+var iconFiles embed.FS
+
+// glyph is one icon: an SF Symbol name and the Lucide document that stands
+// in for it.
+type glyph struct {
+	symbol string
+	svg    *ui.SVG
+}
+
+func mustGlyph(symbol, file string) *glyph {
+	b, err := iconFiles.ReadFile("icons/" + file)
+	if err != nil {
+		panic("app: icon " + file + ": " + err.Error())
+	}
+	return &glyph{symbol: symbol, svg: ui.MustParseSVG(b)}
 }
 
 var (
-	iconPulse       = strokeIcon(`<path d="M3 12h4l3-7 4 14 3-7h4"/>`)
-	iconChart       = strokeIcon(`<path d="M3 3v18h18"/><path d="m7 14 4-5 3 3 5-7"/>`)
-	iconWallet      = strokeIcon(`<path d="M19 7V5a2 2 0 0 0-2-2H5a2 2 0 0 0 0 4h15a1 1 0 0 1 1 1v4h-3a2 2 0 0 0 0 4h3a1 1 0 0 0 1-1v-2"/><path d="M3 5v14a2 2 0 0 0 2 2h15a1 1 0 0 0 1-1v-4"/>`)
-	iconLock        = strokeIcon(`<rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>`)
-	iconGrid        = strokeIcon(`<rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="3" width="7" height="7" rx="2"/><rect x="3" y="14" width="7" height="7" rx="2"/><rect x="14" y="14" width="7" height="7" rx="2"/>`)
-	iconGear        = strokeIcon(`<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>`)
-	iconSparkle     = strokeIcon(`<path d="M12 3l1.8 4.9 4.9 1.8-4.9 1.8L12 16.4l-1.8-4.9L5.3 9.7l4.9-1.8z"/><path d="M18.5 15.5l.7 1.9 1.9.7-1.9.7-.7 1.9-.7-1.9-1.9-.7 1.9-.7z"/>`)
-	iconRefresh     = strokeIcon(`<path d="M20.5 12a8.5 8.5 0 1 1-2.5-6"/><path d="M20.5 3.5V9H15"/>`)
-	iconTrash       = strokeIcon(`<path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>`)
-	iconTerminal    = strokeIcon(`<path d="m4 17 6-6-6-6"/><path d="M12 19h8"/>`)
-	iconStore       = strokeIcon(`<path d="M4 9.5 5.2 4h13.6L20 9.5"/><path d="M4 9.5a2.5 2.5 0 0 0 5 0 2.5 2.5 0 0 0 5 0 2.5 2.5 0 0 0 5 0"/><path d="M5 12v7.5h14V12"/><path d="M9.5 19.5V15h5v4.5"/>`)
-	iconShield      = strokeIcon(`<path d="M12 3 4.5 6v5.5c0 4.6 3.2 8.3 7.5 9.5 4.3-1.2 7.5-4.9 7.5-9.5V6z"/><path d="m9 12 2 2 4-4.5"/>`)
-	iconKey         = strokeIcon(`<circle cx="8" cy="15" r="4"/><path d="m10.8 12.2 8.7-8.7"/><path d="m16.5 6.5 2 2"/><path d="m13.5 9.5 2 2"/>`)
-	iconCopy        = strokeIcon(`<rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V6a2 2 0 0 1 2-2h9"/>`)
-	iconLockOpen    = strokeIcon(`<rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 7.5-2"/>`)
-	iconChevron     = strokeIcon(`<path d="m9 6 6 6-6 6"/>`)
-	iconSidebar     = strokeIcon(`<rect x="3" y="4" width="18" height="16" rx="3"/><path d="M9 4v16"/>`)
-	iconGlobe       = strokeIcon(`<circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3c2.5 2.5 4 5.6 4 9s-1.5 6.5-4 9c-2.5-2.5-4-5.6-4-9s1.5-6.5 4-9z"/>`)
-	iconClose       = strokeIcon(`<path d="m6 6 12 12"/><path d="m18 6-12 12"/>`)
-	iconSwap        = strokeIcon(`<path d="M4 8h13"/><path d="m14 5 3 3-3 3"/><path d="M20 16H7"/><path d="m10 13-3 3 3 3"/>`)
-	iconFingerprint = strokeIcon(`<path d="M12 11a2 2 0 0 0-2 2c0 2.5-.5 4.5-1.5 6"/><path d="M8.5 6.5A6 6 0 0 1 18 12c0 1.5-.2 3-.6 4.3"/><path d="M5.5 9A6 6 0 0 0 5 12c0 2.5-.4 4.6-1.2 6.5"/><path d="M12 7a5 5 0 0 0-5 5c0 2.2-.4 4.2-1.2 6"/><path d="M15.5 12c0 2.8-.4 5.2-1.2 7.2"/>`)
+	iconPulse       = mustGlyph("waveform.path.ecg", "activity.svg")
+	iconChart       = mustGlyph("chart.line.uptrend.xyaxis", "chart-line.svg")
+	iconWallet      = mustGlyph("wallet.bifold", "wallet.svg")
+	iconLock        = mustGlyph("lock", "lock.svg")
+	iconGrid        = mustGlyph("square.grid.2x2", "layout-grid.svg")
+	iconGear        = mustGlyph("gearshape", "cog.svg")
+	iconSparkle     = mustGlyph("sparkles", "sparkles.svg")
+	iconRefresh     = mustGlyph("arrow.clockwise", "refresh-cw.svg")
+	iconTrash       = mustGlyph("trash", "trash.svg")
+	iconTerminal    = mustGlyph("terminal", "terminal.svg")
+	iconStore       = mustGlyph("storefront", "store.svg")
+	iconShield      = mustGlyph("checkmark.shield", "shield-check.svg")
+	iconKey         = mustGlyph("key", "key.svg")
+	iconCopy        = mustGlyph("doc.on.doc", "copy.svg")
+	iconLockOpen    = mustGlyph("lock.open", "lock-open.svg")
+	iconChevronLeft = mustGlyph("chevron.left", "chevron-left.svg")
+	iconSidebar     = mustGlyph("sidebar.leading", "panel-left.svg")
+	iconGlobe       = mustGlyph("globe", "globe.svg")
+	iconClose       = mustGlyph("xmark", "x.svg")
+	iconSwap        = mustGlyph("arrow.left.arrow.right", "arrow-left-right.svg")
+	iconFingerprint = mustGlyph("touchid", "fingerprint-pattern.svg")
 )
+
+// allGlyphs is every icon the shell draws, for the test that they parsed.
+func allGlyphs() []*glyph {
+	return []*glyph{
+		iconPulse, iconChart, iconWallet, iconLock, iconGrid, iconGear,
+		iconSparkle, iconRefresh, iconTrash, iconTerminal, iconStore,
+		iconShield, iconKey, iconCopy, iconLockOpen, iconChevronLeft,
+		iconSidebar, iconGlobe, iconClose, iconSwap,
+		iconFingerprint,
+	}
+}
+
+// draw paints the icon size DIPs square in color. Larger sizes take a
+// slightly heavier SF Symbol weight; the Lucide fallback keeps its own stroke.
+func (g *glyph) draw(c *ui.Context, size float32, color ui.Color) {
+	w := sfsymbols.Regular
+	switch {
+	case size >= 22:
+		w = sfsymbols.Semibold
+	case size >= 18:
+		w = sfsymbols.Medium
+	}
+	g.paint(c, size, color, w, false)
+}
+
+// drawNav paints a sidebar icon. The rail uses a larger, heavier symbol
+// that fills its box; the expanded row uses a medium symbol at its natural
+// size, so the glyphs share one cap height beside their labels.
+func (g *glyph) drawNav(c *ui.Context, size float32, color ui.Color, rail bool) {
+	w := sfsymbols.Medium
+	if rail {
+		w = sfsymbols.Semibold
+	}
+	g.paint(c, size, color, w, !rail)
+}
+
+func (g *glyph) paint(c *ui.Context, size float32, color ui.Color, w sfsymbols.Weight, natural bool) {
+	if g == nil {
+		return
+	}
+	el := sfsymbols.Symbol(c, g.symbol).Size(size).Color(color).Weight(w).Fallback(g.svg)
+	if natural {
+		el.Natural()
+	}
+}

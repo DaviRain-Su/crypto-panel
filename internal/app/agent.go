@@ -141,7 +141,7 @@ func (a *App) agentRow(c *ui.Context) {
 	ui.Column(c).Gap(10).Padding(13, 16).Children(func() {
 		ui.Row(c).AlignItems(ui.Center).Gap(14).Children(func() {
 			ui.Box(c).Size(32, 32).Radius(9).Background(p.accentSoft).Center().Children(func() {
-				ui.Icon(c, iconTerminal).Size(17, 17).TextColor(p.accent)
+				iconTerminal.draw(c, 17, p.accent)
 			})
 			ui.Column(c).Grow(1).Gap(2).Children(func() {
 				ui.Text(c, a.t(i18n.AgentTitle)).FontSize(12.5).FontWeight(600).MaxLines(1)

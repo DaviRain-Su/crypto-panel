@@ -82,7 +82,7 @@ func (a *App) noRegistryStore(c *ui.Context) {
 	ui.Column(c).Gap(8).Padding(28).Center().Radius(12).
 		Background(p.card).Border(1, p.hairline).Margin(20, 0, 0, 0).Children(func() {
 		ui.Box(c).Size(44, 44).Radius(12).Background(p.accentSoft).Center().Children(func() {
-			ui.Icon(c, iconStore).Size(22, 22).TextColor(p.accent)
+			iconStore.draw(c, 22, p.accent)
 		})
 		ui.Text(c, a.t(i18n.StoreNoRegistry)).FontSize(15).FontWeight(700)
 		ui.Text(c, a.t(i18n.StoreNoRegistryWhy)).FontSize(12.5).TextColor(p.muted).
@@ -98,7 +98,7 @@ func (a *App) emptyStore(c *ui.Context) {
 	ui.Column(c).Gap(8).Padding(28).Center().Radius(12).
 		Background(p.card).Border(1, p.hairline).Margin(20, 0, 0, 0).Children(func() {
 		ui.Box(c).Size(44, 44).Radius(12).Background(p.accentSoft).Center().Children(func() {
-			ui.Icon(c, iconStore).Size(22, 22).TextColor(p.accent)
+			iconStore.draw(c, 22, p.accent)
 		})
 		ui.Text(c, a.t(i18n.StoreEmpty)).FontSize(15).FontWeight(700)
 		ui.Text(c, a.t(i18n.StoreEmptyWhy)).FontSize(12.5).TextColor(p.muted).TextAlign(ui.Center)

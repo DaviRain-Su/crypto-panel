@@ -527,7 +527,7 @@ func (a *App) dappBody(c *ui.Context) {
 		ui.Column(c).Grow(1).Center().Gap(8).Padding(30).Radius(14).
 			Background(p.card).Border(1, p.hairline).Children(func() {
 			ui.Box(c).Size(46, 46).Radius(13).Background(p.accentSoft).Center().Children(func() {
-				ui.Icon(c, iconGlobe).Size(22, 22).TextColor(p.accent)
+				iconGlobe.draw(c, 22, p.accent)
 			})
 			ui.Text(c, a.t(i18n.DappEmpty)).FontSize(15).FontWeight(700)
 			ui.Text(c, a.t(i18n.DappEmptyWhy)).FontSize(12.5).TextColor(p.muted).

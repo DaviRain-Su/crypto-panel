@@ -68,7 +68,7 @@ func (a *App) emptyPlugins(c *ui.Context) {
 	ui.Column(c).Gap(9).Padding(30).Center().Radius(14).
 		Background(p.card).Border(1, p.hairline).Margin(24, 0, 0, 0).Children(func() {
 		ui.Box(c).Size(46, 46).Radius(13).Background(p.accentSoft).Center().Children(func() {
-			ui.Icon(c, iconGrid).Size(22, 22).TextColor(p.accent)
+			iconGrid.draw(c, 22, p.accent)
 		})
 		ui.Text(c, a.t(i18n.PluginEmpty)).FontSize(15).FontWeight(700)
 		ui.Text(c, a.t(i18n.PluginEmptyWhy)).FontSize(12.5).TextColor(p.muted).

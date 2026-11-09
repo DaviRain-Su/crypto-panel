@@ -45,7 +45,7 @@ func (ap *intentsApproval) view(c *ui.Context) {
 	ui.Column(c).Fill().Padding(24).Gap(14).Children(func() {
 		ui.Row(c).Gap(10).AlignItems(ui.Center).Children(func() {
 			ui.Box(c).Size(34, 34).Radius(10).Background(p.accentSoft).Center().Children(func() {
-				ui.Icon(c, iconSwap).Size(18, 18).TextColor(p.accent)
+				iconSwap.draw(c, 18, p.accent)
 			})
 			ui.Column(c).Gap(2).Children(func() {
 				ui.Text(c, ap.t(i18n.IntentsApproveKicker)).FontSize(10.5).FontWeight(700).
@@ -65,7 +65,7 @@ func (ap *intentsApproval) view(c *ui.Context) {
 		})
 		ui.Row(c).Gap(8).Padding(10, 12).Radius(9).
 			Background(p.dangerSoft).AlignItems(ui.Start).Children(func() {
-			ui.Icon(c, iconLock).Size(14, 14).TextColor(p.danger)
+			iconLock.draw(c, 14, p.danger)
 			ui.Text(c, ap.t(i18n.IntentsApproveWarning)).FontSize(11).TextColor(p.danger).
 				Grow(1).MaxLines(3)
 		})
