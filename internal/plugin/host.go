@@ -441,6 +441,9 @@ var stateChanging = map[string]bool{
 	"eth_signtransaction":    true,
 	"sendtransaction":        true,
 	"sendrawtransaction":     true,
+	"broadcast_tx_commit":    true,
+	"broadcast_tx_async":     true,
+	"send_tx":                true,
 	"signtransaction":        true,
 	"signmessage":            true,
 }

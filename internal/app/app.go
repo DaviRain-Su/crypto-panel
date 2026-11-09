@@ -134,6 +134,7 @@ type App struct {
 	passkeySendHash   string
 	passkeySendBusy   bool
 	passkeyEVMBusy    bool
+	passkeyOp         *passkeyOperation
 	newCeremony       func(func(string) error) (passkeyCeremony, error)
 	openExternal      func(string) error
 
@@ -192,9 +193,13 @@ type App struct {
 	// installOpen is set while the permission prompt is on screen.
 	installOpen bool
 	// confirmConnect asks the user to let a DApp see the NEAR accounts, and
-	// approve shows a transaction's decode. Tests replace both.
+	// approve shows a transaction's decode when tests replace the window.
+	// Production leaves approve nil: approver() uses askApproval, and passkey
+	// deploy/send use approvePasskey so a canceled operation can close or
+	// dequeue that prompt. openApproval, when set, replaces the passkey window.
 	confirmConnect func(origin string) bool
 	approve        func(approvalRequest) bool
+	openApproval   func(approvalRequest, func(bool)) func()
 
 	// approvalMu shows one approval window at a time, however many plugins
 	// or pages ask at once.
@@ -206,6 +211,7 @@ type App struct {
 	dappURLDraft  string
 	dappErr       string
 	dappConnected map[string]bool
+	dappBridge    *dappBridgeState
 
 	// The read-only local API for agents: its listener, the keychain the
 	// bearer token lives in, the token shown in Settings, and the port form.
@@ -274,7 +280,9 @@ func New() (*App, error) {
 	a.goAsync = func(fn func()) { go fn() }
 	a.confirmInstall = a.askInstall
 	a.confirmConnect = a.askConnect
-	a.approve = a.askApproval
+	// approve stays nil. Plugins, the wallet, and NEAR send go through
+	// approver(), which falls back to askApproval. Passkey deploy and send
+	// use approvePasskey instead, so cancellation reaches the native wait.
 	a.approveIntents = a.askIntentsApproval
 	a.passkeyKind = passkey.Check()
 	a.authenticate = passkey.Authenticate
@@ -288,6 +296,7 @@ func New() (*App, error) {
 // newReader rebuilds the reader after the network or endpoint changed, and
 // drops the plugin runtimes that snapshotted the old one.
 func (a *App) newReader() {
+	a.cancelPasskeyOperations()
 	a.stopAllRunners()
 	reader, err := a.settings.Reader()
 	if err != nil {
@@ -316,6 +325,7 @@ func (a *App) Ready() {
 	mygo.App.OnActivate(func(bool) { a.showWindow() })
 	mygo.App.OnSecondInstance(func([]string, string) { a.showWindow() })
 	mygo.App.OnBeforeQuit(func(*mygo.QuitEvent) {
+		a.cancelPasskeyOperations()
 		a.quitting = true
 		a.stopAgent()
 		a.stopAllRunners()
@@ -345,6 +355,7 @@ func (a *App) createWindow() {
 		Content:              ui.View(a.view),
 	})
 	a.win.OnClose(func(e *mygo.CloseEvent) {
+		a.cancelPasskeyOperations()
 		if a.quitting {
 			return
 		}

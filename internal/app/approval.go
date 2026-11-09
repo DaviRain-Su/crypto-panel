@@ -113,35 +113,37 @@ func (ap *approval) view(c *ui.Context) {
 				ui.Text(c, ap.title()).FontSize(21).FontWeight(700).LetterSpacing(-0.4).MaxLines(2)
 			})
 		})
-		ui.Column(c).Gap(9).Padding(16).Radius(12).Background(p.card).
-			Border(1, p.hairline).Children(func() {
-			for _, row := range ap.rows() {
-				ap.row(c, p, row.label, row.value)
-			}
-		})
-		if ap.description != "" {
-			heading, note := i18n.ApprovePluginSays, i18n.ApprovePluginWords
-			if ap.sourceKind == "dapp" {
-				heading, note = i18n.ApproveSiteSays, i18n.ApproveSiteWords
-			}
-			ui.Column(c).Gap(3).Children(func() {
-				ui.Text(c, ap.t(heading)).FontSize(10.5).FontWeight(700).
-					TextColor(p.muted).LetterSpacing(0.4)
-				ui.Text(c, ap.description).FontSize(12).MaxLines(3)
-				ui.Text(c, ap.t(note)).FontSize(10.5).
-					TextColor(p.faint).MaxLines(2)
+		// 交易详情独立滚动，完整参数不截断，批准和拒绝按钮始终留在窗口内。
+		ui.Scroll(c.Key("approval-details")).Grow(1).MinHeight(0).Gap(14).Padding(0, 2).Children(func() {
+			ui.Column(c).Gap(9).Padding(16).Radius(12).Background(p.card).
+				Border(1, p.hairline).Children(func() {
+				for _, row := range ap.rows() {
+					ap.row(c, p, row.label, row.value)
+				}
 			})
-		}
-		ui.Row(c).Gap(8).Padding(10, 12).Radius(9).
-			Background(p.dangerSoft).AlignItems(ui.Start).Children(func() {
-			ui.Icon(c, iconLock).Size(14, 14).TextColor(p.danger)
-			ui.Text(c, ap.warning()).FontSize(11).TextColor(p.danger).
-				Grow(1).MaxLines(2)
+			if ap.description != "" {
+				heading, note := i18n.ApprovePluginSays, i18n.ApprovePluginWords
+				if ap.sourceKind == "dapp" {
+					heading, note = i18n.ApproveSiteSays, i18n.ApproveSiteWords
+				}
+				ui.Column(c).Gap(3).Children(func() {
+					ui.Text(c, ap.t(heading)).FontSize(10.5).FontWeight(700).
+						TextColor(p.muted).LetterSpacing(0.4)
+					ui.Text(c, ap.description).FontSize(12).MaxLines(3)
+					ui.Text(c, ap.t(note)).FontSize(10.5).
+						TextColor(p.faint).MaxLines(2)
+				})
+			}
+			ui.Row(c).Gap(8).Padding(10, 12).Radius(9).
+				Background(p.dangerSoft).AlignItems(ui.Start).Children(func() {
+				ui.Icon(c, iconLock).Size(14, 14).TextColor(p.danger)
+				ui.Text(c, ap.warning()).FontSize(11).TextColor(p.danger).
+					Grow(1).MaxLines(2)
+			})
+			if ap.authErr != "" {
+				ui.Text(c, ap.authErr).FontSize(11).TextColor(p.danger).MaxLines(2)
+			}
 		})
-		if ap.authErr != "" {
-			ui.Text(c, ap.authErr).FontSize(11).TextColor(p.danger).MaxLines(2)
-		}
-		ui.Box(c).Grow(1)
 		ui.Row(c).Gap(10).Justify(ui.End).AlignItems(ui.Center).Children(func() {
 			if ap.authRequired {
 				ui.Text(c, ap.t(i18n.AuthProtected, ap.authName)).FontSize(10.5).
@@ -173,24 +175,19 @@ func (ap *approval) view(c *ui.Context) {
 
 // primaryButton is the window's one action: filled with the accent, with an
 // icon when the system check is part of it.
-func (ap *approval) primaryButton(c *ui.Context, p palette, label string, icon *ui.SVG) {
-	b := ui.ButtonBase(c).Height(34).PaddingX(14).Gap(7).Radius(9).
-		AlignItems(ui.Center).FocusRing(false).Background(p.accent)
-	b.Children(func() {
+func (ap *approval) primaryButton(c *ui.Context, _ palette, label string, icon *ui.SVG) {
+	ui.PrimaryButton(c, "").Height(34).Label(label).Children(func() {
 		if icon != nil {
-			ui.Icon(c, icon).Size(15, 15).TextColor(p.onAccent)
+			ui.Icon(c, icon).Size(15, 15)
 		}
-		ui.Text(c, label).FontSize(12.5).FontWeight(600).TextColor(p.onAccent)
-	})
-	if b.Clicked() {
-		ap.approve()
-	}
+		ui.Text(c, label).SingleLine()
+	}).OnClick(ap.approve)
 }
 
 func (ap *approval) row(c *ui.Context, p palette, label, value string) {
 	ui.Row(c).Gap(10).AlignItems(ui.Start).Children(func() {
 		ui.Text(c, label).FontSize(11).FontWeight(600).TextColor(p.muted).Width(76)
-		ui.Text(c, value).Font("monospace").FontSize(11.5).Grow(1).MaxLines(2)
+		ui.Text(c, value).Font("monospace").FontSize(11.5).Grow(1).Selectable()
 	})
 }
 

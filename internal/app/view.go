@@ -7,7 +7,6 @@ import (
 	"slices"
 	"sort"
 	"strings"
-	"time"
 
 	"github.com/egoist/mygo/ui"
 
@@ -67,23 +66,32 @@ func (a *App) sidebar(c *ui.Context) {
 				a.sidebarToggle(c)
 			})
 		}
-		ui.Scroll(c.Key("nav")).Grow(1).Margin(0, -6).Padding(0, 6).Children(func() {
-			ui.Column(c).Gap(2).Children(func() {
-				a.navItem(c, a.t(i18n.NavPortfolio), iconChart, a.route == routePortfolio, func() {
-					a.goTo(routePortfolio)
-				})
-				a.navItem(c, a.t(i18n.NavWallet), iconWallet, a.route == routeWallet, func() {
-					a.goTo(routeWallet)
-				})
-				a.navItem(c, a.t(i18n.NavApps), iconGrid, a.route.kind == "plugins", a.openApps)
-				a.navItem(c, a.t(i18n.NavIntents), iconSwap, a.route == routeIntents, func() {
-					a.goTo(routeIntents)
-				})
-				a.navItem(c, a.t(i18n.NavDapp), iconGlobe, a.route.kind == "apps", func() {
-					a.goTo(routeApps)
-				})
-			})
-		})
+		selected := a.sidebarSelection()
+		nav := ui.Sidebar(c.Key("nav"), &selected, func() {
+			for _, item := range []struct {
+				id   string
+				text i18n.Key
+				icon *ui.SVG
+			}{
+				{"portfolio", i18n.NavPortfolio, iconChart},
+				{"wallet", i18n.NavWallet, iconWallet},
+				{"plugins", i18n.NavApps, iconGrid},
+				{"intents", i18n.NavIntents, iconSwap},
+				{"apps", i18n.NavDapp, iconGlobe},
+				{"settings", i18n.NavSettings, iconGear},
+			} {
+				label := a.t(item.text)
+				visible := label
+				if collapsed {
+					visible = ""
+				}
+				ui.SidebarItem(c, item.id, item.icon, visible).
+					Height(36).Label(label).Tooltip(label)
+			}
+		}).Grow(1).FillWidth().Background(ui.Transparent).Margin(0, -6)
+		if nav.Changed() {
+			a.selectSidebar(selected)
+		}
 		if collapsed {
 			a.sidebarToggle(c)
 		}
@@ -105,7 +113,7 @@ func (a *App) sidebarMark(c *ui.Context, button bool) {
 		mark()
 		return
 	}
-	b := ui.ButtonBase(c).Size(44, 44).Radius(12).Center().FocusRing(false).
+	b := ui.Button(c, "").Size(44, 44).Padding(4).Radius(12).Center().
 		Label(a.t(i18n.SidebarExpand)).Tooltip(a.t(i18n.SidebarExpand))
 	b.Children(mark)
 	if b.Clicked() {
@@ -115,22 +123,11 @@ func (a *App) sidebarMark(c *ui.Context, button bool) {
 
 // sidebarToggle folds the sidebar into its icon rail and back.
 func (a *App) sidebarToggle(c *ui.Context) {
-	p := a.pal
 	label := a.t(i18n.SidebarCollapse)
 	if a.settings.SidebarCollapsed {
 		label = a.t(i18n.SidebarExpand)
 	}
-	b := ui.ButtonBase(c).Size(32, 32).Radius(8).Center().FocusRing(false).
-		Label(label).Tooltip(label).AlignSelf(ui.Center)
-	bg := ui.Transparent
-	if b.Hovered() {
-		bg = p.hover
-	}
-	b.Background(b.AnimateColor("bg", bg, ui.Animation{Duration: 120 * time.Millisecond}))
-	b.Children(func() { ui.Icon(c, iconSidebar).Size(16, 16).TextColor(p.muted) })
-	if b.Clicked() {
-		a.toggleSidebar()
-	}
+	a.iconButton(c, iconSidebar, label, a.toggleSidebar)
 }
 
 // toggleSidebar folds or unfolds the sidebar and remembers the choice.
@@ -139,39 +136,31 @@ func (a *App) toggleSidebar() {
 	a.save()
 }
 
-// navItem is one row of the sidebar: an icon and a label, marked under the
-// pointer and filled with the accent while it is the page shown. Collapsed,
-// it is the icon alone, with the label as its tooltip.
-func (a *App) navItem(c *ui.Context, label string, icon *ui.SVG, selected bool, onClick func()) {
-	p := a.pal
-	collapsed := a.settings.SidebarCollapsed
-	b := ui.ButtonBase(c.Key("nav:" + label)).Height(36).Radius(9).
-		AlignItems(ui.Center).FocusRing(false).Label(label)
-	if collapsed {
-		b.PaddingX(0).Justify(ui.Center).Tooltip(label)
-	} else {
-		b.PaddingX(11).Gap(10).Justify(ui.Start)
+func (a *App) sidebarSelection() string {
+	switch a.route.kind {
+	case "":
+		return "portfolio"
+	case "plugin":
+		return "plugins"
+	default:
+		return a.route.kind
 	}
-	bg := ui.Transparent
-	switch {
-	case selected:
-		bg = p.accentSoft
-	case b.Hovered():
-		bg = p.hover
-	}
-	b.Background(b.AnimateColor("bg", bg, ui.Animation{Duration: 120 * time.Millisecond}))
-	color, iconColor := p.text, p.muted
-	if selected {
-		color, iconColor = p.text, p.accent
-	}
-	b.Children(func() {
-		ui.Icon(c, icon).Size(17, 17).TextColor(iconColor)
-		if !collapsed {
-			ui.Text(c, label).FontSize(13).FontWeight(500).TextColor(color).MaxLines(1)
-		}
-	})
-	if b.Clicked() {
-		onClick()
+}
+
+func (a *App) selectSidebar(id string) {
+	switch id {
+	case "portfolio":
+		a.goTo(routePortfolio)
+	case "wallet":
+		a.goTo(routeWallet)
+	case "plugins":
+		a.openApps()
+	case "intents":
+		a.goTo(routeIntents)
+	case "apps":
+		a.goTo(routeApps)
+	case "settings":
+		a.goTo(routeSettings)
 	}
 }
 
@@ -181,9 +170,6 @@ func (a *App) sidebarFooter(c *ui.Context) {
 	p := a.pal
 	text, dot := a.status()
 	ui.Column(c).Gap(8).Children(func() {
-		a.navItem(c, a.t(i18n.NavSettings), iconGear, a.route == routeSettings, func() {
-			a.goTo(routeSettings)
-		})
 		if a.settings.SidebarCollapsed {
 			ui.Box(c).Size(40, 40).Radius(10).Background(p.inset).
 				Border(1, p.hairline).Center().AlignSelf(ui.Center).
@@ -270,83 +256,36 @@ func (a *App) pageHeader(c *ui.Context) {
 	})
 }
 
-// iconButton is a borderless button showing an icon, which a soft square
-// marks under the pointer.
+// iconButton 复用官方按钮的焦点、禁用、悬停和可访问性行为。
 func (a *App) iconButton(c *ui.Context, icon *ui.SVG, label string, onClick func()) {
-	p := a.pal
-	b := ui.ButtonBase(c).Size(32, 32).Radius(8).Center().Label(label).FocusRing(false)
-	bg := ui.Transparent
-	if b.Hovered() {
-		bg = p.hover
-	}
-	b.Background(b.AnimateColor("bg", bg, ui.Animation{Duration: 120 * time.Millisecond}))
-	b.Children(func() { ui.Icon(c, icon).Size(16, 16).TextColor(p.muted) })
-	if b.Clicked() {
-		onClick()
-	}
+	ui.Button(c, "").Size(32, 32).Label(label).Tooltip(label).Children(func() {
+		ui.Icon(c, icon).Size(16, 16)
+	}).OnClick(onClick)
 }
 
-// backButton is a small button with a left chevron, for leaving a page for
-// the one above it.
 func (a *App) backButton(c *ui.Context, label string, onClick func()) {
-	p := a.pal
-	b := ui.ButtonBase(c).Height(30).PaddingX(8).Gap(5).Radius(8).
-		AlignItems(ui.Center).FocusRing(false)
-	bg := ui.Transparent
-	if b.Hovered() {
-		bg = p.hover
-	}
-	b.Background(bg)
-	b.Children(func() {
-		ui.Icon(c, iconChevron).Size(14, 14).TextColor(p.muted).Rotate(180)
-		ui.Text(c, label).FontSize(12).FontWeight(500).TextColor(p.muted)
-	})
-	if b.Clicked() {
-		onClick()
-	}
+	ui.Button(c, "").Height(30).Label(label).Children(func() {
+		ui.Icon(c, iconChevron).Size(14, 14).Rotate(180)
+		ui.Text(c, label).SingleLine()
+	}).OnClick(onClick)
 }
 
-// softButton is a small button on the content's own background, for the
-// actions inside a card.
 func (a *App) softButton(c *ui.Context, label string, icon *ui.SVG, color ui.Color, onClick func()) {
-	p := a.pal
-	b := ui.ButtonBase(c).Height(30).PaddingX(11).Gap(6).Radius(8).
-		AlignItems(ui.Center).FocusRing(false)
-	bg := p.hover
-	if b.Hovered() {
-		bg = p.press
-	}
-	b.Background(b.AnimateColor("bg", bg, ui.Animation{Duration: 120 * time.Millisecond}))
-	b.Children(func() {
+	ui.Button(c, "").Height(30).Label(label).TextColor(color).Children(func() {
 		if icon != nil {
-			ui.Icon(c, icon).Size(14, 14).TextColor(color)
+			ui.Icon(c, icon).Size(14, 14)
 		}
-		ui.Text(c, label).FontSize(12).FontWeight(500).TextColor(color)
-	})
-	if b.Clicked() {
-		onClick()
-	}
+		ui.Text(c, label).SingleLine()
+	}).OnClick(onClick)
 }
 
-// primaryButton is the page's main action: filled with the accent.
 func (a *App) primaryButton(c *ui.Context, label string, icon *ui.SVG, disabled bool, onClick func()) {
-	p := a.pal
-	b := ui.ButtonBase(c).Height(32).PaddingX(13).Gap(7).Radius(8).
-		AlignItems(ui.Center).FocusRing(false)
-	bg, fg := p.accent, p.onAccent
-	if disabled {
-		bg, fg = p.inset, p.faint
-	}
-	b.Background(bg)
-	b.Children(func() {
+	ui.PrimaryButton(c, "").Height(32).Label(label).Disabled(disabled).Children(func() {
 		if icon != nil {
-			ui.Icon(c, icon).Size(14, 14).TextColor(fg)
+			ui.Icon(c, icon).Size(14, 14)
 		}
-		ui.Text(c, label).FontSize(12).FontWeight(600).TextColor(fg)
-	})
-	if !disabled && b.Clicked() {
-		onClick()
-	}
+		ui.Text(c, label).SingleLine()
+	}).OnClick(onClick)
 }
 
 // sectionTitle heads a group of the page.

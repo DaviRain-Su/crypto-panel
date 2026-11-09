@@ -115,6 +115,10 @@ func (a *App) confirmRemoveNearAccount(accountID string) {
 
 // removeNearAccount deletes a NEAR account and its key.
 func (a *App) removeNearAccount(accountID string) {
+	a.cancelPasskeyOperations()
+	if a.nearSendFrom == accountID {
+		a.nearSendFrom = ""
+	}
 	name := a.nearWalletName(accountID)
 	if a.nearKeyring != nil {
 		if err := a.nearKeyring.Remove(accountID); err != nil && !errors.Is(err, wallet.ErrNoAccount) {
@@ -160,6 +164,7 @@ func (a *App) finishNearUnlock(accountID string) {
 
 // lockNearAccount forgets the account's key.
 func (a *App) lockNearAccount(accountID string) {
+	a.cancelPasskeyOperations()
 	if a.nearKeyring == nil {
 		return
 	}

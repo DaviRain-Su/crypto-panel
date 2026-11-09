@@ -242,3 +242,42 @@ func (a *App) askApproval(req approvalRequest) bool {
 	})
 	return ok
 }
+
+// openPasskeyApproval opens the shell's approval window for a passkey deploy
+// or send. The closer rejects a late click and destroys the window, so a
+// canceled operation does not leave the prompt on screen.
+func (a *App) openPasskeyApproval(req approvalRequest, done func(bool)) func() {
+	ap := &approval{
+		t:            a.t,
+		pluginName:   req.pluginName,
+		sourceKind:   req.sourceKind,
+		description:  req.description,
+		network:      req.network,
+		summary:      req.summary,
+		near:         req.near,
+		fromAddr:     req.fromAddr,
+		fromLabel:    req.fromLabel,
+		authRequired: a.presenceRequired(),
+		authName:     a.authName(),
+		authenticate: a.authenticate,
+		onDecide:     done,
+	}
+	win := mygo.NewWindow(mygo.WindowOptions{
+		Title:           a.t(i18n.ApproveWindowTitle),
+		Width:           460,
+		Height:          560,
+		MinWidth:        420,
+		MinHeight:       480,
+		Parent:          a.win,
+		Modal:           true,
+		BackgroundColor: "light-dark(#f6f4ef, #141513)",
+		Content:         ui.View(ap.view),
+	})
+	ap.invalidate = func() { win.Invalidate() }
+	win.OnClose(func(*mygo.CloseEvent) { ap.decide(false) })
+	win.Focus()
+	return func() {
+		ap.decide(false) // A late system confirmation cannot revive the request.
+		win.Destroy()
+	}
+}

@@ -230,6 +230,9 @@ func TestScreenshots(t *testing.T) {
 	tt = ui.NewTester(a.view, windowWidth, windowHeight)
 	tt.SetDark(true)
 	save(t, tt, "new-wallet-passkey-dark")
+	a.settings.SidebarCollapsed = true
+	tt.Frame()
+	save(t, tt, "new-wallet-passkey-rail-dark")
 
 	// The one-time list of every network's address, then the same passkey
 	// on Ethereum and on Solana.

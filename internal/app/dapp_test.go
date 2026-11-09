@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
 
 	"github.com/davirain-su/crypto-panel/internal/chain"
@@ -36,6 +37,9 @@ func newDappApp(t *testing.T) (*App, *nearRPC, wallet.NearAccount) {
 	acc := a.settings.NearWallet[0]
 	rpc := &nearRPC{accessKey: `{"nonce":1,"permission":"FullAccess"}`}
 	a.reader = &dappReader{rpc: rpc}
+	a.dappBridge = newDappBridge(new(mygo.Page))
+	a.dappBridge.approve = func(_ context.Context, req approvalRequest) bool { return a.approve(req) }
+	a.dappBridge.connect = func(_ context.Context, origin string) bool { return a.confirmConnect(origin) }
 	return a, rpc, acc
 }
 
@@ -43,6 +47,9 @@ func TestDappOrigin(t *testing.T) {
 	cases := map[string]string{
 		"https://app.testnet.near.org/swap?x=1": "https://app.testnet.near.org",
 		"https://example.com":                   "https://example.com",
+		"HTTPS://EXAMPLE.COM:443/app":           "https://example.com",
+		"http://LOCALHOST:80/app":               "http://localhost",
+		"http://[::1]:8080/app":                 "http://[::1]:8080",
 		"http://localhost:3000/app":             "http://localhost:3000",
 		"http://127.0.0.1:8080":                 "http://127.0.0.1:8080",
 		"http://example.com":                    "",
@@ -61,7 +68,7 @@ func TestDappConnect(t *testing.T) {
 	a, _, acc := newDappApp(t)
 	var asked string
 	a.confirmConnect = func(origin string) bool { asked = origin; return true }
-	res, err := a.dappConnect("https://dapp.test", nil)
+	res, err := a.dappConnect(context.Background(), "https://dapp.test", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -84,7 +91,7 @@ func TestDappConnect(t *testing.T) {
 func TestDappConnectRejected(t *testing.T) {
 	a, _, _ := newDappApp(t)
 	a.confirmConnect = func(string) bool { return false }
-	if _, err := a.dappConnect("https://dapp.test", nil); err == nil || !strings.Contains(err.Error(), "rejected") {
+	if _, err := a.dappConnect(context.Background(), "https://dapp.test", nil); err == nil || !strings.Contains(err.Error(), "rejected") {
 		t.Fatalf("err = %v", err)
 	}
 	if a.dappConnected["https://dapp.test"] {
@@ -95,7 +102,7 @@ func TestDappConnectRejected(t *testing.T) {
 func TestDappConnectNeedsANearNetwork(t *testing.T) {
 	a := newTestApp(t)
 	a.createNearAccount()
-	if _, err := a.dappConnect("https://dapp.test", nil); err == nil || !strings.Contains(err.Error(), "NEAR network") {
+	if _, err := a.dappConnect(context.Background(), "https://dapp.test", nil); err == nil || !strings.Contains(err.Error(), "NEAR network") {
 		t.Fatalf("err = %v", err)
 	}
 }
@@ -104,7 +111,7 @@ func TestDappConnectNeedsAnAccount(t *testing.T) {
 	a := newTestApp(t)
 	a.settings.NetworkID = chains.NearTestnet.ID
 	a.settings = a.settings.Validate()
-	if _, err := a.dappConnect("https://dapp.test", nil); err == nil || !strings.Contains(err.Error(), "no NEAR account") {
+	if _, err := a.dappConnect(context.Background(), "https://dapp.test", nil); err == nil || !strings.Contains(err.Error(), "no NEAR account") {
 		t.Fatalf("err = %v", err)
 	}
 }
@@ -112,7 +119,7 @@ func TestDappConnectNeedsAnAccount(t *testing.T) {
 func TestDappSignNeedsAConnection(t *testing.T) {
 	a, rpc, _ := newDappApp(t)
 	params := json.RawMessage(`{"receiverId":"bob.testnet","actions":[{"type":"transfer","amount":"1"}]}`)
-	if _, err := a.dappSign("https://dapp.test", params); err == nil || !strings.Contains(err.Error(), "connect first") {
+	if _, err := a.dappSign(context.Background(), "https://dapp.test", params); err == nil || !strings.Contains(err.Error(), "connect first") {
 		t.Fatalf("err = %v", err)
 	}
 	if rpc.broadcast != nil {
@@ -126,7 +133,7 @@ func TestDappSign(t *testing.T) {
 	var asked approvalRequest
 	a.approve = func(req approvalRequest) bool { asked = req; return true }
 	params := json.RawMessage(`{"receiverId":"bob.testnet","actions":[{"type":"transfer","amount":"1500000000000000000000000"}],"description":"Buy a coffee"}`)
-	res, err := a.dappSign("https://dapp.test", params)
+	res, err := a.dappSign(context.Background(), "https://dapp.test", params)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -153,7 +160,7 @@ func TestDappSignRejected(t *testing.T) {
 	a.dappConnected["https://dapp.test"] = true
 	a.approve = func(approvalRequest) bool { return false }
 	params := json.RawMessage(`{"receiverId":"bob.testnet","actions":[{"type":"transfer","amount":"1"}]}`)
-	if _, err := a.dappSign("https://dapp.test", params); err == nil || !strings.Contains(err.Error(), "rejected") {
+	if _, err := a.dappSign(context.Background(), "https://dapp.test", params); err == nil || !strings.Contains(err.Error(), "rejected") {
 		t.Fatalf("err = %v", err)
 	}
 	if rpc.broadcast != nil {
@@ -173,7 +180,7 @@ func TestDappAddFunctionCallKey(t *testing.T) {
 		"methodNames": []string{"donate"},
 		"allowance":   "250000000000000000000000",
 	})
-	if _, err := a.dappAddFunctionCallKey("https://dapp.test", params); err != nil {
+	if _, err := a.dappAddFunctionCallKey(context.Background(), "https://dapp.test", params); err != nil {
 		t.Fatal(err)
 	}
 	if rpc.broadcast == nil {
@@ -196,7 +203,7 @@ func TestDappRejectsUnknownParams(t *testing.T) {
 	a, _, _ := newDappApp(t)
 	a.dappConnected["https://dapp.test"] = true
 	params := json.RawMessage(`{"receiverId":"bob.testnet","actions":[{"type":"transfer","amount":"1"}],"contractId":"x"}`)
-	if _, err := a.dappSign("https://dapp.test", params); err == nil || !strings.Contains(err.Error(), "unknown field") {
+	if _, err := a.dappSign(context.Background(), "https://dapp.test", params); err == nil || !strings.Contains(err.Error(), "unknown field") {
 		t.Fatalf("err = %v", err)
 	}
 }

@@ -2,6 +2,7 @@ package app
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -31,23 +32,28 @@ import (
 // back as an event to the page that asked, which the preload script turns
 // into the promise's result.
 
-const dappScheme = "cryptopanel"
+const (
+	dappScheme     = "cryptopanel"
+	dappRequestURL = dappScheme + "://near/request"
+)
 
 // dappEvent carries a bridge answer back to the page that asked.
 var dappEvent = mygo.NewEvent[dappResponse]("cryptopanel:near")
 
 // dappRequest is one bridge call from a page.
 type dappRequest struct {
-	ID     string          `json:"id"`
-	Method string          `json:"method"`
-	Params json.RawMessage `json:"params"`
+	ID         string          `json:"id"`
+	Method     string          `json:"method"`
+	Params     json.RawMessage `json:"params"`
+	Capability string          `json:"capability"`
 }
 
 // dappResponse is the answer, matched to the request by ID.
 type dappResponse struct {
-	ID     string `json:"id"`
-	Result any    `json:"result,omitempty"`
-	Error  string `json:"error,omitempty"`
+	ID         string `json:"id"`
+	Capability string `json:"capability"`
+	Result     any    `json:"result,omitempty"`
+	Error      string `json:"error,omitempty"`
 }
 
 // dappAccount is one account the page may see.
@@ -64,26 +70,45 @@ func (a *App) registerDappScheme() {
 	}
 }
 
-// serveDappRequest accepts one bridge call. The origin is the page's actual
-// URL, never a field of the request: a page cannot claim to be another.
+// serveDappRequest 在原生主线程读取 SDK 提供的调用页面。页面只能标识 WebView，
+// 不能识别发起请求的 frame；使用钱包的权限由 serveDappRequestFrom 校验 capability。
 func (a *App) serveDappRequest(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost || r.URL.Path != "/near/request" {
+	var page *mygo.Page
+	var origin string
+	var bridge *dappBridgeState
+	a.onMain(func() {
+		page = mygo.CallerPage(r.Context())
+		bridge = a.dappBridge
+		if page != nil && bridge != nil {
+			origin = dappOrigin(page.URL())
+		}
+	})
+	a.serveDappRequestFrom(w, r, bridge, page, origin, func(out dappResponse) {
+		if err := dappEvent.EmitPage(page, out); err != nil {
+			log.Printf("crypto-panel: answering %s: %v", origin, err)
+		}
+	})
+}
+
+// 来源参数是原生状态快照，单独传入以便在不打开钱包窗口时测试 HTTP 处理与 capability 校验。
+func (a *App) serveDappRequestFrom(w http.ResponseWriter, r *http.Request, bridge *dappBridgeState, page *mygo.Page, origin string, emit func(dappResponse)) {
+	// cryptopanel://near/request 对应 Host="near"、Path="/request"。
+	if r.Method != http.MethodPost || r.URL.Scheme != dappScheme || r.URL.Host != "near" ||
+		r.URL.EscapedPath() != "/request" || r.URL.User != nil || r.URL.RawQuery != "" {
 		http.Error(w, "not found", http.StatusNotFound)
 		return
 	}
-	page := mygo.CallerPage(r.Context())
-	if page == nil {
-		http.Error(w, "no page", http.StatusForbidden)
+	if bridge == nil || page == nil || origin == "" {
+		http.Error(w, "no wallet document", http.StatusForbidden)
 		return
 	}
-	origin := dappOrigin(page.URL())
-	if origin == "" {
-		http.Error(w, "no origin", http.StatusForbidden)
-		return
-	}
-	body, err := io.ReadAll(io.LimitReader(r.Body, 64<<10))
+	body, err := io.ReadAll(io.LimitReader(r.Body, (64<<10)+1))
 	if err != nil {
 		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
+	if len(body) > 64<<10 {
+		http.Error(w, "request too large", http.StatusRequestEntityTooLarge)
 		return
 	}
 	var req dappRequest
@@ -93,36 +118,54 @@ func (a *App) serveDappRequest(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "bad request", http.StatusBadRequest)
 		return
 	}
-	// The page cannot read this response; the answer comes as an event.
-	w.WriteHeader(http.StatusNoContent)
-	go a.answerDapp(page, origin, req)
-}
-
-// answerDapp runs one bridge call and sends its answer to the page.
-func (a *App) answerDapp(page *mygo.Page, origin string, req dappRequest) {
-	result, err := a.handleDappRequest(origin, req)
-	out := dappResponse{ID: req.ID, Result: result}
+	if dec.Decode(new(any)) != io.EOF {
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
+	call, err := bridge.begin(r.Context(), page, origin, req)
 	if err != nil {
-		out.Result = nil
-		out.Error = err.Error()
+		http.Error(w, "no wallet capability or request unavailable", http.StatusForbidden)
+		return
 	}
-	if err := dappEvent.EmitPage(page, out); err != nil {
-		log.Printf("crypto-panel: answering %s: %v", origin, err)
+	defer bridge.finish(call)
+	// scheme 任务持续到处理结束，让导航、关闭或 fetch.abort() 取消 context。
+	// 在批准前返回 204 会丢失这条取消链。
+	result, err := a.handleDappRequest(call.ctx, origin, req)
+	out := dappResponse{ID: req.ID, Capability: call.binding.capability, Result: result}
+	if err != nil {
+		out.Result, out.Error = nil, err.Error()
 	}
+	if call.ctx.Err() == nil && bridge.current(call.binding) {
+		emit(out)
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
-func (a *App) handleDappRequest(origin string, req dappRequest) (any, error) {
+func (a *App) handleDappRequest(ctx context.Context, origin string, req dappRequest) (any, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	switch req.Method {
 	case "connect":
-		return a.dappConnect(origin, req.Params)
+		return a.dappConnect(ctx, origin, req.Params)
+	case "disconnect":
+		a.onMain(func() {
+			if ctx.Err() == nil {
+				delete(a.dappConnected, origin)
+				if a.dappBridge != nil {
+					a.dappBridge.disconnect(req.ID)
+				}
+			}
+		})
+		return nil, ctx.Err()
 	case "getAccounts":
 		return a.dappGetAccounts(origin)
 	case "getNetwork":
 		return a.dappGetNetwork()
 	case "signAndSendTransaction":
-		return a.dappSign(origin, req.Params)
+		return a.dappSign(ctx, origin, req.Params)
 	case "addFunctionCallKey":
-		return a.dappAddFunctionCallKey(origin, req.Params)
+		return a.dappAddFunctionCallKey(ctx, origin, req.Params)
 	default:
 		return nil, fmt.Errorf("the wallet has no method %q", req.Method)
 	}
@@ -130,7 +173,7 @@ func (a *App) handleDappRequest(origin string, req dappRequest) (any, error) {
 
 // dappConnect asks the user, once per origin, to let the page see the NEAR
 // accounts. A refusal leaves the page unconnected.
-func (a *App) dappConnect(origin string, params json.RawMessage) (any, error) {
+func (a *App) dappConnect(ctx context.Context, origin string, params json.RawMessage) (any, error) {
 	var p struct {
 		ContractID  string   `json:"contractId,omitempty"`
 		MethodNames []string `json:"methodNames,omitempty"`
@@ -150,14 +193,20 @@ func (a *App) dappConnect(origin string, params json.RawMessage) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	confirm := a.confirmConnect
-	if confirm == nil {
-		confirm = a.askConnect
-	}
-	if !confirm(origin) {
+	if !a.confirmDappConnect(ctx, origin) {
 		return nil, errors.New("the user rejected the connection")
 	}
-	a.onMain(func() { a.dappConnected[origin] = true })
+	a.onMain(func() {
+		if ctx.Err() == nil {
+			if a.dappConnected == nil {
+				a.dappConnected = map[string]bool{}
+			}
+			a.dappConnected[origin] = true
+		}
+	})
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	return map[string]any{"accounts": accounts}, nil
 }
 
@@ -180,7 +229,7 @@ func (a *App) dappGetNetwork() (any, error) {
 // dappSign signs and sends the actions a connected page asked for. The
 // approval window names the page's origin, and the shell's own decode is
 // what the user reads.
-func (a *App) dappSign(origin string, params json.RawMessage) (any, error) {
+func (a *App) dappSign(ctx context.Context, origin string, params json.RawMessage) (any, error) {
 	if !a.dappIsConnected(origin) {
 		return nil, errors.New("connect first")
 	}
@@ -203,15 +252,7 @@ func (a *App) dappSign(origin string, params json.RawMessage) (any, error) {
 	if reader == nil {
 		return nil, errors.New("the NEAR reader is unavailable")
 	}
-	res, err := signNearTransaction(nearSignDeps{
-		sourceName:  origin,
-		sourceKind:  "dapp",
-		description: p.Description,
-		account:     a.nearSignAccount,
-		key:         a.nearSignKey,
-		approve:     a.approver(),
-		rpc:         reader.RPC,
-	}, network, plugin.NearSignRequest{
+	res, err := signNearTransaction(a.dappSigningDeps(ctx, origin, p.Description, reader), network, plugin.NearSignRequest{
 		ChainID:     network.ID,
 		From:        p.From,
 		Receiver:    p.ReceiverID,
@@ -227,7 +268,7 @@ func (a *App) dappSign(origin string, params json.RawMessage) (any, error) {
 // dappAddFunctionCallKey adds a key the page holds itself, limited to one
 // contract, a method list and an allowance. The approval window shows the
 // limit before the user signs it.
-func (a *App) dappAddFunctionCallKey(origin string, params json.RawMessage) (any, error) {
+func (a *App) dappAddFunctionCallKey(ctx context.Context, origin string, params json.RawMessage) (any, error) {
 	if !a.dappIsConnected(origin) {
 		return nil, errors.New("connect first")
 	}
@@ -251,14 +292,7 @@ func (a *App) dappAddFunctionCallKey(origin string, params json.RawMessage) (any
 	if reader == nil {
 		return nil, errors.New("the NEAR reader is unavailable")
 	}
-	res, err := signNearTransaction(nearSignDeps{
-		sourceName: origin,
-		sourceKind: "dapp",
-		account:    a.nearSignAccount,
-		key:        a.nearSignKey,
-		approve:    a.approver(),
-		rpc:        reader.RPC,
-	}, network, plugin.NearSignRequest{
+	res, err := signNearTransaction(a.dappSigningDeps(ctx, origin, "", reader), network, plugin.NearSignRequest{
 		ChainID: network.ID,
 		From:    p.From,
 		Actions: []plugin.NearAction{{
@@ -319,24 +353,7 @@ func (a *App) dappAccounts() ([]dappAccount, error) {
 
 // askConnect shows the shell's own question. The page cannot answer it.
 func (a *App) askConnect(origin string) bool {
-	decided := make(chan bool, 1)
-	a.onMain(func() {
-		if a.win == nil {
-			decided <- false
-			return
-		}
-		res, err := mygo.Dialog.Message(mygo.MessageOptions{
-			Parent:        a.win,
-			Type:          mygo.MessageQuestion,
-			Title:         a.t(i18n.DappConnectTitle),
-			Message:       a.t(i18n.DappConnectBody, origin),
-			Buttons:       []string{a.t(i18n.DappConnect), a.t(i18n.Cancel)},
-			DefaultButton: 0,
-			CancelButton:  1,
-		})
-		decided <- err == nil && res.Button == 0
-	})
-	return <-decided
+	return a.askDappConnect(context.Background(), origin)
 }
 
 // approver is the approval window, or the test's stand-in.
@@ -364,10 +381,19 @@ func dappOrigin(rawURL string) string {
 	if err != nil || u.Host == "" {
 		return ""
 	}
-	if u.Scheme != "https" && !(u.Scheme == "http" && isLoopbackHost(u.Hostname())) {
+	u.Scheme = strings.ToLower(u.Scheme)
+	host := strings.ToLower(u.Hostname())
+	if u.Scheme != "https" && !(u.Scheme == "http" && isLoopbackHost(host)) {
 		return ""
 	}
-	return u.Scheme + "://" + u.Host
+	if strings.Contains(host, ":") {
+		host = "[" + host + "]"
+	}
+	port := u.Port()
+	if port != "" && !(u.Scheme == "https" && port == "443") && !(u.Scheme == "http" && port == "80") {
+		host += ":" + port
+	}
+	return u.Scheme + "://" + host
 }
 
 func isLoopbackHost(host string) bool {
@@ -401,15 +427,40 @@ func (a *App) openDapp() {
 		}
 		a.dappView = view
 		page := view.Page()
+		bridge := newDappBridge(page)
+		a.dappBridge = bridge
 		page.SetPermissionHandler(func(mygo.PermissionRequest) bool { return false })
 		page.SetWindowOpenHandler(func(mygo.WindowOpenRequest) *mygo.WindowOptions { return nil })
 		page.OnWillDownload(func(e *mygo.DownloadEvent) { e.PreventDefault() })
+		page.OnWillNavigate(func(e *mygo.NavigateEvent) {
+			// 保留不受信任页面原有的同源导航限制。
+			if dappOrigin(e.URL) == "" || dappOrigin(e.URL) != dappOrigin(page.URL()) {
+				e.PreventDefault()
+				return
+			}
+			bridge.revoke(false)
+		})
 		page.OnDidNavigate(func(url string) {
+			bridge.committed(dappOrigin(url))
 			a.dappURLDraft = url
 			a.invalidate()
 		})
+		// 以原生加载完成作为文档就绪边界。页面可以伪造 JavaScript DOM-ready 通知，
+		// commit 时旧 JavaScript realm 也可能尚未替换，二者均不能触发 capability 发放。
+		page.OnDidFinishLoad(func() {
+			if binding, ok := bridge.binding(); ok {
+				// 在原生回调中捕获代数，避免延迟协程绑定后续尚未加载完成的文档。
+				go a.bindDappDocument(bridge, binding)
+			}
+		})
+		page.OnDidFailLoad(func(*mygo.LoadError) { bridge.revoke(false) })
+		page.OnRenderProcessGone(func(string) { bridge.revoke(false) })
+		a.win.OnClosed(func() { bridge.revoke(true) })
 	}
 	a.dappErr = ""
+	if a.dappBridge != nil {
+		a.dappBridge.revoke(false)
+	}
 	if err := a.dappView.Page().LoadURL(raw); err != nil {
 		a.dappErr = err.Error()
 	}
@@ -418,6 +469,10 @@ func (a *App) openDapp() {
 
 // closeDapp destroys the web view and forgets which origins were connected.
 func (a *App) closeDapp() {
+	if a.dappBridge != nil {
+		a.dappBridge.revoke(true)
+		a.dappBridge = nil
+	}
 	if a.dappView != nil {
 		a.dappView.Destroy()
 		a.dappView = nil

@@ -184,6 +184,17 @@ const (
 	PasskeySettingsTitle  Key = "passkeySettingsTitle"
 	PasskeySettingsBody   Key = "passkeySettingsBody"
 	PasskeySettingsHave   Key = "passkeySettingsHave"
+	PasskeyCanceled       Key = "passkeyCanceled"
+	PasskeyExport         Key = "passkeyExport"
+	PasskeyExportTitle    Key = "passkeyExportTitle"
+	PasskeyExported       Key = "passkeyExported"
+	PasskeyExportForget   Key = "passkeyExportForget"
+	PasskeyRestore        Key = "passkeyRestore"
+	PasskeyRestoreTitle   Key = "passkeyRestoreTitle"
+	PasskeyRestored       Key = "passkeyRestored"
+	PasskeyRecoveryHint   Key = "passkeyRecoveryHint"
+	PasskeyRecoveryFile   Key = "passkeyRecoveryFile"
+	PasskeyRecoveryFailed Key = "passkeyRecoveryFailed"
 
 	AuthTouchID      Key = "authTouchID"
 	AuthFaceID       Key = "authFaceID"
@@ -557,8 +568,8 @@ var messages = map[Key]map[string]string{
 	PasskeyBody:           {English: "One passkey, held by your device or password manager, controls a NEAR account, an EVM smart account at the same address on every EVM chain, and a Solana vault.", Chinese: "一个由设备或密码管理器保管的 Passkey，控制一个 NEAR 账户、在所有 EVM 链上地址相同的 EVM 智能账户，以及一个 Solana 金库。"},
 	PasskeyCreate:         {English: "Create passkey", Chinese: "创建 Passkey"},
 	PasskeyWaiting:        {English: "Waiting for your passkey…", Chinese: "等待 Passkey 确认…"},
-	PasskeyFine:           {English: "The private key never leaves the authenticator. Crypto Panel stores only the public key.", Chinese: "私钥不会离开认证器。Crypto Panel 只保存公钥。"},
-	PasskeyCreated:        {English: "Passkey created. Its NEAR account can be funded. The Solana vault is not created on chain yet.", Chinese: "Passkey 已创建。其 NEAR 账户可以充值。Solana 金库尚未在链上创建。"},
+	PasskeyFine:           {English: "The private key never leaves the authenticator. Crypto Panel stores only the public key. To restore this wallet later, keep the original passkey and an exported public recovery file.", Chinese: "私钥不会离开认证器。Crypto Panel 只保存公钥。以后恢复此钱包时，必须同时保留原 Passkey 和导出的公开恢复文件。"},
+	PasskeyCreated:        {English: "Passkey created. Export the public recovery file before funding the NEAR account. The Solana vault is not on chain — do not send SOL there.", Chinese: "Passkey 已创建。请先导出公开恢复文件，再为 NEAR 账户充值。Solana 金库尚未在链上创建——不要向那里发送 SOL。"},
 	PasskeyPreparedTitle:  {English: "One passkey, every network", Chinese: "一把 Passkey，覆盖每个网络"},
 	PasskeyPreparedBody:   {English: "These addresses were prepared together. The private key never left the authenticator.", Chinese: "这些地址是一起准备好的。私钥没有离开认证器。"},
 	PasskeyPreparedFoot:   {English: "Ethereum and Base share one smart-account address. Both NEAR networks share one account. The Solana vault is not created on chain — do not send SOL there. Sending from the EVM account is not wired.", Chinese: "Ethereum 和 Base 共用一个智能账户地址。两个 NEAR 网络共用一个账户。Solana 金库尚未在链上创建——不要向那里发送 SOL。EVM 账户的发送尚未接入。"},
@@ -583,10 +594,21 @@ var messages = map[Key]map[string]string{
 	PasskeyRejected:       {English: "The transaction was rejected. Nothing was signed or sent.", Chinese: "交易已被拒绝。没有签名，也没有发送任何东西。"},
 	PasskeyForget:         {English: "Forget passkey", Chinese: "移除 Passkey"},
 	PasskeyForgetTitle:    {English: "Forget this passkey?", Chinese: "移除此 Passkey？"},
-	PasskeyForgetBody:     {English: "Crypto Panel will stop watching its accounts. The passkey itself stays in your device or password manager.", Chinese: "Crypto Panel 将不再监视它的账户。Passkey 本身仍保留在设备或密码管理器中。"},
+	PasskeyForgetBody:     {English: "This removes the app's credential id, public key and account mapping. Export the public recovery file first. Restoring the same account requires both that file and the original passkey, including a synced copy. A synced passkey alone cannot restore it in this app. The credential itself stays in your authenticator.", Chinese: "此操作会删除应用保存的凭据 ID、公钥和账户映射。请先导出公开恢复文件。恢复同一账户必须同时拥有该文件和原 Passkey（可使用已同步的副本）。本应用无法仅凭已同步的 Passkey 恢复。凭据本身仍留在认证器中。"},
 	PasskeySettingsTitle:  {English: "Passkey wallet", Chinese: "Passkey 钱包"},
 	PasskeySettingsBody:   {English: "Create a passkey that owns a NEAR account, an EVM smart account, and a Solana vault.", Chinese: "创建一个同时拥有 NEAR 账户、EVM 智能账户和 Solana 金库的 Passkey。"},
 	PasskeySettingsHave:   {English: "Controlled by the passkey for %s, plus an EVM smart account and a Solana vault.", Chinese: "由 %s 的 Passkey 控制，同时还有一个 EVM 智能账户和一个 Solana 金库。"},
+	PasskeyCanceled:       {English: "The pending passkey operation was canceled. Start a new operation to continue.", Chinese: "等待中的 Passkey 操作已撤销。如需继续，请重新发起。"},
+	PasskeyExport:         {English: "Export recovery file", Chinese: "导出恢复文件"},
+	PasskeyExportTitle:    {English: "Export public passkey recovery data", Chinese: "导出 Passkey 公开恢复资料"},
+	PasskeyExported:       {English: "Public recovery file exported. Keep it with access to your original passkey; it contains account identifiers, but no private key.", Chinese: "公开恢复文件已导出。请同时保留原 Passkey 的访问权；文件含账户标识，不含私钥。"},
+	PasskeyExportForget:   {English: "Export, then forget", Chinese: "导出后移除"},
+	PasskeyRestore:        {English: "Restore passkey", Chinese: "恢复 Passkey"},
+	PasskeyRestoreTitle:   {English: "Choose public passkey recovery data", Chinese: "选择 Passkey 公开恢复资料"},
+	PasskeyRestored:       {English: "Original passkey verified. The same wallet account is restored.", Chinese: "原 Passkey 已验证，已恢复同一钱包账户。"},
+	PasskeyRecoveryHint:   {English: "Recovery requires the original passkey (or its synced copy) AND an exported public recovery file. Neither works alone. If the public data is lost after forgetting the wallet, this app cannot reconstruct the original account.", Chinese: "恢复必须同时拥有原 Passkey（或已同步的副本）和导出的公开恢复文件，缺一不可。移除钱包后若公开资料也丢失，本应用无法重建原账户。"},
+	PasskeyRecoveryFile:   {English: "Public passkey recovery JSON", Chinese: "Passkey 公开恢复 JSON"},
+	PasskeyRecoveryFailed: {English: "Passkey recovery data: %s", Chinese: "Passkey 恢复资料：%s"},
 
 	AuthTouchID:      {English: "Touch ID", Chinese: "触控 ID"},
 	AuthFaceID:       {English: "Face ID", Chinese: "面容 ID"},

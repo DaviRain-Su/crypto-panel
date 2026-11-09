@@ -1,6 +1,8 @@
 package app
 
 import (
+	"os"
+
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
 
@@ -115,6 +117,8 @@ func (a *App) passkeyChainCard(c *ui.Context) {
 		}
 		ui.Text(c, pk.PublicKey).Font("monospace").FontSize(9.5).
 			TextColor(p.faint).MaxLines(1)
+		a.softButton(c, a.t(i18n.PasskeyExport), iconCopy, p.accent, func() { a.exportPasskeyRecovery() })
+		ui.Text(c, a.t(i18n.PasskeyRecoveryHint)).FontSize(10.5).TextColor(p.muted).MaxLines(4)
 		a.passkeyMessages(c)
 	})
 }
@@ -130,14 +134,14 @@ func (a *App) passkeySolanaBalance() string {
 	return a.nativeText(snap)
 }
 
-// passkeyCard is the passkey wallet before a credential exists.
+// passkeyCard is the passkey wallet before a credential exists. Once one
+// exists, the chain card shows that network's account and the recovery entry.
 func (a *App) passkeyCard(c *ui.Context) {
 	if a.settings.Passkey != nil {
 		a.passkeyChainCard(c)
 		return
 	}
 	p := a.pal
-	pk := a.settings.Passkey
 	ui.Column(c).Key("passkey").Gap(12).Padding(16).Radius(14).
 		Background(p.card).Border(1, p.hairline).Shadow(0, 1, 2, 0, p.shadow).
 		Margin(0, 0, 14, 0).Children(func() {
@@ -153,28 +157,8 @@ func (a *App) passkeyCard(c *ui.Context) {
 				})
 				ui.Text(c, a.t(i18n.PasskeyBody)).FontSize(11.5).TextColor(p.muted).MaxLines(4)
 			})
-			if pk != nil {
-				a.iconButton(c, iconTrash, a.t(i18n.PasskeyForget), a.confirmRemovePasskey)
-			}
 		})
-		if pk == nil {
-			a.passkeyCreateRow(c)
-			return
-		}
-		a.passkeyAccountRow(c, a.t(i18n.PasskeyNearAccount), pk.NEARAccount, a.passkeyNearBalance(), true)
-		evm, evmCopyable := pk.EVMAddress, true
-		if evm == "" {
-			evm, evmCopyable = a.t(i18n.PasskeyDeriving), false
-		}
-		a.passkeyAccountRow(c, a.t(i18n.PasskeyEVMAccount), evm, a.passkeyEVMBalance(), evmCopyable)
-		ui.Text(c, pk.PublicKey).Font("monospace").FontSize(9.5).
-			TextColor(p.faint).MaxLines(1)
-		if a.network().Family != chain.Near || a.network().ChainName != "mainnet" {
-			ui.Text(c, a.t(i18n.PasskeyMainnetOnly)).FontSize(11).TextColor(p.muted).MaxLines(2)
-		} else {
-			a.passkeyActions(c)
-		}
-		a.passkeyMessages(c)
+		a.passkeyCreateRow(c)
 	})
 }
 
@@ -187,9 +171,13 @@ func (a *App) passkeyCreateRow(c *ui.Context) {
 			ui.Spinner(c).Size(14, 14)
 			ui.Text(c, a.t(i18n.PasskeyWaiting)).FontSize(11.5).
 				TextColor(p.muted).MaxLines(1)
+			a.softButton(c, a.t(i18n.Cancel), nil, p.muted, a.cancelPasskeyOperations)
+		} else {
+			a.softButton(c, a.t(i18n.PasskeyRestore), iconFingerprint, p.accent, a.choosePasskeyRecovery)
 		}
 	})
-	ui.Text(c, a.t(i18n.PasskeyFine)).FontSize(10.5).TextColor(p.faint).MaxLines(2)
+	ui.Text(c, a.t(i18n.PasskeyFine)).FontSize(10.5).TextColor(p.faint).MaxLines(4)
+	ui.Text(c, a.t(i18n.PasskeyRecoveryHint)).FontSize(10.5).TextColor(p.muted).MaxLines(4)
 	a.passkeyMessages(c)
 }
 
@@ -264,6 +252,7 @@ func (a *App) passkeyActions(c *ui.Context) {
 			ui.Spinner(c).Size(14, 14)
 			ui.Text(c, a.t(i18n.PasskeyWaiting)).FontSize(11.5).
 				TextColor(p.muted).MaxLines(1)
+			a.softButton(c, a.t(i18n.Cancel), nil, p.muted, a.cancelPasskeyOperations)
 		}
 	})
 	if a.passkeySendErr != "" {
@@ -286,7 +275,7 @@ func (a *App) passkeyMessages(c *ui.Context) {
 		ui.Text(c, a.passkeyErr).FontSize(11).TextColor(p.danger).MaxLines(3)
 	}
 	if a.passkeyNotice != "" {
-		ui.Text(c, a.passkeyNotice).FontSize(11).TextColor(p.success).MaxLines(2)
+		ui.Text(c, a.passkeyNotice).FontSize(11).TextColor(p.success).MaxLines(4)
 	}
 }
 
@@ -309,17 +298,24 @@ func (a *App) passkeyRow(c *ui.Context) {
 			switch {
 			case a.passkeyBusy:
 				ui.Spinner(c).Size(14, 14)
-				ui.Text(c, a.t(i18n.PasskeyWaiting)).FontSize(11).
-					TextColor(p.muted).MaxLines(1)
+				a.softButton(c, a.t(i18n.Cancel), nil, p.muted, a.cancelPasskeyOperations)
 			case a.settings.Passkey == nil:
 				a.softButton(c, a.t(i18n.PasskeyCreate), iconFingerprint, p.accent, a.createPasskey)
+				a.softButton(c, a.t(i18n.PasskeyRestore), iconFingerprint, p.accent, a.choosePasskeyRecovery)
 			default:
+				a.softButton(c, a.t(i18n.PasskeyExport), iconCopy, p.accent, func() { a.exportPasskeyRecovery() })
 				a.softButton(c, a.t(i18n.PasskeyForget), iconTrash, p.muted, a.confirmRemovePasskey)
 			}
 		})
+		ui.Text(c, a.t(i18n.PasskeyRecoveryHint)).FontSize(10.5).TextColor(p.muted).
+			Padding(0, 16, 12, 16).MaxLines(4)
 		if a.passkeyErr != "" {
 			ui.Text(c, a.passkeyErr).FontSize(11).TextColor(p.danger).
 				Padding(0, 16, 12, 16).MaxLines(3)
+		}
+		if a.passkeyNotice != "" {
+			ui.Text(c, a.passkeyNotice).FontSize(11).TextColor(p.success).
+				Padding(0, 16, 12, 16).MaxLines(4)
 		}
 	})
 }
@@ -333,18 +329,83 @@ func (a *App) copyPasskeyText(s string) {
 
 // confirmRemovePasskey asks before the app forgets the passkey.
 func (a *App) confirmRemovePasskey() {
+	pk := a.settings.Passkey
+	if pk == nil {
+		return
+	}
 	res, err := mygo.Dialog.Message(mygo.MessageOptions{
 		Parent:             a.win,
 		Type:               mygo.MessageWarning,
 		Title:              a.t(i18n.PasskeyForgetTitle),
 		Message:            a.t(i18n.PasskeyForgetBody),
-		Buttons:            []string{a.t(i18n.Remove), a.t(i18n.Cancel)},
-		DefaultButton:      1,
-		CancelButton:       1,
-		DestructiveButtons: []int{0},
+		Buttons:            []string{a.t(i18n.PasskeyExportForget), a.t(i18n.Remove), a.t(i18n.Cancel)},
+		DefaultButton:      0,
+		CancelButton:       2,
+		DestructiveButtons: []int{1},
 	})
-	if err != nil || res.Button != 0 {
+	if err != nil || res.Button < 0 || res.Button > 1 || a.settings.Passkey != pk {
 		return
 	}
-	a.removePasskey()
+	if res.Button == 0 && !a.exportPasskeyRecovery() {
+		return
+	}
+	if a.settings.Passkey == pk {
+		a.removePasskey()
+	}
+}
+
+func (a *App) exportPasskeyRecovery() bool {
+	pk := a.settings.Passkey
+	data, err := passkeyRecoveryJSON(pk)
+	if err != nil {
+		a.passkeyErr = a.t(i18n.PasskeyRecoveryFailed, err.Error())
+		a.invalidate()
+		return false
+	}
+	path, err := mygo.Dialog.Save(mygo.SaveDialogOptions{
+		Parent: a.win, Title: a.t(i18n.PasskeyExportTitle),
+		DefaultPath: "crypto-panel-passkey-recovery.json", Message: a.t(i18n.PasskeyRecoveryHint),
+		Filters: []mygo.FileFilter{{Name: a.t(i18n.PasskeyRecoveryFile), Extensions: []string{"json"}}},
+	})
+	if err == nil && path == "" {
+		return false
+	}
+	if err == nil && a.settings.Passkey != pk {
+		return false
+	}
+	if err == nil {
+		err = os.WriteFile(path, data, 0600)
+	}
+	if err != nil {
+		a.passkeyErr = a.t(i18n.PasskeyRecoveryFailed, err.Error())
+		a.invalidate()
+		return false
+	}
+	a.passkeyErr = ""
+	a.passkeyNotice = a.t(i18n.PasskeyExported)
+	a.invalidate()
+	return true
+}
+
+func (a *App) choosePasskeyRecovery() {
+	if a.passkeyOp != nil || a.settings.Passkey != nil {
+		return
+	}
+	paths, err := mygo.Dialog.Open(mygo.OpenDialogOptions{
+		Parent: a.win, Title: a.t(i18n.PasskeyRestoreTitle), Message: a.t(i18n.PasskeyRecoveryHint),
+		Filters: []mygo.FileFilter{{Name: a.t(i18n.PasskeyRecoveryFile), Extensions: []string{"json"}}},
+	})
+	if err == nil && len(paths) == 0 {
+		return
+	}
+	var data []byte
+	if err == nil {
+		data, err = readPasskeyRecoveryFile(paths[0])
+	}
+	if err != nil {
+		a.passkeyErr = a.t(i18n.PasskeyRecoveryFailed, err.Error())
+		a.invalidate()
+		return
+	}
+	a.restorePasskey(data)
 }

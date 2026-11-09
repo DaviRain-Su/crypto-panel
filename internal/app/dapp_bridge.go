@@ -9,33 +9,75 @@ package app
 // The page can ask; it cannot approve. Every signature still opens the
 // shell's own window.
 const nearBridgeScript = `(() => {
-  if (window.nearWallet) return;
+  if (window.top !== window) return;
   const pending = new Map();
-  let seq = 0;
+  const send = window.fetch.bind(window);
+  const stringify = JSON.stringify;
+  const makeTimer = window.setTimeout.bind(window);
+  const stopTimer = window.clearTimeout.bind(window);
+  const Abort = window.AbortController;
+  const doc = window.document;
+  const origin = window.location.origin;
+  const bytes = new Uint8Array(32);
+  window.crypto.getRandomValues(bytes);
+  const marker = Array.from(bytes, x => x.toString(16).padStart(2, "0")).join("");
+  let capability = "", epoch = 0, alive = true, seq = 0;
+  Object.defineProperty(window, "` + dappDocumentKey + `", { value: marker });
+  Object.defineProperty(window, "` + dappBindKey + `", { value: (token, generation, documentMarker, expectedOrigin) => {
+    if (documentMarker !== marker || expectedOrigin !== origin || window.document !== doc ||
+        window.location.origin !== origin || generation <= epoch) return;
+    epoch = generation;
+    capability = token;
+    alive = true;
+    pending.forEach(p => p.start());
+  }});
   if (window.mygo && mygo.on) {
     mygo.on("cryptopanel:near", (msg) => {
       const p = pending.get(msg.id);
-      if (!p) return;
+      if (!p || msg.capability !== p.capability || msg.capability !== capability) return;
       pending.delete(msg.id);
-      clearTimeout(p.timer);
+      stopTimer(p.timer);
       if (msg.error) p.reject(new Error(msg.error));
       else p.resolve(msg.result);
     });
   }
+  window.addEventListener("pagehide", () => {
+    alive = false;
+    capability = "";
+    pending.forEach(p => {
+      p.controller.abort();
+      stopTimer(p.timer);
+      p.reject(new Error("the wallet document was closed"));
+    });
+    pending.clear();
+  });
   function request(method, params) {
     return new Promise((resolve, reject) => {
-      const id = "r" + (++seq) + "-" + Math.random().toString(36).slice(2);
-      const timer = setTimeout(() => {
-        if (pending.delete(id)) reject(new Error("the wallet did not answer"));
+      if (!alive) { reject(new Error("the wallet document was closed")); return; }
+      const id = "r" + (++seq) + "-" + marker.slice(0, 16);
+      const controller = new Abort();
+      const p = { resolve, reject, controller, started: false, capability: "" };
+      p.timer = makeTimer(() => {
+        if (pending.delete(id)) {
+          controller.abort();
+          reject(new Error("the wallet did not answer"));
+        }
       }, 120000);
-      pending.set(id, { resolve: resolve, reject: reject, timer: timer });
-      fetch("cryptopanel://near/request", {
-        method: "POST",
-        mode: "no-cors",
-        body: JSON.stringify({ id: id, method: method, params: params || {} }),
-      }).catch((err) => {
-        if (pending.delete(id)) { clearTimeout(timer); reject(err); }
-      });
+      p.start = () => {
+        if (p.started || !capability || !alive) return;
+        p.started = true;
+        p.capability = capability;
+        send("` + dappRequestURL + `", {
+          method: "POST",
+          mode: "no-cors",
+          signal: controller.signal,
+          body: stringify({ id, method, params: params || {}, capability: p.capability }),
+        }).catch((err) => {
+          if (pending.delete(id)) { stopTimer(p.timer); reject(err); }
+        });
+      };
+      pending.set(id, p);
+      p.start();
     });
   }
   function normalizeActions(actions) {
@@ -79,6 +121,8 @@ const nearBridgeScript = `(() => {
     name: "Crypto Panel",
     connect: () => request("connect", {}),
     signIn: (params) => request("connect", params || {}),
+    disconnect: () => request("disconnect", {}),
+    signOut: () => request("disconnect", {}),
     getAccounts: () => request("getAccounts", {}),
     getNetwork: () => request("getNetwork", {}),
     signAndSendTransaction: (params) => request("signAndSendTransaction", {
