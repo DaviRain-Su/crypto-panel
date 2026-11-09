@@ -24,9 +24,10 @@ const (
 func newTestApp(t *testing.T) *App {
 	t.Helper()
 	a := &App{
-		settings:     DefaultSettings(),
-		settingsPath: filepath.Join(t.TempDir(), "settings.json"),
-		systemLocale: i18n.English,
+		settings:      DefaultSettings(),
+		settingsPath:  filepath.Join(t.TempDir(), "settings.json"),
+		systemLocale:  i18n.English,
+		pluginSecrets: memStore{},
 	}
 	a.newReader()
 	a.initPlugins(t.TempDir())

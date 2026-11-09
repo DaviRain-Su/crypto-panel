@@ -48,6 +48,15 @@ func (f *fakeCodingWindow) Focus() {}
 func (f *fakeCodingWindow) Close() { f.closed = true }
 
 func TestClosingCodingPermissionWindowRefuses(t *testing.T) {
+	for _, lang := range []string{i18n.English, i18n.Chinese} {
+		t.Run(lang, func(t *testing.T) {
+			testClosingCodingPermissionWindowRefuses(t, lang)
+		})
+	}
+}
+
+func testClosingCodingPermissionWindowRefuses(t *testing.T, lang string) {
+	t.Helper()
 	a := newTestApp(t)
 	a.win = new(mygo.Window)
 	opened := make(chan *fakeCodingWindow, 1)
@@ -56,7 +65,7 @@ func TestClosingCodingPermissionWindowRefuses(t *testing.T) {
 		return &fakeCodingWindow{opened: opened, title: opts.Title}
 	}
 	t.Cleanup(func() { openCodingPermissionWindow = previous })
-	a.settings.Language = i18n.Chinese
+	a.settings.Language = lang
 	req := acp.PermissionRequest{Options: []acp.PermissionOption{{OptionID: "allow-once", Name: "Allow once", Kind: "allow_once"}}}
 	type answer struct {
 		id  string
@@ -73,8 +82,8 @@ func TestClosingCodingPermissionWindowRefuses(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("没有打开编码许可窗口")
 	}
-	if win.title != a.t(i18n.CodingWindowTitle) || win.title == "Coding tool permission" {
-		t.Fatalf("窗口标题不是当前语言的 i18n 文案: %q", win.title)
+	if win.title != a.t(i18n.CodingWindowTitle) {
+		t.Fatalf("%s 窗口标题不是 i18n 文案: %q", lang, win.title)
 	}
 	win.onClose(nil)
 	select {

@@ -38,15 +38,23 @@ type pluginPageState struct {
 	hasPage  bool
 }
 
+// newPluginSecrets is the production credential backend for plugin secrets
+// and install provenance. Tests replace it so they cannot reach the real
+// keychain by forgetting to inject one.
+var newPluginSecrets = func() plugin.Secrets {
+	// Same service name as before the product rename, so plugin secrets
+	// already in the keychain stay reachable.
+	return mygo.Secrets.Service("crypto-panel-plugins")
+}
+
 // initPlugins opens the plugins folder under the app's data directory and
 // seeds the official examples on first launch.
 func (a *App) initPlugins(dir string) {
-	a.plugins = plugin.NewStore(
-		filepath.Join(dir, "plugins"),
-		// Same service name as before the product rename, so plugin
-		// secrets already in the keychain stay reachable.
-		mygo.Secrets.Service("crypto-panel-plugins"),
-	)
+	secrets := a.pluginSecrets
+	if secrets == nil {
+		secrets = newPluginSecrets()
+	}
+	a.plugins = plugin.NewStore(filepath.Join(dir, "plugins"), secrets)
 	a.pluginRunners = map[string]*plugin.Runner{}
 	a.pluginRunnerHashes = map[string]string{}
 	a.pluginLogs = map[string]*plugin.LogBuffer{}

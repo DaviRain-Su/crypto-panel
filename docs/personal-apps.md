@@ -36,9 +36,9 @@ Lintel 的个人应用仍是沙箱 JS 与原生页面数据。编码 agent 负�
 | `PUT /v0/plugins/{id}` | 同 id 更新提议，附 expectedHash，202 + pending |
 | `GET /v0/installations/{requestId}` | 查询安装状态 |
 | `DELETE /v0/installations/{requestId}` | 取消本机 API 的 pending。ACP 任务返回 403 `INSTALLATION_ORIGIN_FORBIDDEN`，列表和查询不暴露其 requestId |
-| `PUT /v0/plugins/{id}/settings` | 部分更新带有可读普通 `install.json` 的未签名 `local.*` 应用的已声明设置。其他应用，以及记录缺失、为符号链接或无法解析的 `local.*` 应用，返回 403 `API_MUTATION_FORBIDDEN` |
+| `PUT /v0/plugins/{id}/settings` | 部分更新未签名 `local.*` 应用的已声明设置。宿主把安装来源记在现有凭据服务 `crypto-panel-plugins` 的账户 `provenance:<id>` 里，不记在应用目录或可被改写的索引文件中。记录必须存在、可解析，并与磁盘上的包摘要和 `install.json` 一致。记录缺失、校验失败、摘要不一致，或 `install.json` 被替换成普通伪造文件、硬链接、符号链接、目录、管道或无法解析时，返回 403 `API_MUTATION_FORBIDDEN`，凭据保持不变 |
 | `POST /v0/plugins/{id}/refresh` | 执行已安装应用的一个声明页面 |
-| `DELETE /v0/plugins/{id}` | 卸载带有可读普通 `install.json` 的未签名 `local.*` 应用与宿主状态。其他应用，以及记录缺失、为符号链接、目录或无法解析的 `local.*` 应用，返回 403 `API_MUTATION_FORBIDDEN` |
+| `DELETE /v0/plugins/{id}` | 卸载未签名 `local.*` 应用与宿主状态。条件与设置接口相同：必须有匹配且已确认的宿主安装记录。伪造的普通 `install.json`、硬链接或不匹配同样返回 403 `API_MUTATION_FORBIDDEN`。升级前的可解析普通 `install.json` 只会在凭据服务成功落下记录之后迁移一次；缺失、链接、目录、读错误或写入超时不会被当成未签名。没确认的应用保持 403，直到原生界面重新安装。凭据服务删不掉来源账户时，卸载仍会删掉应用目录并报告该失败 |
 
 没有 HTTP approve、钱包签名、广播或密钥接口。refresh 禁用 EVM / NEAR 签名，但声明范围内的 host.fetch 和 KV 写入仍可能产生副作用，不能代替静态 validate。
 
@@ -81,6 +81,10 @@ Lintel 的个人应用仍是沙箱 JS 与原生页面数据。编码 agent 负�
 更新请求在 source 外加 `expectedHash`。必须严格提高版本，拒绝同版本改内容、降级、摘要冲突、删除非空设置、改变 secret 属性或违反新 KV 配额。保留启用状态、设置和 KV；提交失败保留旧版，崩溃恢复只接受完整旧版或已确认新版。
 
 设置正文为 `{"values":{"label":"My pool"}}`。缺省键不变；普通空串设空，secret 空串清除。秘密只返回 configured，不返回 value 或掩码长度。系统凭据服务失败不会回退明文；部分写失败返回 appliedKeys / failedKeys。
+
+安装来源放在现有凭据服务里，只是比应用目录旁的索引文件更难被「只会改文件」的进程改掉。这不是同一用户的硬边界。Linux 和 Windows 上，能写 `crypto-panel-plugins` 的同一用户进程可以伪造 `provenance:<id>`，通常没有提示。macOS 登录钥匙串的默认 ACL 下，读取已有秘密数据可能会弹窗，列出或新建条目通常不会。编码代理没有操作系统沙箱，不能把它写成「改不了钥匙串」。
+
+若迁移没能把记录和完成标记都写进凭据服务，这些应用不会通过本机 API，需要原生界面重新安装。钥匙串写入失败但磁盘仍可写时，插件目录外的哨兵会让下一次启动不再相信当时的 `install.json`。若哨兵和凭据服务都没留下这次尝试，下一次启动无法把它和首次升级区分开，可能会按当时的 `install.json` 迁移；删掉哨兵和凭据服务里的迁移标记也会如此。
 
 refresh 支持 `?page=overview`，只执行 navigation 中声明的页，返回原来的直接 page JSON。摘要和执行时间头仍使用 `X-Crypto-Panel-Package-Hash` 与 `X-Crypto-Panel-Evaluated-At`，并同时发送 `X-Lintel-Package-Hash` 与 `X-Lintel-Evaluated-At`。旧名称保留。时间表示执行完成时间，不是行情数据时间。一个应用同时只允许一个执行，API 冲突返回 409 APP_BUSY，原生重复刷新合并。当前页按 Settings 刷新间隔刷新，离开后不执行后台页面监控；失败保留同版本上次成功内容并显示时间。
 
