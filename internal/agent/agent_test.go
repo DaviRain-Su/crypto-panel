@@ -180,6 +180,7 @@ func TestRejectsMultipleOriginsCrossSiteAndForeignHost(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("LOCALHOST status %d", rec.Code)
 	}
+	forbid(t, func(req *http.Request) { req.Host = "evil.example" + port })
 }
 
 func TestLoopbackHostDoesNotRaceWithClose(t *testing.T) {

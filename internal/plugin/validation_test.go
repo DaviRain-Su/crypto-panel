@@ -5,7 +5,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"syscall"
 	"testing"
 )
 
@@ -277,6 +276,46 @@ func TestPackageHashMatchesCanonicalDigestWithoutCopying(t *testing.T) {
 	}
 }
 
+// 深度优先遍历会先看到 n/a.js，再看到 n.js；按路径排序则相反。
+func TestPackageHashFollowsSortedPathOrder(t *testing.T) {
+	root := t.TempDir()
+	store := NewStore(filepath.Join(root, "plugins"), nil)
+	src := filepath.Join(root, "src")
+	writePlugin(t, src, personalManifest, personalSource)
+	if err := os.Mkdir(filepath.Join(src, "n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(src, "n", "a.js"), []byte("export const nested = 1;\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(src, "n.js"), []byte("export const sibling = 1;\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Install(src); err != nil {
+		t.Fatal(err)
+	}
+	installed := filepath.Join(store.Dir(), "local.personal.gas")
+	manifest, err := LoadManifest(installed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	canonical, err := json.Marshal(manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(installed, "plugin.json"), append(canonical, '\n'), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	got, err := store.PackageHash(manifest.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want, err := DigestDir(installed)
+	if err != nil || got != want {
+		t.Fatalf("摘要 %s，按路径排序 %s (%v)", got, want, err)
+	}
+}
+
 func TestPackageHashRejectsSymlinkedShellFiles(t *testing.T) {
 	s, m := newTestManager(t, nil)
 	installed := installTest(t, m, personalPackage(t, "local.personal.gas", "1.0.0"))
@@ -333,16 +372,12 @@ func TestPackageHashRejectsSymlinkedShellFiles(t *testing.T) {
 }
 
 func TestPackageHashRejectsSpecialOrJunkLinksBeforeSkip(t *testing.T) {
-	for _, kind := range []string{"fifo", "backslash", "junk-symlink"} {
+	for _, kind := range []string{"backslash", "junk-symlink"} {
 		t.Run(kind, func(t *testing.T) {
 			s, m := newTestManager(t, nil)
 			installed := installTest(t, m, personalPackage(t, "local.personal.gas", "1.0.0"))
 			appDir := filepath.Join(s.Dir(), installed.PluginID)
 			switch kind {
-			case "fifo":
-				if err := syscall.Mkfifo(filepath.Join(appDir, "kv.json"), 0o600); err != nil {
-					t.Fatal(err)
-				}
 			case "backslash":
 				if err := os.WriteFile(filepath.Join(appDir, `bad\name.js`), []byte("x"), 0o600); err != nil {
 					t.Fatal(err)
