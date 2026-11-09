@@ -92,9 +92,8 @@ func Summarize(tx *Transaction) *Summary {
 	return out
 }
 
-// DecodeArgs renders function-call arguments for a person: compact JSON when
-// they are JSON, base64 otherwise. It never pretends to have decoded what it
-// has not.
+// DecodeArgs 保留批准所需的完整参数；JSON 格式化展示，其他内容明确标为 base64。
+// 显示空间由批准窗滚动区域处理，不能在数据层丢掉实际签名包含的字段。
 func DecodeArgs(args []byte) string {
 	if len(args) == 0 {
 		return ""
@@ -102,15 +101,8 @@ func DecodeArgs(args []byte) string {
 	if json.Valid(args) {
 		var buf bytes.Buffer
 		if err := json.Compact(&buf, args); err == nil {
-			return truncate(buf.String(), 512)
+			return buf.String()
 		}
 	}
-	return truncate("base64:"+base64.StdEncoding.EncodeToString(args), 512)
-}
-
-func truncate(s string, max int) string {
-	if len(s) <= max {
-		return s
-	}
-	return s[:max] + "…"
+	return "base64:" + base64.StdEncoding.EncodeToString(args)
 }

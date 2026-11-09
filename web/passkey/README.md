@@ -1,43 +1,39 @@
 # The passkey ceremony page
 
-This folder is the static page a browser opens for a WebAuthn ceremony. It
-has no build step and no dependencies: `index.html`, `style.css` and
-`ceremony.js`. The app embeds them with `embed.go`.
+This folder is the browser page for a WebAuthn ceremony. It has no build step
+or dependencies: `index.html`, `style.css` and `ceremony.js`. The app embeds
+these files with `embed.go`.
 
-## Hosting
+## Supported transport
 
-The app serves this page itself, on `http://localhost:<random port>`, and
-opens that URL in the system browser. `localhost` is a secure context, so
-WebAuthn accepts it, and the page's hostname is the relying party id
-(`rpId`). The page posts its result back to the app's loopback server; the
-server binds `127.0.0.1` only and checks the ceremony state.
+The app serves the page at `http://localhost:<random port>` and opens it in
+the system browser. `localhost` is a secure context WebAuthn accepts. The
+server binds `127.0.0.1` only; the relying party id (`rpId`) is `localhost`.
+The page posts its result to `/result` on the same origin.
 
-A stable HTTPS host (for example `https://crypto-panel.app/passkey/`) also
-works, but the page then has no `/result` endpoint and falls back to the
-custom scheme below. A passkey is bound to its rpId for life, so a production
-deployment needs a domain that will be kept.
+This build does **not** support a hosted HTTPS page or passkey custom-scheme
+callbacks. The generic URL parsers in `internal/webauthn` are not an app
+callback registration. Moving the page to a different domain also changes the
+relying party and does not recover an existing localhost credential.
 
-## The app opens it with the request in the fragment
+## Request and response
+
+The request is carried in the fragment, which never reaches the HTTP server
+or its logs. `internal/webauthn.CeremonyURL` builds it:
 
 ```
-http://localhost:52341/#mode=create&challenge=...&state=...&userId=...&userName=...
+http://localhost:52341/#mode=get&challenge=...&state=...&credentialId=...
 ```
-
-The fragment never reaches the server or its logs.
-`internal/webauthn.CeremonyURL` builds this URL.
 
 - `create`: `challenge`, `state`, `userId`, `userName`, optional
   `userDisplayName`, `rpName`.
-- `get`: `challenge`, `state`, `credentialId`.
+- `get`: `challenge`, `state`, `credentialId`. Used for both transfer
+  authorization and proof of control when importing recovery data.
 
-The page uses `location.hostname` as `rp.id` / `rpId`; it never takes a
-relying party from the URL. `challenge`, `userId` and `credentialId` are
-base64url without padding.
+Binary values use unpadded base64url. The page uses its own hostname as the
+relying party id, never one supplied in the request.
 
-## The page answers with a POST
-
-When the page is served over `http:` or `https:`, it posts the result to
-`/result` on its own origin:
+The page answers with a same-origin POST:
 
 ```json
 {"kind":"get","state":"...","credentialId":"...","clientDataJSON":"...","authenticatorData":"...","signature":"..."}
@@ -45,54 +41,60 @@ When the page is served over `http:` or `https:`, it posts the result to
 
 `create` carries `attestationObject` and `transports` instead of
 `authenticatorData` and `signature`. An error is
-`{"error":"Canceled","message":"...","state":"..."}`. The app's
-`internal/webauthn.ParseResultJSON` reads it, and the server accepts the POST
-only when its `state` matches the ceremony it started.
+`{"error":"Canceled","message":"...","state":"..."}`. Both results and
+errors must match the pending state, and only one answer is accepted. The
+page sends a cancellation beacon when closed before completion; the app also
+cancels pending operations on lock, app-window close, removal and network
+changes. A failed POST has no alternative delivery transport: restart the
+operation in the app.
 
-A page hosted elsewhere has no `/result` endpoint, so it falls back to:
+## Public recovery data
 
-```
-cryptopanel://passkey?result=<base64url(JSON)>
-```
+The app's **Export recovery file** saves a versioned JSON object containing
+only `format`, `version`, `rpId`, `credentialId`, `publicKey` and
+`nearAccount`. The private key remains in the authenticator. The file exposes
+account identifiers, so keep it somewhere appropriate for that information.
 
-`internal/webauthn.ParseCallback` reads that form. The app must register the
-`cryptopanel` scheme, keep the pending `state` and challenge, and verify the
-result before using it. The page is a courier: the smart account verifies the
-P-256 signature on chain.
+Recovery requires **both** this file and access to the original credential
+(for example its synced copy in a password manager). Import validates the
+format, sizes, public key and derived NEAR address, then requests a fresh
+WebAuthn assertion from that exact credential. The app verifies user presence,
+user verification, credential id, challenge, origin, relying party and
+signature before saving any identity. The EVM address is read again from the
+factory using the verified public key.
+
+A synced passkey alone cannot reconstruct the missing public-key/account
+mapping in this build. A recovery file alone cannot sign. If the public data
+is lost after forgetting the wallet, this app cannot recover the original
+account from the credential alone. Creating a new passkey creates a different
+wallet, not a recovery of the old one.
 
 ## Security notes
 
-- The challenge and user id are in the fragment, not the query.
-- The app's server binds `127.0.0.1`, serves only the embedded files, sends
-  `Cache-Control: no-store`, `X-Content-Type-Options: nosniff` and
-  `Referrer-Policy: no-referrer`, and caps the result body at 128 KB.
-- The result's `state` must match the ceremony the app started. A forged
-  result still has to pass the WebAuthn checks: the challenge, origin, rpId
-  and the P-256 signature.
-- No third-party scripts, fonts or images; the CSP allows only the page's own
-  files and `connect-src 'self'` for the POST.
-- The page's origin is the rpId. Moving the page to another domain invalidates
-  existing passkeys.
-- The page asks for `userVerification: "required"`, `residentKey: "required"`
-  and `attestation: "none"`: a discoverable passkey, gated by the device's
-  biometric or PIN, with no attestation identity leak.
+- The server serves embedded files only, caps result bodies at 128 KB and
+  sends `Cache-Control: no-store`, `X-Content-Type-Options: nosniff` and
+  `Referrer-Policy: no-referrer`.
+- A matching state is required even for an error response. A forged result
+  still has to pass all WebAuthn verification.
+- No third-party scripts, fonts or images. The CSP permits only the page's
+  files and same-origin POSTs.
+- Registration asks for `residentKey: "required"`,
+  `userVerification: "required"` and `attestation: "none"`. A discoverable
+  credential still needs the public recovery data for this app's recovery
+  flow.
+- The relayer key is read only after assertion verification and transaction
+  preparation. The app rechecks the pending operation, wallet identity,
+  network and relayer before signing and broadcasting. Canceling a pending
+  operation cannot reverse a transaction already submitted to the network.
 
-## Local development
+## Local inspection
 
-The app's own server is the normal path: Wallet → **Create passkey**. To
-inspect the page by hand, serve it statically:
+Wallet → **Create passkey** is the complete flow, including the result server.
+For static page inspection only:
 
 ```sh
 python3 -m http.server 8080 --directory web/passkey
 ```
 
-Open `http://localhost:8080/#mode=create&challenge=...` with a valid
-base64url challenge and the other fields. WebAuthn treats `localhost` as a
-secure context. Use the Go helper to build the URL instead of typing it. A
-statically served page uses the custom-scheme fallback, not the POST.
-
-## Limits
-
-A custom-scheme URL has browser-specific length limits. A platform passkey's
-result is a few kilobytes, which works in current browsers; the app's own
-loopback POST has no such limit.
+Open a localhost URL built by `CeremonyURL`. A static server has no `/result`
+endpoint, so it cannot complete an app ceremony or import a wallet.

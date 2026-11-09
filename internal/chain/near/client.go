@@ -37,7 +37,8 @@ func NewClient(network chain.Network, rpcURL string) *Client {
 	return &Client{
 		network:  network,
 		endpoint: rpcURL,
-		broker:   rpc.NewBroker(rpc.Options{}),
+		// nonce、近期区块和广播结果均不能复用缓存。
+		broker: rpc.NewBroker(rpc.Options{CacheTTL: -1}),
 	}
 }
 
@@ -50,15 +51,36 @@ func (c *Client) Endpoint() string { return c.endpoint }
 // Broker returns the broker behind the client, for its audit log.
 func (c *Client) Broker() *rpc.Broker { return c.broker }
 
-// RPC makes one cached, limited and audited call.
+// RPC 执行经过网络校验、限流和审计且不使用缓存的调用。
+// 广播方法使用较长超时，等待链上交易结果。
 func (c *Client) RPC(ctx context.Context, method string, params any) (json.RawMessage, error) {
-	return c.broker.Call(ctx, c.endpoint, method, params)
+	return c.RPCWithTimeout(ctx, method, params, 0)
 }
 
-// RPCWithTimeout is RPC with its own timeout, for a method that waits on the
-// chain.
+// RPCWithTimeout 允许为等待链上结果的方法指定超时；非正值使用该方法的默认超时。
 func (c *Client) RPCWithTimeout(ctx context.Context, method string, params any, timeout time.Duration) (json.RawMessage, error) {
-	return c.broker.CallWithTimeout(ctx, c.endpoint, method, params, timeout)
+	// status 的响应本身用于校验，避免它再次调用 Verify 形成递归。
+	if method != "status" {
+		if err := c.Verify(ctx); err != nil {
+			return nil, err
+		}
+	}
+	if timeout <= 0 {
+		switch method {
+		case "broadcast_tx_commit", "broadcast_tx_async", "send_tx":
+			timeout = broadcastTimeout
+		}
+	}
+	raw, err := c.broker.CallWithTimeout(ctx, c.endpoint, method, params, timeout)
+	if err != nil {
+		return nil, err
+	}
+	if method == "status" {
+		if err := c.verifyStatus(raw); err != nil {
+			return nil, err
+		}
+	}
+	return raw, nil
 }
 
 // Block reads the latest final block's height.
@@ -115,21 +137,33 @@ func (c *Client) Account(ctx context.Context, addr string) (chain.AccountBalance
 
 // Verify checks that the endpoint serves the network the settings name.
 func (c *Client) Verify(ctx context.Context) error {
-	chainID, err := neartx.Status(ctx, c.RPC)
+	// 直接经 Broker 查询，不缓存校验结果；失败或取消后，下次仍会重新校验。
+	raw, err := c.broker.Call(ctx, c.endpoint, "status", []any{})
 	if err != nil {
-		return fmt.Errorf("%s: %w", rpc.Host(c.endpoint), err)
+		return err
 	}
-	if c.network.ChainName != "" && chainID != c.network.ChainName {
-		return fmt.Errorf("%s serves NEAR %s, but %s is selected", rpc.Host(c.endpoint), chainID, c.network.Name)
+	return c.verifyStatus(raw)
+}
+
+func (c *Client) verifyStatus(raw json.RawMessage) error {
+	var status struct {
+		ChainID string `json:"chain_id"`
+	}
+	if err := json.Unmarshal(raw, &status); err != nil {
+		return fmt.Errorf("%s: status: unreadable chain id: %w", rpc.Host(c.endpoint), err)
+	}
+	if c.network.ChainName == "" {
+		return fmt.Errorf("%s: the selected NEAR network has no chain id", rpc.Host(c.endpoint))
+	}
+	if status.ChainID != c.network.ChainName {
+		return fmt.Errorf("%s serves NEAR %q, but %s (%s) is selected", rpc.Host(c.endpoint), status.ChainID, c.network.Name, c.network.ChainName)
 	}
 	return nil
 }
 
 // Send broadcasts a signed transaction and waits for its final outcome.
 func (c *Client) Send(ctx context.Context, signed []byte, expected [32]byte) (string, error) {
-	return neartx.Send(ctx, func(ctx context.Context, method string, params any) (json.RawMessage, error) {
-		return c.RPCWithTimeout(ctx, method, params, broadcastTimeout)
-	}, signed, expected)
+	return neartx.Send(ctx, c.RPC, signed, expected)
 }
 
 // unknownAccount reports the RPC error a view_account call answers for an

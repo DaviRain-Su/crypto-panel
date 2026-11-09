@@ -139,15 +139,15 @@ the shell's keychain; plugins and web pages never see any key.
 - **Isolation**: each DApp is an untrusted `mygo.WebView` page. It has no Go
   methods, no keychain, no filesystem, no permission grants, no `window.open`,
   and no downloads. It cannot draw or dismiss an approval.
-- **The bridge**: a preload script defines `window.nearWallet` with
-  `connect`, `signIn`, `getAccounts`, `getNetwork`,
-  `signAndSendTransaction` and `addFunctionCallKey`. Requests go to the
-  shell's `cryptopanel://near/request` scheme; answers come back as an event
-  because an untrusted page cannot read a cross-origin response.
-- **Origin**: the origin is the page's actual URL, never a field of the
-  request, so one page cannot claim to be another. Only `https`, or `http` on
-  loopback, is accepted. The user approves each origin's connection once; a
-  page that is not connected cannot sign.
+- **Bridge**：主 frame 的 preload script 提供 `window.nearWallet`，支持
+  `connect`、`signIn`、`disconnect`、`signOut`、`getAccounts`、`getNetwork`、
+  `signAndSendTransaction` 和 `addFunctionCallKey`。请求发送到 shell 的
+  `cryptopanel://near/request`；不受信任的页面不能读取异源响应，因此结果通过事件返回。
+- **Origin 与文档**：请求须携带原生 host 向加载完成的主文档发放的随机 capability。
+  Host 共同校验当前 WebView、实际 origin 与文档 capability；顶层 URL 或 HTTP
+  `Origin` header 不能单独授权 frame。仅接受 `https` 或 loopback 上的 `http`。
+  每个 origin 须先得到用户连接批准，未连接的页面不能签名。导航、关闭窗口、断开连接
+  或请求超时会撤销待批操作；旧文档的 capability 不能在新文档中复用。
 - **A test page** lives in [`web/dapp`](web/dapp/index.html): connect, send
   NEAR, and add a function-call key. It is a demonstration of the bridge, not
   a production wallet.
@@ -287,21 +287,30 @@ separate credential, created on the Wallet page:
   written. Devnet v1 is a different program id and a different vault; the
   panel's Solana network is mainnet. Sending SOL is **not** wired.
 
-The recovery rules are these, and they are not optional:
+Restoring the original wallet requires **both the original usable passkey and
+its public recovery file**:
 
-- **A synced passkey** (iCloud Keychain / Apple Passwords, or Google Password
-  Manager) follows the same account to another device signed in to the same
-  Apple or Google account. If every device is lost, recovery goes through the
-  provider's own process (for Apple: Apple Account, a trusted phone and the
-  device passcode, with a limited number of attempts).
-- **A device-bound passkey** (for example, one Chrome profile or Windows
-  Hello) usually cannot be recovered if the device is lost.
-- A NEAR account can hold several keys. The safer setup is a passkey for daily
-  signing **plus a different recovery method** — another device's passkey, or
-  an offline recovery key. One unsynced passkey alone is a single point of
-  failure.
-- A passkey's private key **cannot be exported** and re-imported like a
-  mnemonic.
+- **Export recovery data** on the Wallet or Settings page before removing the
+  wallet or moving to another device. The JSON contains the credential id,
+  P-256 public key and derived NEAR address, never the passkey's private key.
+  These public identifiers can link your accounts, so keep the file private.
+- **Restore passkey** imports that file, checks its format and derived address,
+  then asks the original credential for a fresh WebAuthn assertion. The app
+  verifies the challenge, origin, relying party, user verification and signature
+  before saving the restored identity. It does not create a replacement key.
+  The EVM address is read again from the smart-account factory after recovery.
+- **A synced passkey** (Apple Passwords / iCloud Keychain or Google Password
+  Manager) can supply the original credential on another device. Syncing that
+  credential alone does not restore the app's public credential-to-account
+  mapping: the recovery JSON is also required in this version.
+- **A device-bound passkey** may be permanently unavailable after losing its
+  device. The recovery JSON alone cannot sign or replace a lost passkey;
+  conversely, this version cannot reconstruct lost public recovery metadata
+  from a synced credential alone.
+- NEAR supports multiple keys in general, but this passkey wallet does **not**
+  yet provide an interface for enrolling another recovery key. Do not rely on
+  an unconfigured second key or an automatic recovery service.
+- A passkey's private key **cannot be exported** and re-imported like a mnemonic.
 
 ## Try it: step by step
 
@@ -452,23 +461,24 @@ Other useful tests: `TestDappOrigin` (https / loopback only),
   smart account address is derived and watched, but sending from it needs an
   ERC-4337 bundler and is not wired. The Solana vault address is derived from
   the LazorKit v1 program and watched, but the account is not created and
-  sending is not wired; do not fund that address yet. Recovery depends on
-  whether the passkey is synced and on having a second key; a device-bound
-  passkey can be lost, and a passkey cannot be exported.
+  sending is not wired; do not fund that address yet. Recovery requires the
+  original usable passkey plus its exported public recovery JSON. Syncing the
+  credential alone is insufficient; the private key cannot be exported, and a
+  lost device-bound credential cannot be replaced by the JSON.
 - **macOS-first.** The system check is macOS-only; the app builds elsewhere
   but the presence check is unavailable.
 - **No hardware wallet or menu bar panel.** Those are later milestones.
 
 ## Security model
 
-- Keys live in the OS keychain, never in `settings.json`. The settings file
-  keeps addresses and labels only.
+- 私钥保存在 OS keychain，绝不写入 `settings.json`。设置文件保存地址、标签、
+  应用配置和 Passkey 的公开身份资料（credential ID、公钥与派生地址），不保存私钥。
 - A plugin never sees a key. `host.accounts()` returns addresses;
   `host.requestSign` / `host.requestNearSign` only ask the shell, and the
   shell's approval is the only path to a signature.
-- A DApp page is untrusted: no Go methods, no keychain, no filesystem, no
-  permissions, no `window.open`, no downloads, and no way to draw or dismiss
-  an approval. Its origin comes from the web view's URL.
+- DApp 页面不受信任：没有 Go 方法、keychain、文件系统或权限授权，不能使用
+  `window.open`、下载文件或绘制、关闭原生批准窗。请求必须通过当前 WebView、
+  原生读取的 origin 和当前主文档 capability 的共同校验；不能只凭顶层 URL 授权。
 - The approval window is the shell's own; a plugin or page can describe what
   it wants, but the decode shown to the user is the shell's.
 - NEAR function-call key limits are checked before the approval window, so an

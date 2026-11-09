@@ -77,6 +77,9 @@ func (c *ceremonyServer) origin() string {
 
 // run opens the page for req and waits for its answer.
 func (c *ceremonyServer) run(ctx context.Context, req webauthn.CeremonyRequest) (webauthn.CeremonyResult, error) {
+	if err := ctx.Err(); err != nil {
+		return webauthn.CeremonyResult{}, err
+	}
 	state, err := randomState()
 	if err != nil {
 		return webauthn.CeremonyResult{}, err
@@ -89,6 +92,16 @@ func (c *ceremonyServer) run(ctx context.Context, req webauthn.CeremonyRequest) 
 	c.mu.Lock()
 	c.state = state
 	c.mu.Unlock()
+	defer func() {
+		c.mu.Lock()
+		if c.state == state {
+			c.state = ""
+		}
+		c.mu.Unlock()
+	}()
+	if err := ctx.Err(); err != nil {
+		return webauthn.CeremonyResult{}, err
+	}
 	if err := c.open(page); err != nil {
 		return webauthn.CeremonyResult{}, fmt.Errorf("passkey: opening the browser: %w", err)
 	}
@@ -96,11 +109,14 @@ func (c *ceremonyServer) run(ctx context.Context, req webauthn.CeremonyRequest) 
 	defer timer.Stop()
 	select {
 	case out := <-c.results:
-		if out.err != nil {
-			return webauthn.CeremonyResult{}, out.err
+		if err := ctx.Err(); err != nil {
+			return webauthn.CeremonyResult{}, err
 		}
 		if out.result.State != state {
 			return webauthn.CeremonyResult{}, errors.New("passkey: the result is for another ceremony")
+		}
+		if out.err != nil {
+			return webauthn.CeremonyResult{}, out.err
 		}
 		return out.result, nil
 	case <-ctx.Done():
@@ -114,6 +130,9 @@ func (c *ceremonyServer) close() {
 	if c == nil || c.srv == nil {
 		return
 	}
+	c.mu.Lock()
+	c.state = ""
+	c.mu.Unlock()
 	_ = c.srv.Close()
 }
 
@@ -168,33 +187,32 @@ func (c *ceremonyServer) serveResult(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	result, err := webauthn.ParseResultJSON(body)
+	out := ceremonyOutcome{result: result}
 	if err != nil {
 		var ceremonyErr *webauthn.CeremonyError
-		if errors.As(err, &ceremonyErr) {
-			c.deliver(ceremonyOutcome{err: ceremonyErr})
-			w.WriteHeader(http.StatusNoContent)
+		if !errors.As(err, &ceremonyErr) {
+			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
+		out.result.State = ceremonyErr.State
+		out.err = ceremonyErr
 	}
-	c.mu.Lock()
-	want := c.state
-	c.mu.Unlock()
-	if result.State != want {
-		http.Error(w, "the result is for another ceremony", http.StatusConflict)
-		return
-	}
-	if !c.deliver(ceremonyOutcome{result: result}) {
-		http.Error(w, "the app is not waiting for a result", http.StatusConflict)
+	if !c.deliver(out) {
+		http.Error(w, "the app is not waiting for this ceremony", http.StatusConflict)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
 }
 
 func (c *ceremonyServer) deliver(out ceremonyOutcome) bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.state == "" || out.result.State != c.state {
+		return false
+	}
 	select {
 	case c.results <- out:
+		c.state = "" // One result or error consumes the pending ceremony.
 		return true
 	default:
 		return false

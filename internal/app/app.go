@@ -134,6 +134,7 @@ type App struct {
 	passkeySendHash   string
 	passkeySendBusy   bool
 	passkeyEVMBusy    bool
+	passkeyOp         *passkeyOperation
 	newCeremony       func(func(string) error) (passkeyCeremony, error)
 	openExternal      func(string) error
 
@@ -206,6 +207,7 @@ type App struct {
 	dappURLDraft  string
 	dappErr       string
 	dappConnected map[string]bool
+	dappBridge    *dappBridgeState
 
 	// The read-only local API for agents: its listener, the keychain the
 	// bearer token lives in, the token shown in Settings, and the port form.
@@ -288,6 +290,7 @@ func New() (*App, error) {
 // newReader rebuilds the reader after the network or endpoint changed, and
 // drops the plugin runtimes that snapshotted the old one.
 func (a *App) newReader() {
+	a.cancelPasskeyOperations()
 	a.stopAllRunners()
 	reader, err := a.settings.Reader()
 	if err != nil {
@@ -316,6 +319,7 @@ func (a *App) Ready() {
 	mygo.App.OnActivate(func(bool) { a.showWindow() })
 	mygo.App.OnSecondInstance(func([]string, string) { a.showWindow() })
 	mygo.App.OnBeforeQuit(func(*mygo.QuitEvent) {
+		a.cancelPasskeyOperations()
 		a.quitting = true
 		a.stopAgent()
 		a.stopAllRunners()
@@ -345,6 +349,7 @@ func (a *App) createWindow() {
 		Content:              ui.View(a.view),
 	})
 	a.win.OnClose(func(e *mygo.CloseEvent) {
+		a.cancelPasskeyOperations()
 		if a.quitting {
 			return
 		}

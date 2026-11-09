@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"hash/fnv"
 	"io"
 	"io/fs"
 	"os"
@@ -437,11 +438,8 @@ func writeFileAtomic(path string, data []byte, mode fs.FileMode) error {
 type KV struct {
 	path  string
 	quota int
-
-	mu     sync.Mutex
-	loaded bool
-	data   map[string]json.RawMessage
-	size   int
+	data  map[string]json.RawMessage
+	size  int
 }
 
 const (
@@ -449,13 +447,30 @@ const (
 	maxKVValue = 64 << 10
 )
 
+// 同一进程内按文件协调所有 Runner 和 Store；固定锁表不会随插件安装次数增长。
+// 每次持锁后重读文件，避免独立实例的旧快照覆盖 API 或界面刚保存的内容。
+var kvFileLocks [64]sync.Mutex
+
+func (kv *KV) fileLock() *sync.Mutex {
+	path, err := filepath.Abs(kv.path)
+	if err != nil {
+		path = filepath.Clean(kv.path)
+	}
+	h := fnv.New32a()
+	_, _ = h.Write([]byte(path))
+	return &kvFileLocks[h.Sum32()%uint32(len(kvFileLocks))]
+}
+
 // Get returns the value stored under key.
 func (kv *KV) Get(key string) (json.RawMessage, bool) {
-	kv.mu.Lock()
-	defer kv.mu.Unlock()
-	kv.load()
+	mu := kv.fileLock()
+	mu.Lock()
+	defer mu.Unlock()
+	if err := kv.load(); err != nil {
+		return nil, false
+	}
 	value, ok := kv.data[key]
-	return value, ok
+	return append(json.RawMessage(nil), value...), ok
 }
 
 // Put stores value under key, refusing a write that would pass the quota.
@@ -469,10 +484,16 @@ func (kv *KV) Put(key string, value json.RawMessage) error {
 	if kv.quota == 0 {
 		return errors.New("plugin has no storage permission")
 	}
-	kv.mu.Lock()
-	defer kv.mu.Unlock()
-	kv.load()
-	old := len(kv.data[key]) + len(key)
+	mu := kv.fileLock()
+	mu.Lock()
+	defer mu.Unlock()
+	if err := kv.load(); err != nil {
+		return err
+	}
+	old := 0
+	if previous, ok := kv.data[key]; ok {
+		old = len(previous) + len(key)
+	}
 	next := kv.size - old + len(value) + len(key)
 	if next > kv.quota {
 		return fmt.Errorf("storage quota of %d bytes is full", kv.quota)
@@ -487,9 +508,12 @@ func (kv *KV) Put(key string, value json.RawMessage) error {
 
 // Delete removes key.
 func (kv *KV) Delete(key string) error {
-	kv.mu.Lock()
-	defer kv.mu.Unlock()
-	kv.load()
+	mu := kv.fileLock()
+	mu.Lock()
+	defer mu.Unlock()
+	if err := kv.load(); err != nil {
+		return err
+	}
 	if _, ok := kv.data[key]; !ok {
 		return nil
 	}
@@ -500,9 +524,12 @@ func (kv *KV) Delete(key string) error {
 
 // Keys returns the stored keys, for tests and the manager.
 func (kv *KV) Keys() []string {
-	kv.mu.Lock()
-	defer kv.mu.Unlock()
-	kv.load()
+	mu := kv.fileLock()
+	mu.Lock()
+	defer mu.Unlock()
+	if err := kv.load(); err != nil {
+		return nil
+	}
 	out := make([]string, 0, len(kv.data))
 	for key := range kv.data {
 		out = append(out, key)
@@ -511,22 +538,22 @@ func (kv *KV) Keys() []string {
 	return out
 }
 
-func (kv *KV) load() {
-	if kv.loaded {
-		return
-	}
-	kv.loaded = true
+func (kv *KV) load() error {
+	kv.data, kv.size = nil, 0
 	data, err := os.ReadFile(kv.path)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil
+	}
 	if err != nil {
-		return
+		return fmt.Errorf("read plugin storage: %w", err)
 	}
 	if err := json.Unmarshal(data, &kv.data); err != nil {
-		kv.data = nil
-		return
+		return fmt.Errorf("read plugin storage: %w", err)
 	}
 	for key, value := range kv.data {
 		kv.size += len(key) + len(value)
 	}
+	return nil
 }
 
 func (kv *KV) save() error {

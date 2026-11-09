@@ -1,8 +1,8 @@
 package app
 
 import (
+	"bytes"
 	"context"
-	"crypto/ed25519"
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
@@ -135,7 +135,7 @@ type passkeyCeremony interface {
 // challenge and user id are fresh for every registration; the page runs in
 // the system browser, where the platform authenticator lives.
 func (a *App) createPasskey() {
-	if a.passkeyBusy || a.settings.Passkey != nil {
+	if a.passkeyOp != nil || a.passkeyBusy || a.passkeySendBusy || a.settings.Passkey != nil {
 		return
 	}
 	if a.newCeremony == nil || a.openExternal == nil {
@@ -143,7 +143,7 @@ func (a *App) createPasskey() {
 		a.invalidate()
 		return
 	}
-	a.passkeyBusy = true
+	op := a.beginPasskeyOperation(false)
 	a.passkeyErr = ""
 	a.passkeyNotice = ""
 	a.invalidate()
@@ -151,25 +151,27 @@ func (a *App) createPasskey() {
 	created := a.t(i18n.PasskeyCreated)
 	failed := a.t(i18n.PasskeyFailed)
 	a.goAsync(func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
-		defer cancel()
+		if err := op.ctx.Err(); err != nil {
+			a.failPasskey(op, failed, err)
+			return
+		}
 		srv, err := newCeremony(open)
 		if err != nil {
-			a.failPasskey(failed, err)
+			a.failPasskey(op, failed, err)
 			return
 		}
 		defer srv.close()
 		challenge := make([]byte, 32)
 		userID := make([]byte, 16)
 		if _, err := rand.Read(challenge); err != nil {
-			a.failPasskey(failed, err)
+			a.failPasskey(op, failed, err)
 			return
 		}
 		if _, err := rand.Read(userID); err != nil {
-			a.failPasskey(failed, err)
+			a.failPasskey(op, failed, err)
 			return
 		}
-		res, err := srv.run(ctx, webauthn.CeremonyRequest{
+		res, err := srv.run(op.ctx, webauthn.CeremonyRequest{
 			Mode:            webauthn.CeremonyCreate,
 			Challenge:       challenge,
 			UserID:          userID,
@@ -178,17 +180,21 @@ func (a *App) createPasskey() {
 			RPName:          "Crypto Panel",
 		})
 		if err != nil {
-			a.failPasskey(failed, err)
+			a.failPasskey(op, failed, err)
 			return
 		}
 		reg, err := webauthn.ParseRegistration(res.ClientDataJSON, res.AttestationObject, challenge, srv.origin(), ceremonyRPID)
 		if err != nil {
-			a.failPasskey(failed, err)
+			a.failPasskey(op, failed, err)
+			return
+		}
+		if res.Kind != webauthn.CeremonyCreate || !bytes.Equal(res.CredentialID, reg.CredentialID) {
+			a.failPasskey(op, failed, errors.New("passkey: registration returned another credential"))
 			return
 		}
 		pub, err := passkeywallet.NewPublicKey(reg.X, reg.Y)
 		if err != nil {
-			a.failPasskey(failed, err)
+			a.failPasskey(op, failed, err)
 			return
 		}
 		account := passkeywallet.AccountID(pub)
@@ -201,8 +207,15 @@ func (a *App) createPasskey() {
 		if vault, err := solanapasskey.VaultAddress(pub); err == nil {
 			pk.SolanaAddress = vault
 		}
-		a.onMain(func() {
-			a.passkeyBusy = false
+		a.finishPasskeyOperation(op, nil, func(err error) {
+			if err != nil {
+				a.passkeyErr = failed + " " + err.Error()
+				return
+			}
+			if a.settings.Passkey != nil {
+				a.passkeyErr = a.t(i18n.PasskeyCanceled)
+				return
+			}
 			a.settings.Passkey = pk
 			a.settings.ActiveWallet = wallet.PasskeyContainerID
 			a.watchPasskeyAccount(account, "Passkey")
@@ -219,17 +232,16 @@ func (a *App) createPasskey() {
 }
 
 // failPasskey ends a create() ceremony with the page's or the check's error.
-func (a *App) failPasskey(prefix string, err error) {
-	a.onMain(func() {
-		a.passkeyBusy = false
+func (a *App) failPasskey(op *passkeyOperation, prefix string, err error) {
+	a.finishPasskeyOperation(op, err, func(err error) {
 		a.passkeyErr = prefix + " " + err.Error()
-		a.invalidate()
 	})
 }
 
 // removePasskey forgets the passkey in the app. The credential itself stays
 // in the authenticator or password manager; the app cannot delete it.
 func (a *App) removePasskey() {
+	a.cancelPasskeyOperations()
 	pk := a.settings.Passkey
 	if pk == nil {
 		return
@@ -398,13 +410,13 @@ func (r readerCaller) CallContract(ctx context.Context, call ethereum.CallMsg, b
 // StateInit. The account's own key signs nothing here: the wallet's unlocked
 // NEAR account relays the transaction and pays its fee.
 func (a *App) deployPasskey() {
-	if a.passkeySendBusy {
+	if a.passkeyOp != nil || a.passkeySendBusy || a.passkeyBusy {
 		return
 	}
-	pk := a.settings.Passkey
-	if pk == nil {
+	if a.settings.Passkey == nil {
 		return
 	}
+	pk := *a.settings.Passkey
 	network := a.network()
 	if network.Family != chain.Near || network.ChainName != "mainnet" {
 		a.passkeySendErr = a.t(i18n.PasskeyMainnetOnly)
@@ -430,72 +442,66 @@ func (a *App) deployPasskey() {
 	}
 	stateInit := passkeywallet.StateInit(pub)
 	summary := &neartx.Summary{
-		SignerID:   pk.NEARAccount,
-		PublicKey:  pub.String(),
-		ReceiverID: pk.NEARAccount,
-		Actions: []neartx.ActionSummary{{
-			Kind:          neartx.ActionDeterministicStateInit,
-			StateInitSize: len(stateInit),
-		}},
+		SignerID: pk.NEARAccount, PublicKey: pub.String(), ReceiverID: pk.NEARAccount,
+		Actions: []neartx.ActionSummary{{Kind: neartx.ActionDeterministicStateInit, StateInitSize: len(stateInit)}},
 	}
 	description := a.t(i18n.PasskeyDeployNote, relayer.AccountID)
 	rejected := a.t(i18n.PasskeyRejected)
-	relayerLocked := a.t(i18n.PasskeyRelayerLocked)
 	alreadyOnChain := a.t(i18n.PasskeyAlreadyOnChain)
-	reader := a.reader
-	approve := a.approver()
-	a.passkeySendBusy = true
-	a.passkeySendErr = ""
-	a.passkeySendNotice = ""
-	a.passkeySendHash = ""
+	reader, approve := a.reader, a.approver()
+	state := passkeyRelayState{passkey: pk, networkID: network.ID, rpcURL: a.settings.RPCURL, relayer: relayer}
+	op := a.beginPasskeyOperation(true)
+	a.passkeySendErr, a.passkeySendNotice, a.passkeySendHash = "", "", ""
 	a.invalidate()
 	a.goAsync(func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		if err := a.preflightPasskeyRelay(op, state, reader.RPC); err != nil {
+			a.failPasskeySend(op, err)
+			return
+		}
+		ctx, cancel := context.WithTimeout(op.ctx, 30*time.Second)
 		deployed, err := passkeyDeployed(ctx, reader.RPC, pk.NEARAccount)
 		cancel()
 		if err != nil {
-			a.failPasskeySend(err)
+			a.failPasskeySend(op, err)
+			return
+		}
+		if err := a.passkeyRelayValid(op, state); err != nil {
+			a.failPasskeySend(op, err)
 			return
 		}
 		if deployed {
-			a.onMain(func() {
-				a.passkeySendBusy = false
+			a.finishPasskeyOperation(op, nil, func(err error) {
+				if err != nil {
+					a.passkeySendErr = err.Error()
+					return
+				}
 				a.passkeySendNotice = alreadyOnChain
-				a.invalidate()
 			})
 			return
 		}
 		if !approve(approvalRequest{
-			pluginName:  "Crypto Panel",
-			sourceKind:  "wallet",
-			description: description,
-			network:     network,
-			near:        summary,
-			fromAddr:    pk.NEARAccount,
-			fromLabel:   "Passkey",
+			pluginName: "Crypto Panel", sourceKind: "wallet", description: description,
+			network: network, near: summary, fromAddr: pk.NEARAccount, fromLabel: "Passkey",
 		}) {
-			a.failPasskeySend(errors.New(rejected))
+			a.failPasskeySend(op, errors.New(rejected))
 			return
 		}
-		key, ok := a.nearSignKey(relayer.AccountID)
-		if !ok {
-			a.failPasskeySend(errors.New(relayerLocked))
-			return
-		}
-		hash, err := relayNearTx(context.Background(), reader.RPC, relayer, key, pk.NEARAccount, []neartx.Action{
+		hash, err := a.relayPasskeyNear(op, state, reader.RPC, []neartx.Action{
 			neartx.DeterministicStateInit(stateInit, new(big.Int)),
 		})
 		if err != nil {
-			a.failPasskeySend(err)
+			a.failPasskeySend(op, err)
 			return
 		}
-		a.onMain(func() {
-			a.passkeySendBusy = false
+		a.finishPasskeyOperation(op, nil, func(err error) {
+			if err != nil {
+				a.passkeySendErr = err.Error()
+				return
+			}
 			a.passkeySendHash = hash
 			a.passkeySendNotice = a.t(i18n.PasskeyDeployed, hash)
 			a.touch()
 			a.requestRefresh()
-			a.invalidate()
 		})
 	})
 }
@@ -505,13 +511,13 @@ func (a *App) deployPasskey() {
 // message in the browser. The wallet's unlocked NEAR account relays the
 // transaction and pays its fee; the passkey's own account needs no key.
 func (a *App) sendPasskeyNear() {
-	if a.passkeySendBusy {
+	if a.passkeyOp != nil || a.passkeySendBusy || a.passkeyBusy {
 		return
 	}
-	pk := a.settings.Passkey
-	if pk == nil {
+	if a.settings.Passkey == nil {
 		return
 	}
+	pk := *a.settings.Passkey
 	network := a.network()
 	if network.Family != chain.Near || network.ChainName != "mainnet" {
 		a.passkeySendErr = a.t(i18n.PasskeyMainnetOnly)
@@ -576,17 +582,21 @@ func (a *App) sendPasskeyNear() {
 	}
 	description := a.t(i18n.PasskeySendNote, relayer.AccountID)
 	rejected := a.t(i18n.PasskeyRejected)
-	relayerLocked := a.t(i18n.PasskeyRelayerLocked)
 	stateInit := passkeywallet.StateInit(pub)
 	reader := a.reader
 	approve := a.approver()
 	newCeremony, open := a.newCeremony, a.openExternal
-	a.passkeySendBusy = true
+	state := passkeyRelayState{passkey: pk, networkID: network.ID, rpcURL: a.settings.RPCURL, relayer: relayer}
+	op := a.beginPasskeyOperation(true)
 	a.passkeySendErr = ""
 	a.passkeySendNotice = ""
 	a.passkeySendHash = ""
 	a.invalidate()
 	a.goAsync(func() {
+		if err := a.preflightPasskeyRelay(op, state, reader.RPC); err != nil {
+			a.failPasskeySend(op, err)
+			return
+		}
 		if !approve(approvalRequest{
 			pluginName:  "Crypto Panel",
 			sourceKind:  "wallet",
@@ -596,67 +606,64 @@ func (a *App) sendPasskeyNear() {
 			fromAddr:    pk.NEARAccount,
 			fromLabel:   "Passkey",
 		}) {
-			a.failPasskeySend(errors.New(rejected))
+			a.failPasskeySend(op, errors.New(rejected))
 			return
 		}
-		key, ok := a.nearSignKey(relayer.AccountID)
-		if !ok {
-			a.failPasskeySend(errors.New(relayerLocked))
+		if err := a.passkeyRelayValid(op, state); err != nil {
+			a.failPasskeySend(op, err)
 			return
 		}
-		ceremonyCtx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 		srv, err := newCeremony(open)
 		if err != nil {
-			cancel()
-			a.failPasskeySend(err)
+			a.failPasskeySend(op, err)
 			return
 		}
-		res, err := srv.run(ceremonyCtx, webauthn.CeremonyRequest{
+		res, err := srv.run(op.ctx, webauthn.CeremonyRequest{
 			Mode:         webauthn.CeremonyGet,
 			Challenge:    challenge,
 			CredentialID: cred.ID,
 		})
 		origin := srv.origin()
 		srv.close()
-		cancel()
 		if err != nil {
-			a.failPasskeySend(err)
+			a.failPasskeySend(op, err)
 			return
 		}
-		assertion := webauthn.Assertion{
-			AuthenticatorData: res.AuthenticatorData,
-			ClientDataJSON:    res.ClientDataJSON,
-			Signature:         res.Signature,
+		assertion, err := verifyPasskeyAssertion(res, cred, challenge, origin)
+		if err != nil {
+			a.failPasskeySend(op, err)
+			return
 		}
-		if err := assertion.Verify(cred, challenge, origin, ceremonyRPID); err != nil {
-			a.failPasskeySend(err)
+		if err := a.passkeyRelayValid(op, state); err != nil {
+			a.failPasskeySend(op, err)
 			return
 		}
 		proof, err := passkeywallet.NewProof(assertion)
 		if err != nil {
-			a.failPasskeySend(err)
+			a.failPasskeySend(op, err)
 			return
 		}
 		args, err := passkeywallet.ExecuteArgs(message, proof)
 		if err != nil {
-			a.failPasskeySend(err)
+			a.failPasskeySend(op, err)
 			return
 		}
-		ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
-		defer cancel()
 		// The StateInit creates the account if it is not on chain yet, and is
 		// a no-op when it is: the id is derived from the same state.
 		actions := []neartx.Action{
 			neartx.DeterministicStateInit(stateInit, new(big.Int)),
 			neartx.FunctionCall("w_execute_signed", args, passkeyGas, big.NewInt(1)),
 		}
-		hash, err := relayNearTx(ctx, reader.RPC, relayer, key, pk.NEARAccount, actions)
+		hash, err := a.relayPasskeyNear(op, state, reader.RPC, actions)
 		if err != nil {
-			a.failPasskeySend(err)
+			a.failPasskeySend(op, err)
 			return
 		}
-		a.onMain(func() {
-			a.passkeySendBusy = false
+		a.finishPasskeyOperation(op, nil, func(err error) {
+			if err != nil {
+				a.passkeySendErr = err.Error()
+				return
+			}
 			a.passkeySendHash = hash
 			a.passkeySendNotice = a.t(i18n.WalletNearSendSent, hash)
 			a.passkeySendTo = ""
@@ -669,38 +676,27 @@ func (a *App) sendPasskeyNear() {
 }
 
 // failPasskeySend ends a deploy or send with err.
-func (a *App) failPasskeySend(err error) {
-	a.onMain(func() {
-		a.passkeySendBusy = false
+func (a *App) failPasskeySend(op *passkeyOperation, err error) {
+	a.finishPasskeyOperation(op, err, func(err error) {
 		a.passkeySendErr = err.Error()
-		a.invalidate()
 	})
 }
 
-// relayNearTx prepares, signs and broadcasts a transaction from the wallet's
-// own NEAR account. It is the passkey flows' relayer: the account pays the
-// fee, and the passkey's signature authorizes only the inner action.
-func relayNearTx(ctx context.Context, rpc neartx.RPC, relayer wallet.NearAccount, key ed25519.PrivateKey, receiver string, actions []neartx.Action) (string, error) {
-	publicKey, err := neartx.ParsePublicKey(relayer.PublicKey)
-	if err != nil {
-		return "", fmt.Errorf("the relayer's public key: %w", err)
+// verifyPasskeyAssertion 同时检查返回的 credential ID，
+// 浏览器响应必须证明对当前所用公开身份的控制权。
+func verifyPasskeyAssertion(res webauthn.CeremonyResult, cred webauthn.Credential, challenge []byte, origin string) (webauthn.Assertion, error) {
+	if res.Kind != webauthn.CeremonyGet || !bytes.Equal(res.CredentialID, cred.ID) {
+		return webauthn.Assertion{}, errors.New("passkey: assertion returned another credential")
 	}
-	prepareCtx, cancel := context.WithTimeout(ctx, 60*time.Second)
-	tx, _, err := neartx.Prepare(prepareCtx, rpc, neartx.Signer{
-		AccountID: relayer.AccountID,
-		PublicKey: publicKey,
-	}, neartx.Request{ReceiverID: receiver, Actions: actions})
-	cancel()
-	if err != nil {
-		return "", err
+	assertion := webauthn.Assertion{
+		AuthenticatorData: res.AuthenticatorData,
+		ClientDataJSON:    res.ClientDataJSON,
+		Signature:         res.Signature,
 	}
-	signed, hash, err := neartx.Sign(key, tx)
-	if err != nil {
-		return "", err
+	if err := assertion.Verify(cred, challenge, origin, ceremonyRPID); err != nil {
+		return webauthn.Assertion{}, err
 	}
-	sendCtx, cancel := context.WithTimeout(ctx, 90*time.Second)
-	defer cancel()
-	return neartx.Send(sendCtx, rpc, signed, hash)
+	return assertion, nil
 }
 
 // passkeyDeployed reports whether the passkey's NEAR account is on chain.

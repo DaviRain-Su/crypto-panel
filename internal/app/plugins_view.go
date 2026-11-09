@@ -40,15 +40,17 @@ func (a *App) pluginsView(c *ui.Context) {
 func (a *App) pluginTabs(c *ui.Context) {
 	p := a.pal
 	ui.Row(c).AlignItems(ui.Center).Gap(8).Margin(0, 0, 16, 0).Children(func() {
-		ui.Row(c).Gap(2).Padding(3).Radius(10).Background(p.inset).
-			Border(1, p.hairline).Children(func() {
-			a.tabButton(c, a.t(i18n.InstalledTab), a.pluginTab != "store", func() {
-				a.setPluginTab("installed")
-			})
-			a.tabButton(c, a.t(i18n.StoreTab), a.pluginTab == "store", func() {
+		selected := 0
+		if a.pluginTab == "store" {
+			selected = 1
+		}
+		if ui.Tabs(c.Key("apps-tabs"), &selected, a.t(i18n.InstalledTab), a.t(i18n.StoreTab)).Changed() {
+			if selected == 1 {
 				a.setPluginTab("store")
-			})
-		})
+			} else {
+				a.setPluginTab("installed")
+			}
+		}
 		ui.Box(c).Grow(1)
 		a.softButton(c, a.t(i18n.PluginInstall), nil, p.text, a.installPlugin)
 		a.softButton(c, a.t(i18n.AppZip), nil, p.text, a.installPluginZip)
@@ -325,14 +327,15 @@ func (a *App) pluginPageTabs(c *ui.Context) {
 	if !ok || len(item.Manifest.Navigation) < 2 {
 		return
 	}
-	p := a.pal
-	ui.Row(c).Gap(2).Padding(3).Radius(10).Background(p.inset).
-		Border(1, p.hairline).Margin(0, 0, 16, 0).Children(func() {
-		for _, nav := range item.Manifest.Navigation {
-			page := nav.Page
-			a.tabButton(c, nav.Title, a.route.page == page, func() {
-				a.openPluginPage(a.route.id, page)
-			})
+	labels := make([]string, len(item.Manifest.Navigation))
+	selected := 0
+	for i, nav := range item.Manifest.Navigation {
+		labels[i] = nav.Title
+		if nav.Page == a.route.page {
+			selected = i
 		}
-	})
+	}
+	if ui.Tabs(c.Key("plugin-pages"), &selected, labels...).Margin(0, 0, 16, 0).Changed() {
+		a.openPluginPage(a.route.id, item.Manifest.Navigation[selected].Page)
+	}
 }

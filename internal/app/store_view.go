@@ -3,7 +3,6 @@ package app
 import (
 	"slices"
 	"strings"
-	"time"
 
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
@@ -12,27 +11,6 @@ import (
 	"github.com/davirain-su/crypto-panel/internal/i18n"
 	"github.com/davirain-su/crypto-panel/internal/plugin"
 )
-
-func (a *App) tabButton(c *ui.Context, label string, selected bool, onClick func()) {
-	p := a.pal
-	b := ui.ButtonBase(c).Height(28).PaddingX(14).Radius(7).AlignItems(ui.Center).FocusRing(false)
-	bg := ui.Transparent
-	color := p.muted
-	switch {
-	case selected:
-		bg, color = p.card, p.text
-		b.Shadow(0, 1, 1, 0, p.shadow)
-	case b.Hovered():
-		bg = p.hover
-	}
-	b.Background(b.AnimateColor("bg", bg, ui.Animation{Duration: 120 * time.Millisecond}))
-	b.Children(func() {
-		ui.Text(c, label).FontSize(12).FontWeight(600).TextColor(color)
-	})
-	if b.Clicked() {
-		onClick()
-	}
-}
 
 // storeView is the catalog: one card per entry, with Install, Update or
 // Installed, and the source it came from. With no registry set there is no

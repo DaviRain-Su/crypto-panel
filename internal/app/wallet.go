@@ -275,6 +275,7 @@ func (a *App) lockAccount(addr string) {
 
 // lockAll forgets every key in memory.
 func (a *App) lockAll() {
+	a.cancelPasskeyOperations()
 	if a.keyring != nil {
 		a.keyring.Lock()
 	}

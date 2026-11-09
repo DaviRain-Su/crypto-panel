@@ -12,6 +12,8 @@
   const status = document.getElementById("status");
   const continueButton = document.getElementById("continue");
   const cancelButton = document.getElementById("cancel");
+  let finished = false;
+  let controller = null;
 
   site.textContent = location.hostname;
 
@@ -35,30 +37,29 @@
     return btoa(bin).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
   }
 
-  // The app serves this page on loopback and waits for a POST. A page hosted
-  // elsewhere has no /result endpoint, so it falls back to the custom scheme.
+  // 当前版本仅支持应用的 localhost 服务，
+  // 没有托管 HTTPS 页面或用于 Passkey 结果的自定义 scheme 回调。
   async function deliver(result) {
-    if (location.protocol === "http:" || location.protocol === "https:") {
-      try {
-        const res = await fetch("/result", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(result),
-        });
-        if (!res.ok) {
-          throw new Error("Crypto Panel did not accept the result.");
-        }
-        status.classList.remove("error");
-        status.textContent = "Done. You can close this tab.";
-        continueButton.disabled = true;
-        cancelButton.disabled = true;
-      } catch (err) {
-        showError(err && err.message ? err.message : "Crypto Panel did not accept the result.");
+    if (finished) return;
+    try {
+      const res = await fetch("/result", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(result),
+      });
+      if (!res.ok) {
+        throw new Error("Crypto Panel did not accept the result. Start a new operation in the app.");
       }
-      return;
+      finished = true;
+      status.classList.toggle("error", Boolean(result.error));
+      status.textContent = result.error
+        ? "The passkey operation ended. Return to Crypto Panel to start again."
+        : "Done. You can close this tab.";
+      continueButton.disabled = true;
+      cancelButton.disabled = true;
+    } catch (err) {
+      stop(err && err.message ? err.message : "Crypto Panel did not accept the result.");
     }
-    const payload = encodeB64url(new TextEncoder().encode(JSON.stringify(result)));
-    location.href = "cryptopanel://passkey?result=" + encodeURIComponent(payload);
   }
 
   async function callback(result) {
@@ -67,13 +68,6 @@
 
   async function fail(code, message) {
     await deliver({ error: code, message, state });
-  }
-
-  function showError(message) {
-    status.textContent = message;
-    status.classList.add("error");
-    continueButton.textContent = "Try again";
-    continueButton.disabled = false;
   }
 
   function stop(message) {
@@ -89,10 +83,10 @@
     return;
   }
 
-  if (!window.isSecureContext) {
-    title.textContent = "HTTPS required";
-    lead.textContent = "Passkeys need a secure page.";
-    stop("Open this page over HTTPS, or on localhost for development.");
+  if (location.hostname !== "localhost" || location.protocol !== "http:" || !window.isSecureContext) {
+    title.textContent = "Open from Crypto Panel";
+    lead.textContent = "This build uses its own localhost passkey page.";
+    stop("Start the operation in the app. Hosted HTTPS callbacks are not supported.");
     return;
   }
 
@@ -104,28 +98,25 @@
   }
 
   const host = location.hostname;
-  if (host !== "localhost" && (/^\d{1,3}(\.\d{1,3}){3}$/.test(host) || host.includes(":"))) {
-    title.textContent = "Domain required";
-    lead.textContent = "Passkeys are bound to a domain name, not an IP address.";
-    stop("Open this page from the passkey domain, or use localhost for development.");
-    return;
-  }
 
   if (mode === "create") {
     title.textContent = "Create a passkey";
     lead.textContent = "Crypto Panel will use this passkey to approve transactions for your smart account.";
   } else {
-    title.textContent = "Approve with your passkey";
-    lead.textContent = "Crypto Panel is asking you to sign a transaction with your passkey.";
+    title.textContent = "Confirm with your passkey";
+    lead.textContent = "Confirm access to your passkey for the operation you started in Crypto Panel.";
   }
 
   async function run() {
+    if (finished) return;
+    controller = new AbortController();
     continueButton.disabled = true;
     status.classList.remove("error");
     status.textContent = "Waiting for your passkey…";
     try {
       if (mode === "create") {
         const credential = await navigator.credentials.create({
+          signal: controller.signal,
           publicKey: {
             challenge,
             rp: {
@@ -162,6 +153,7 @@
       } else {
         const credentialId = params.get("credentialId");
         const assertion = await navigator.credentials.get({
+          signal: controller.signal,
           publicKey: {
             challenge,
             rpId: host,
@@ -187,13 +179,24 @@
         });
       }
     } catch (err) {
-      const message = err && err.message ? err.message : "The passkey operation failed.";
-      showError(message);
+      if (!finished && !(controller && controller.signal.aborted)) {
+        const message = err && err.message ? err.message : "The passkey operation failed.";
+        stop(message);
+        await fail(err && err.name ? err.name : "Failed", message);
+      }
     }
   }
 
   continueButton.addEventListener("click", run);
   cancelButton.addEventListener("click", () => {
+    if (controller) controller.abort();
     fail("Canceled", "The passkey ceremony was canceled.");
+  });
+  window.addEventListener("pagehide", () => {
+    if (finished) return;
+    if (controller) controller.abort();
+    navigator.sendBeacon("/result", new Blob([
+      JSON.stringify({ error: "Canceled", message: "The passkey page was closed.", state }),
+    ], { type: "application/json" }));
   });
 })();

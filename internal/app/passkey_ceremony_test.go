@@ -180,3 +180,76 @@ func TestCeremonyPageServesTheAssets(t *testing.T) {
 		t.Error("the page is not the ceremony page")
 	}
 }
+
+func TestCeremonyServerChecksErrorStateAndConsumesOnlyOneAnswer(t *testing.T) {
+	srv, err := newCeremonyServer(func(raw string) error {
+		u, _ := url.Parse(raw)
+		fragment, _ := url.ParseQuery(u.Fragment)
+		state := fragment.Get("state")
+		for _, tc := range []struct {
+			state  string
+			status int
+		}{
+			{"foreign-state", http.StatusConflict},
+			{"", http.StatusConflict},
+			{state, http.StatusNoContent},
+			{state, http.StatusConflict},
+		} {
+			data, _ := json.Marshal(map[string]string{"error": "Canceled", "message": "closed", "state": tc.state})
+			resp, err := http.Post(u.Scheme+"://"+u.Host+"/result", "application/json", bytes.NewReader(data))
+			if err != nil {
+				return err
+			}
+			resp.Body.Close()
+			if resp.StatusCode != tc.status {
+				return errors.New("an error with the wrong or consumed state was accepted")
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer srv.close()
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	_, err = srv.run(ctx, webauthn.CeremonyRequest{
+		Mode: webauthn.CeremonyGet, Challenge: bytes.Repeat([]byte{1}, 32), CredentialID: []byte{2},
+	})
+	var ceremonyErr *webauthn.CeremonyError
+	if !errors.As(err, &ceremonyErr) || ceremonyErr.State == "" || ceremonyErr.State == "foreign-state" {
+		t.Fatalf("error = %v", err)
+	}
+}
+
+func TestCeremonyServerRejectsLateErrorAfterCancellation(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	var endpoint, state string
+	srv, err := newCeremonyServer(func(raw string) error {
+		u, _ := url.Parse(raw)
+		fragment, _ := url.ParseQuery(u.Fragment)
+		endpoint, state = u.Scheme+"://"+u.Host+"/result", fragment.Get("state")
+		cancel()
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer srv.close()
+	_, err = srv.run(ctx, webauthn.CeremonyRequest{
+		Mode: webauthn.CeremonyGet, Challenge: bytes.Repeat([]byte{1}, 32), CredentialID: []byte{2},
+	})
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("error = %v", err)
+	}
+	data, _ := json.Marshal(map[string]string{"error": "Canceled", "state": state})
+	resp, err := http.Post(endpoint, "application/json", bytes.NewReader(data))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusConflict {
+		t.Fatalf("late error: %s", resp.Status)
+	}
+}

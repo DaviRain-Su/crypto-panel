@@ -77,6 +77,12 @@ func paletteFor(t *ui.Theme) palette {
 // left alone, those stay MyGo's blue, which primary buttons turn under the
 // pointer. They go darker in light mode; in dark mode hover goes lighter.
 func useAccent(t *ui.Theme, p palette) {
+	// 业务卡片和官方控件使用同一份语义主题，统一输入框、按钮和焦点的颜色。
+	t.Background, t.Surface = p.bg, p.inset
+	t.SurfaceHover, t.SurfacePressed = p.hover, p.press
+	t.Border, t.Text, t.TextMuted = p.hairline, p.text, p.muted
+	t.Danger, t.Success, t.Selection = p.danger, p.success, p.accentSoft
+	t.Focus = p.accent
 	black, white := ui.Hex("#000000"), ui.Hex("#ffffff")
 	t.Accent, t.AccentText = p.accent, p.onAccent
 	t.AccentHover, t.AccentPressed = p.accent.MixOklab(black, 0.1), p.accent.MixOklab(black, 0.2)

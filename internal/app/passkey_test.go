@@ -221,6 +221,10 @@ func (r *passkeyNearReader) Account(context.Context, string) (chain.AccountBalan
 }
 func (r *passkeyNearReader) Block(context.Context) (uint64, error) { return 1, nil }
 func (r *passkeyNearReader) RPC(ctx context.Context, method string, params any) (json.RawMessage, error) {
+	if method == "status" {
+		r.rpc.calls = append(r.rpc.calls, method)
+		return json.RawMessage(`{"chain_id":"mainnet"}`), nil
+	}
 	if method == "query" {
 		if m, ok := params.(map[string]any); ok && m["request_type"] == "view_account" && m["account_id"] == r.passkeyAccount {
 			return nil, errors.New("Server error: account " + r.passkeyAccount + " does not exist while viewing")

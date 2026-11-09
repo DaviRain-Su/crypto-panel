@@ -416,6 +416,62 @@ export function page() {
 	}
 }
 
+func TestRPCNearMethodsRespectReadOnlyBoundary(t *testing.T) {
+	for _, sign := range []bool{false, true} {
+		for _, tt := range []struct {
+			method  string
+			refused bool
+		}{
+			{"broadcast_tx_commit", true},
+			{"broadcast_tx_async", true},
+			{"send_tx", true},
+			{"BROADCAST_TX_COMMIT", true},
+			{"Broadcast_Tx_Async", true},
+			{"SEND_TX", true},
+			{"status", false},
+			{"query", false},
+			{"block", false},
+		} {
+			t.Run(fmt.Sprintf("%s/sign=%t", tt.method, sign), func(t *testing.T) {
+				m := testManifest(t, Permissions{Chains: []string{"near:testnet"}, Sign: sign})
+				var called bool
+				host := NewHost(HostDeps{
+					Manifest: m,
+					RPC: func(chain, method string, params any) (json.RawMessage, error) {
+						called = true
+						return json.RawMessage(`"ok"`), nil
+					},
+				})
+				r, err := NewRunner(m, []byte(fmt.Sprintf(`
+export function page() {
+  try {
+    host.rpc("near:testnet", %q, ["fake signed transaction"]);
+    return { title: "called" };
+  } catch (err) {
+    return { title: "refused", sections: [{ text: String(err.message) }] };
+  }
+}
+`, tt.method)), host, "en-US")
+				if err != nil {
+					t.Fatalf("NewRunner: %v", err)
+				}
+				defer r.Close()
+				page, err := r.Page("home")
+				if err != nil {
+					t.Fatalf("Page: %v", err)
+				}
+				if tt.refused {
+					if called || page.Title != "refused" || len(page.Sections) != 1 || !strings.Contains(page.Sections[0].Text, "do not sign or send") {
+						t.Fatalf("broadcast was not refused before the broker: called = %t, page = %+v", called, page)
+					}
+				} else if !called || page.Title != "called" {
+					t.Fatalf("read method was refused: called = %t, page = %+v", called, page)
+				}
+			})
+		}
+	}
+}
+
 func TestRPCDeniesSigning(t *testing.T) {
 	m := testManifest(t, Permissions{Chains: []string{"eip155:1"}})
 	host := NewHost(HostDeps{

@@ -168,8 +168,8 @@ func TestDecodeArgs(t *testing.T) {
 	if got := DecodeArgs([]byte{0xff, 0x00}); !strings.HasPrefix(got, "base64:") {
 		t.Errorf("binary = %q", got)
 	}
-	long := strings.Repeat("a", 600)
-	if got := DecodeArgs([]byte(long)); len(got) > 512+len("…") {
-		t.Errorf("long args were not truncated: %d", len(got))
+	long := `{"memo":"` + strings.Repeat("a", 600) + `","receiver_id":"bob.near","amount":"1"}`
+	if got := DecodeArgs([]byte(long)); got != long {
+		t.Errorf("完整参数丢失，收款人与金额必须可供批准：%q", got)
 	}
 }
