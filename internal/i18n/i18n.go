@@ -816,7 +816,7 @@ var messages = map[Key]map[string]string{
 
 	AgentSection:     {English: "Local API", Chinese: "本地 API"},
 	AgentTitle:       {English: "Local agent API", Chinese: "本地 Agent API"},
-	AgentBody:        {English: "A read-only API on this machine for a local agent: the portfolio and the installed apps. It cannot sign or approve, and it listens on loopback only.", Chinese: "供本机 Agent 读取的只读接口：持仓和已安装应用。不能签名或批准，且只监听本机回环地址。"},
+	AgentBody:        {English: "A loopback API for local agents to read data, validate apps and propose installs or updates. You review installation in Apps. The API cannot sign or approve.", Chinese: "供本机 Agent 读取数据、校验应用并提议安装或更新。安装需在应用页审阅确认；API 不能签名或批准，且只监听本机回环地址。"},
 	AgentPort:        {English: "Port", Chinese: "端口"},
 	AgentPortInvalid: {English: "The port must be 1 to 65535.", Chinese: "端口必须是 1 到 65535。"},
 	AgentListening:   {English: "Listening on http://%s", Chinese: "正在监听 http://%s"},

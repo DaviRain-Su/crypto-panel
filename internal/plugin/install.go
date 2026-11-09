@@ -163,6 +163,18 @@ func (ar *Archive) Install() (Manifest, error) {
 	if ar.done || ar.dir == "" || ar.store == nil {
 		return Manifest{}, errors.New("this archive was already installed or closed")
 	}
+	release, err := ar.store.tryLease(ar.Manifest.ID)
+	if err != nil {
+		return Manifest{}, err
+	}
+	defer release()
+	if err := ar.store.checkInstall(ar.Entry); err != nil {
+		return Manifest{}, err
+	}
+	digest, err := DigestDir(ar.dir)
+	if err != nil || digest != ar.Entry.Hash {
+		return Manifest{}, errors.New("the prepared archive changed after verification")
+	}
 	dest := filepath.Join(ar.store.dir, ar.Manifest.ID)
 	st := state{Enabled: true}
 	if _, err := os.Stat(dest); err == nil {
@@ -219,12 +231,14 @@ func (ar *Archive) Close() {
 // state. It is not part of the plugin's digest. Official marks a first-party
 // example the shell seeded; it is not a publisher signature.
 type installInfo struct {
-	Source    string `json:"source,omitempty"`
-	Hash      string `json:"hash"`
-	Signature string `json:"signature"`
-	Publisher string `json:"publisher"`
-	Installed string `json:"installed,omitempty"`
-	Official  bool   `json:"official,omitempty"`
+	Source       string `json:"source,omitempty"`
+	Hash         string `json:"hash"`
+	Signature    string `json:"signature"`
+	Publisher    string `json:"publisher"`
+	Installed    string `json:"installed,omitempty"`
+	Official     bool   `json:"official,omitempty"`
+	InstalledVia string `json:"installedVia,omitempty"`
+	PackageHash  string `json:"packageHash,omitempty"`
 }
 
 func loadInstallInfo(dir string) (installInfo, error) {

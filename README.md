@@ -2,7 +2,7 @@
 
 **A native desktop app for a multi-chain wallet and sandboxed apps. Keys stay in the OS keychain, and every signature goes through the shell's own approval.**
 
-The window is the product: a sidebar of Portfolio, Wallet, Apps, Intents, DApp, and Settings. It is not a menu-bar widget and not a metrics-only dashboard. A wallet is a named container. Creating one prepares an EVM account, a NEAR account, and a Solana account together, and the network menu shows that wallet's account for the selected network. There is no mnemonic. Apps are sandboxed plugins (`plugin.json` + `index.js`); the shell draws native page blocks, and a plugin never supplies HTML. A read-only agent API on loopback can read the portfolio and the installed apps. It cannot sign, approve, or install.
+The window is the product: a sidebar of Portfolio, Wallet, Apps, Intents, DApp, and Settings. It is not a menu-bar widget and not a metrics-only dashboard. A wallet is a named container. Creating one prepares an EVM account, a NEAR account, and a Solana account together, and the network menu shows that wallet's account for the selected network. There is no mnemonic. Apps are sandboxed plugins (`plugin.json` + `index.js`); the shell draws native page blocks, and a plugin never supplies HTML. A local agent can read the portfolio, validate personal apps and propose installation over a token-protected loopback API. Installation still requires the user's native permission review.
 
 NEAR is the first chain it can truly sign on and connect to web apps: a native
 NEAR wallet whose ed25519 keys live in the OS keychain, a shell-drawn approval
@@ -80,9 +80,10 @@ creating that vault and sending SOL are not wired.
   by the wallet's own unlocked NEAR account; the passkey signs in the browser
   and its private key never enters the app. EVM send and Solana vault creation
   are not wired.
-- **A read-only local API** (opt-in): a loopback HTTP server with a bearer
-  token, so a local agent can read the portfolio and the installed apps. It
-  cannot sign, approve or install.
+- **Personal apps with a local agent:** create and modify apps through ACP,
+  or use the opt-in loopback HTTP API with the external-agent Skill. Validation
+  and pending proposals share one manager. The user approves installation in
+  the native shell; the API cannot approve or sign.
 
 ## What works now
 
@@ -207,25 +208,33 @@ Local installs are unsigned and the app says so. See
 
 ### Local agent API
 
-Settings → **Local API** turns on a read-only HTTP API on loopback, for a
-local agent to read the app. It listens on `127.0.0.1` only, requires a
-bearer token (kept in the OS keychain, rotatable in Settings), and refuses
-requests that carry a browser `Origin`:
+Settings → **Local API** enables a loopback HTTP API. It listens on
+`127.0.0.1` only, requires a bearer token kept in the OS keychain, and refuses
+browser `Origin` requests. All responses use `Cache-Control: no-store`.
 
-```
-GET  /v0/portfolio            → network, block, accounts and token balances
-GET  /v0/plugins              → installed apps and their permissions
-POST /v0/plugins/{id}/refresh → asks an app for its first page, as data
-```
+The API provides the portfolio, installed apps, a machine-readable capability
+catalog, embedded official templates, static package validation, pending install
+and update proposals, settings, refresh and removal. A proposal returns **202 +
+pending**; only the user can approve it in the Apps page's native permission
+window. Token rotation or disabling the API cancels its unapproved proposals.
+The API has no approval, wallet signing, broadcast or key endpoint. Refresh
+refuses both EVM and NEAR signing, while permitted fetch and KV calls may still
+have side effects.
 
-```sh
-curl -H "Authorization: Bearer <token>" http://127.0.0.1:8765/v0/portfolio
-```
+Apps → **创建应用** also connects a local ACP agent to an independent workspace.
+Settings → **编码 Agent** supports Claude Code, Codex and a custom installed ACP
+executable. Models and configuration choices come from the agent's advertised
+capabilities. Tool permission, app installation and wallet approval remain
+separate. A successful prompt produces a validated pending proposal; cancellation,
+refusal or disconnect never counts as generation success.
 
-Amounts are decimal strings in the smallest unit, with the symbol and
-decimals beside them. The API cannot sign, approve, install or reach a key:
-an app's `requestSign` is refused over the API before any approval window
-can open. There is no prices endpoint. The window can show an approximate USD value from CoinGecko; this API does not.
+See the [personal-app guide](docs/personal-apps.md), the
+[external-agent Skill](.claude/skills/lintel-apps/SKILL.md), and the
+[V1 product contract](docs/personal-apps-v1.md). Real-agent and native-app checks
+are recorded separately from unit tests in the [acceptance record](docs/v1-acceptance.md).
+
+Portfolio amounts remain decimal strings in the smallest unit. There is no
+prices endpoint; the window's approximate USD values are not exposed by this API.
 
 ### NEAR Intents (dry quote)
 

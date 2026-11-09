@@ -152,16 +152,19 @@ type App struct {
 	// plugins is the installed plugins folder. The rest is the manager's
 	// state: the list last read, one runtime and one log per plugin, the
 	// switch and form values the view binds to, and the page it shows.
-	plugins        *plugin.Store
-	pluginItems    []plugin.Installed
-	pluginRunners  map[string]*plugin.Runner
-	pluginLogs     map[string]*plugin.LogBuffer
-	pluginEnabled  map[string]*bool
-	pluginDrafts   map[string]*string
-	pluginLogsOpen map[string]bool
-	pluginNotice   string
-	pluginView     pluginPageState
-	pluginGen      int
+	plugins            *plugin.Store
+	pluginManager      *plugin.Manager
+	coding             codingState
+	pluginItems        []plugin.Installed
+	pluginRunners      map[string]*plugin.Runner
+	pluginRunnerHashes map[string]string
+	pluginLogs         map[string]*plugin.LogBuffer
+	pluginEnabled      map[string]*bool
+	pluginDrafts       map[string]*string
+	pluginLogsOpen     map[string]bool
+	pluginNotice       string
+	pluginView         pluginPageState
+	pluginGen          int
 
 	// The plugin store: the tab the Apps page shows, the app whose settings
 	// are open, the catalog last read, the registry form, and the entry
@@ -213,17 +216,13 @@ type App struct {
 	dappConnected map[string]bool
 	dappBridge    *dappBridgeState
 
-	// The read-only local API for agents: its listener, the keychain the
-	// bearer token lives in, the token shown in Settings, and the port form.
+	// 本机 API 的监听器、系统凭据服务、Settings 显示值与端口输入。
 	agentSecrets   wallet.SecretStore
 	agentSrv       *agent.Server
 	agentErr       string
 	agentAddr      string
 	agentToken     string
 	agentPortDraft string
-	// agentRefreshMu runs one API refresh at a time, so a local agent cannot
-	// start a runtime per request.
-	agentRefreshMu sync.Mutex
 
 	// The Intents page: the assets 1Click supports, the swap the user is
 	// asking about, and the last dry quote. approveIntents shows a quote's
@@ -281,6 +280,7 @@ func New() (*App, error) {
 	a.runOnMain = mygo.RunOnMain
 	a.goAsync = func(fn func()) { go fn() }
 	a.confirmInstall = a.askInstall
+	a.initAuthoring()
 	a.confirmConnect = a.askConnect
 	// approve stays nil. Plugins, the wallet, and NEAR send go through
 	// approver(), which falls back to askApproval. Passkey deploy and send
@@ -329,8 +329,14 @@ func (a *App) Ready() {
 	mygo.App.OnBeforeQuit(func(*mygo.QuitEvent) {
 		a.cancelPasskeyOperations()
 		a.quitting = true
+		if a.coding.cancel != nil {
+			a.coding.cancel()
+		}
 		a.stopAgent()
 		a.stopAllRunners()
+		if a.pluginManager != nil {
+			_ = a.pluginManager.Close()
+		}
 	})
 	// A locked screen is a locked wallet.
 	mygo.Power.OnLockScreen(func() { mygo.RunOnMain(a.lockAll) })

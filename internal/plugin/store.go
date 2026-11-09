@@ -33,13 +33,14 @@ var ErrNotInstalled = errors.New("plugin is not installed")
 // Err is set when its files cannot be read, so the manager can show a broken
 // plugin instead of hiding it.
 type Installed struct {
-	Manifest Manifest
-	Dir      string
-	Enabled  bool
-	Signed   bool
-	Official bool
-	Source   string
-	Err      string
+	Manifest     Manifest
+	Dir          string
+	Enabled      bool
+	Signed       bool
+	Official     bool
+	Source       string
+	InstalledVia string
+	Err          string
 }
 
 // Store owns the plugins folder: one directory per plugin, holding
@@ -79,7 +80,7 @@ func (s *Store) List() ([]Installed, error) {
 		dir := filepath.Join(s.dir, name)
 		m, err := LoadManifest(dir)
 		if err != nil {
-			out = append(out, Installed{Dir: dir, Err: err.Error()})
+			out = append(out, Installed{Dir: dir, Err: "应用清单无法读取或无效"})
 			continue
 		}
 		st, _ := loadState(dir)
@@ -97,7 +98,20 @@ func (s *Store) List() ([]Installed, error) {
 
 // Get returns one installed plugin.
 func (s *Store) Get(id string) (Installed, error) {
+	if err := validatePluginID(id); err != nil {
+		return Installed{}, err
+	}
 	dir := filepath.Join(s.dir, id)
+	info, err := os.Lstat(dir)
+	if errors.Is(err, fs.ErrNotExist) {
+		return Installed{}, ErrNotInstalled
+	}
+	if err != nil {
+		return Installed{}, err
+	}
+	if !info.IsDir() || info.Mode()&fs.ModeSymlink != 0 {
+		return Installed{}, errors.New("invalid plugin directory")
+	}
 	m, err := LoadManifest(dir)
 	if errors.Is(err, fs.ErrNotExist) {
 		return Installed{}, ErrNotInstalled
@@ -107,6 +121,10 @@ func (s *Store) Get(id string) (Installed, error) {
 	}
 	st, _ := loadState(dir)
 	inst := Installed{Manifest: m, Dir: dir, Enabled: st.Enabled}
+	if m.ID != id {
+		inst.Err = "the manifest id does not match its installed directory"
+		return inst, nil
+	}
 	if err := verifyInstall(dir, &inst); err != nil {
 		inst.Err = err.Error()
 	}
@@ -122,6 +140,17 @@ func verifyInstall(dir string, inst *Installed) error {
 	info, err := loadInstallInfo(dir)
 	if err != nil {
 		return fmt.Errorf("install record: %w", err)
+	}
+	inst.InstalledVia = info.InstalledVia
+	if inst.InstalledVia == "" {
+		switch {
+		case info.Official:
+			inst.InstalledVia = "official"
+		case info.Hash != "":
+			inst.InstalledVia = "store"
+		default:
+			inst.InstalledVia = "unknown"
+		}
 	}
 	if err := verifyOfficial(dir, inst, info); err != nil {
 		return err
@@ -155,6 +184,11 @@ func (s *Store) Install(src string) (Manifest, error) {
 	if err := m.ValidateDir(src); err != nil {
 		return Manifest{}, err
 	}
+	release, err := s.tryLease(m.ID)
+	if err != nil {
+		return Manifest{}, err
+	}
+	defer release()
 	if err := os.MkdirAll(s.dir, 0o755); err != nil {
 		return Manifest{}, err
 	}
@@ -176,6 +210,13 @@ func (s *Store) Install(src string) (Manifest, error) {
 	if err := saveState(tmp, state{Enabled: true}); err != nil {
 		return Manifest{}, err
 	}
+	via := "folder"
+	if filepath.Dir(filepath.Clean(src)) == filepath.Clean(s.dir) && strings.HasPrefix(filepath.Base(src), ".local-") {
+		via = "zip"
+	}
+	if err := saveInstallInfo(tmp, installInfo{InstalledVia: via}); err != nil {
+		return Manifest{}, err
+	}
 	if err := os.Rename(tmp, dest); err != nil {
 		return Manifest{}, err
 	}
@@ -194,36 +235,52 @@ func (s *Store) RemoveAt(dir string) error {
 
 // Remove deletes the plugin's folder and the secrets of its settings.
 func (s *Store) Remove(id string) error {
-	dir := filepath.Join(s.dir, id)
-	m, err := LoadManifest(dir)
-	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+	release, err := s.tryLease(id)
+	if err != nil {
 		return err
 	}
-	if err := os.RemoveAll(dir); err != nil {
-		return err
+	defer release()
+	return s.remove(id)
+}
+
+func (s *Store) remove(id string) error {
+	dir := filepath.Join(s.dir, id)
+	kv := &KV{path: filepath.Join(dir, "kv.json")}
+	lock := kv.fileLock()
+	lock.Lock()
+	defer lock.Unlock()
+	if _, err := os.Lstat(dir); errors.Is(err, fs.ErrNotExist) {
+		return nil
+	} else if err != nil {
+		return managementError("REMOVE_FAILED", "无法读取应用目录", 500)
+	}
+	m, err := LoadManifest(dir)
+	if err != nil {
+		return managementError("BROKEN_PLUGIN", "应用清单损坏，无法安全清理声明凭据", 409)
 	}
 	if s.secrets != nil {
 		for _, field := range m.Settings {
 			if field.Secret {
-				_ = s.secrets.Delete(secretKey(id, field.Key))
+				if err := s.secrets.Delete(secretKey(id, field.Key)); err != nil && !errors.Is(err, fs.ErrNotExist) {
+					return managementError("REMOVE_FAILED", "无法删除应用凭据，请重试卸载", 500)
+				}
 			}
 		}
+	}
+	if os.RemoveAll(dir) != nil {
+		return managementError("REMOVE_FAILED", "无法删除应用目录", 500)
 	}
 	return nil
 }
 
 // SetEnabled turns a plugin on or off.
 func (s *Store) SetEnabled(id string, enabled bool) error {
-	dir := filepath.Join(s.dir, id)
-	if _, err := os.Stat(dir); err != nil {
-		return ErrNotInstalled
-	}
-	st, err := loadState(dir)
+	release, err := s.tryLease(id)
 	if err != nil {
 		return err
 	}
-	st.Enabled = enabled
-	return saveState(dir, st)
+	defer release()
+	return s.setEnabled(id, enabled)
 }
 
 // Setting returns the value of a declared setting: from the OS credential
@@ -257,30 +314,8 @@ func (s *Store) Setting(id, key string) (string, error) {
 // SetSetting saves a declared setting. A secret goes to the credential
 // store and never to state.json.
 func (s *Store) SetSetting(id, key, value string) error {
-	m, err := LoadManifest(filepath.Join(s.dir, id))
-	if err != nil {
-		return err
-	}
-	field, ok := m.setting(key)
-	if !ok {
-		return fmt.Errorf("setting %q is not declared in plugin.json", key)
-	}
-	if field.Secret {
-		if s.secrets == nil {
-			return errors.New("no credential store is available")
-		}
-		return s.secrets.Set(secretKey(id, key), []byte(value))
-	}
-	dir := filepath.Join(s.dir, id)
-	st, err := loadState(dir)
-	if err != nil {
-		return err
-	}
-	if st.Settings == nil {
-		st.Settings = map[string]string{}
-	}
-	st.Settings[key] = value
-	return saveState(dir, st)
+	_, err := s.SetSettings(id, map[string]string{key: value})
+	return err
 }
 
 // KV opens a plugin's key-value store, enforcing its quota.

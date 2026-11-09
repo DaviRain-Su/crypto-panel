@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/davirain-su/lintel/internal/agent/authoring"
 	"github.com/davirain-su/lintel/internal/chain"
 	"github.com/davirain-su/lintel/internal/chains"
 	"github.com/davirain-su/lintel/internal/i18n"
@@ -30,12 +31,15 @@ type Settings struct {
 	RefreshSeconds int    `json:"refreshSeconds,omitempty"`
 	// PluginStoreURL is the registry the store reads. Empty means no store.
 	PluginStoreURL string `json:"pluginStoreUrl,omitempty"`
-	// AgentEnabled turns on the read-only local API. Its bearer token lives
-	// in the OS keychain, never in this file.
+	// AgentEnabled 开启本机 API；Bearer token 仅保存在系统凭据服务。
 	AgentEnabled bool `json:"agentEnabled,omitempty"`
 	// AgentPort is the loopback port the local API listens on. Zero, as in an
 	// old settings file, is replaced by the default.
 	AgentPort int `json:"agentPort,omitempty"`
+	// 编码 agent 只保存本机命令与公开配置，登录凭据由 agent 自己管理。
+	CodingAgents      []authoring.Profile          `json:"codingAgents,omitempty"`
+	ActiveCodingAgent string                       `json:"activeCodingAgent,omitempty"`
+	CodingConfig      map[string]map[string]string `json:"codingConfig,omitempty"`
 	// DisablePresence turns off the system's confirmation before unlocking,
 	// revealing a key or signing. The check is on by default where the
 	// platform offers one.

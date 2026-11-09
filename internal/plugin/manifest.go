@@ -5,8 +5,6 @@
 package plugin
 
 import (
-	"bytes"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net/url"
@@ -14,7 +12,6 @@ import (
 	"path"
 	"path/filepath"
 	"regexp"
-	"strconv"
 	"strings"
 
 	"github.com/davirain-su/lintel/internal/chains"
@@ -93,14 +90,12 @@ var readable = map[string]bool{"balances": true}
 
 // ParseManifest decodes and validates plugin.json.
 func ParseManifest(data []byte) (Manifest, error) {
-	var m Manifest
-	dec := json.NewDecoder(bytes.NewReader(data))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&m); err != nil {
-		return Manifest{}, fmt.Errorf("plugin.json: %w", err)
+	if len(data) > maxManifestBytes {
+		return Manifest{}, errors.New("plugin.json: manifest is larger than 65536 bytes")
 	}
-	if dec.More() {
-		return Manifest{}, errors.New("plugin.json: trailing data after the manifest")
+	var m Manifest
+	if err := DecodeJSON(data, &m); err != nil {
+		return Manifest{}, fmt.Errorf("plugin.json: %w", err)
 	}
 	if err := m.validate(); err != nil {
 		return Manifest{}, err
@@ -152,7 +147,12 @@ func (m Manifest) validate() error {
 	if len(m.Settings) > maxSettings {
 		return fmt.Errorf("plugin.json: more than %d settings", maxSettings)
 	}
+	seenSettings := make(map[string]bool, len(m.Settings))
 	for _, s := range m.Settings {
+		if seenSettings[s.Key] {
+			return errors.New("plugin.json: duplicate setting key")
+		}
+		seenSettings[s.Key] = true
 		if err := validateSetting(s); err != nil {
 			return err
 		}
@@ -160,7 +160,15 @@ func (m Manifest) validate() error {
 	if len(m.Navigation) > maxNavigation {
 		return fmt.Errorf("plugin.json: more than %d navigation entries", maxNavigation)
 	}
+	seenPages := make(map[string]bool, len(m.Navigation))
 	for _, n := range m.Navigation {
+		if seenPages[n.Page] {
+			return errors.New("plugin.json: duplicate navigation page")
+		}
+		seenPages[n.Page] = true
+		if !safeMetadata(n.Title) || !safeMetadata(n.Icon) {
+			return errors.New("plugin.json: unsafe navigation text")
+		}
 		if strings.TrimSpace(n.Title) == "" || len([]rune(n.Title)) > 40 {
 			return errors.New(`plugin.json: a navigation title must be 1 to 40 characters`)
 		}
@@ -170,6 +178,9 @@ func (m Manifest) validate() error {
 		if len(n.Icon) > 32 {
 			return errors.New(`plugin.json: a navigation icon is longer than 32 characters`)
 		}
+	}
+	if !safeMetadata(m.Name) || !safeMetadata(m.Description) || !safeMetadata(m.Author) || len([]rune(m.Author)) > 80 {
+		return errors.New("plugin.json: unsafe or oversized manifest text")
 	}
 	return m.Permissions.validate()
 }
@@ -194,6 +205,9 @@ func validateMain(main string) error {
 }
 
 func validateSetting(s SettingField) error {
+	if !safeMetadata(s.Label) || !safeMetadata(s.Help) || !safeMetadata(s.Link) {
+		return errors.New("plugin.json: unsafe setting text")
+	}
 	if !keyPattern.MatchString(s.Key) {
 		return fmt.Errorf("plugin.json: setting key %q must be letters, digits, _ or -", s.Key)
 	}
@@ -257,40 +271,70 @@ func (m Manifest) ValidateDir(dir string) error {
 // compareVersions orders two x.y.z versions, a prerelease before its
 // release. It returns -1, 0 or 1.
 func compareVersions(a, b string) int {
-	an, apre := splitVersion(a)
-	bn, bpre := splitVersion(b)
-	for i := range 3 {
-		switch {
-		case an[i] < bn[i]:
-			return -1
-		case an[i] > bn[i]:
-			return 1
+	acore, apre, _ := strings.Cut(a, "-")
+	bcore, bpre, _ := strings.Cut(b, "-")
+	an, bn := strings.Split(acore, "."), strings.Split(bcore, ".")
+	for i := 0; i < len(an) && i < len(bn); i++ {
+		if cmp := compareDecimal(an[i], bn[i]); cmp != 0 {
+			return cmp
 		}
 	}
-	switch {
-	case apre == "" && bpre == "":
+	if apre == "" && bpre == "" {
 		return 0
-	case apre == "":
+	}
+	if apre == "" {
 		return 1
-	case bpre == "":
+	}
+	if bpre == "" {
 		return -1
-	case apre < bpre:
+	}
+	aparts, bparts := strings.Split(apre, "."), strings.Split(bpre, ".")
+	for i := 0; i < len(aparts) && i < len(bparts); i++ {
+		av, bv := aparts[i], bparts[i]
+		anum, bnum := decimalIdentifier(av), decimalIdentifier(bv)
+		switch {
+		case anum && bnum:
+			if cmp := compareDecimal(av, bv); cmp != 0 {
+				return cmp
+			}
+		case anum:
+			return -1
+		case bnum:
+			return 1
+		default:
+			if cmp := strings.Compare(av, bv); cmp != 0 {
+				return cmp
+			}
+		}
+	}
+	if len(aparts) < len(bparts) {
 		return -1
-	case apre > bpre:
+	}
+	if len(aparts) > len(bparts) {
 		return 1
 	}
 	return 0
 }
 
-func splitVersion(v string) ([3]int, string) {
-	var nums [3]int
-	core, pre, _ := strings.Cut(v, "-")
-	for i, part := range strings.SplitN(core, ".", 3) {
-		if i >= 3 {
-			break
-		}
-		n, _ := strconv.Atoi(part)
-		nums[i] = n
+// 用十进制字符串比较，避免攻击者提供超大版本号造成整数溢出。
+func compareDecimal(a, b string) int {
+	a, b = strings.TrimLeft(a, "0"), strings.TrimLeft(b, "0")
+	if len(a) < len(b) {
+		return -1
 	}
-	return nums, pre
+	if len(a) > len(b) {
+		return 1
+	}
+	return strings.Compare(a, b)
+}
+func decimalIdentifier(value string) bool {
+	if value == "" {
+		return false
+	}
+	for _, r := range value {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return true
 }

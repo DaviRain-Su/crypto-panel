@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/transfer"
@@ -23,8 +24,7 @@ const agentTokenKey = "token"
 // The app is the API's data source.
 var _ agent.Data = (*App)(nil)
 
-// startAgent starts, restarts or stops the read-only local API to match the
-// settings. It runs on the main thread.
+// startAgent 在主线程按设置启动、重启或关闭本机 API。
 func (a *App) startAgent() {
 	a.stopAgent()
 	a.agentErr = ""
@@ -48,6 +48,9 @@ func (a *App) startAgent() {
 
 // stopAgent stops the local API, if it runs.
 func (a *App) stopAgent() {
+	if a.pluginManager != nil {
+		a.pluginManager.CancelVia("local-api")
+	}
 	if a.agentSrv != nil {
 		_ = a.agentSrv.Close()
 		a.agentSrv = nil
@@ -262,6 +265,26 @@ func (a *App) agentPlugins() []agent.Plugin {
 				StorageKb: m.Permissions.StorageKb,
 			},
 		}
+		p.Source = "unsigned"
+		if item.Official {
+			p.Source = "official"
+		} else if item.Signed {
+			p.Source = "signed"
+		}
+		p.InstalledVia = item.InstalledVia
+		if p.InstalledVia == "" {
+			p.InstalledVia = "unknown"
+		}
+		p.PackageHash, _ = a.plugins.PackageHash(m.ID)
+		p.Settings, _ = a.plugins.DescribeSettings(m.ID)
+		if a.pluginManager != nil {
+			for _, job := range a.pluginManager.Installations() {
+				if job.PluginID == m.ID {
+					p.PendingInstallationID = job.RequestID
+					break
+				}
+			}
+		}
 		for _, nav := range m.Navigation {
 			p.Pages = append(p.Pages, nav.Page)
 		}
@@ -274,36 +297,64 @@ func (a *App) agentPlugins() []agent.Plugin {
 // The runtime is fresh and its host refuses signing, so a page cannot open
 // an approval window from an HTTP request.
 func (a *App) Refresh(id string) (any, error) {
-	a.agentRefreshMu.Lock()
-	defer a.agentRefreshMu.Unlock()
-	var inst plugin.Installed
-	var page string
-	var err error
-	a.runOnMain(func() {
-		var ok bool
-		inst, ok = a.installedPlugin(id)
-		switch {
-		case !ok:
-			err = agent.ErrNotFound
-		case inst.Err != "":
-			err = errors.New(inst.Err)
-		case !inst.Enabled:
-			err = agent.ErrDisabled
-		case len(inst.Manifest.Navigation) == 0:
-			err = agent.ErrNoPages
-		default:
-			page = inst.Manifest.Navigation[0].Page
-		}
-	})
+	result, err := a.RefreshPage(id, "")
+	return result.Page, err
+}
+
+// RefreshPage 的 lease 包含模块构造和执行；每次建立禁用签名的新 runtime。
+func (a *App) RefreshPage(id, page string) (agent.PageResult, error) {
+	var result agent.PageResult
+	if a.pluginManager == nil {
+		return result, &plugin.Error{Code: "MANAGEMENT_UNAVAILABLE", Message: "应用管理不可用", Status: 503}
+	}
+	release, err := a.pluginManager.TryExecution(id)
 	if err != nil {
-		return nil, err
+		return result, err
+	}
+	defer release()
+	inst, err := a.plugins.Get(id)
+	if errors.Is(err, plugin.ErrNotInstalled) {
+		return result, agent.ErrNotFound
+	}
+	if err != nil {
+		return result, err
+	}
+	if inst.Err != "" {
+		return result, errors.New("应用完整性检查失败")
+	}
+	if !inst.Enabled {
+		return result, agent.ErrDisabled
+	}
+	if len(inst.Manifest.Navigation) == 0 {
+		return result, agent.ErrNoPages
+	}
+	if page == "" {
+		page = inst.Manifest.Navigation[0].Page
+	}
+	declared := false
+	for _, nav := range inst.Manifest.Navigation {
+		if nav.Page == page {
+			declared = true
+			break
+		}
+	}
+	if !declared {
+		return result, &plugin.Error{Code: "PAGE_NOT_FOUND", Message: "页面未在应用中声明", Status: 404}
+	}
+	result.PackageHash, err = a.plugins.PackageHash(id)
+	if err != nil {
+		return result, err
 	}
 	runner, err := a.agentRunner(inst)
 	if err != nil {
-		return nil, err
+		return result, err
 	}
 	defer runner.Close()
-	return runner.Page(page)
+	result.Page, err = runner.Page(page)
+	if err == nil {
+		result.EvaluatedAt = time.Now().UTC()
+	}
+	return result, err
 }
 
 // agentRunner builds a runtime for one API request. The host is the app's,

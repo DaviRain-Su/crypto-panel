@@ -13,6 +13,7 @@ import (
 
 	"github.com/MoeForge/moejs"
 
+	"github.com/davirain-su/lintel/internal/chains"
 	"github.com/davirain-su/lintel/internal/pages"
 )
 
@@ -384,7 +385,11 @@ func (h *Host) rpc(r *moejs.Realm, _ moejs.Value, args []moejs.Value) (moejs.Val
 	if !slicesContains(h.deps.Manifest.Permissions.Chains, chain) {
 		return moejs.Undefined(), fmt.Errorf("rpc: chain %q is not in the plugin's permissions", chain)
 	}
-	if err := checkRPCMethod(method); err != nil {
+	network, ok := chains.ByID(chain)
+	if !ok {
+		return moejs.Undefined(), errors.New("rpc: unknown chain")
+	}
+	if err := checkRPCFamily(string(network.Family), method); err != nil {
 		return moejs.Undefined(), err
 	}
 	var params any
@@ -409,43 +414,6 @@ func (h *Host) rpc(r *moejs.Realm, _ moejs.Value, args []moejs.Value) (moejs.Val
 		return moejs.Undefined(), fmt.Errorf("rpc %s: the answer is not JSON: %w", method, err)
 	}
 	return r.FromGo(decoded)
-}
-
-// checkRPCMethod refuses the calls that move funds or sign: a plugin reads
-// the chain, the shell signs (design §6).
-func checkRPCMethod(method string) error {
-	if method == "" || len(method) > 64 {
-		return errors.New("rpc: method must be 1 to 64 characters")
-	}
-	for _, r := range method {
-		if r < 'a' || r > 'z' {
-			if r < 'A' || r > 'Z' {
-				if r < '0' || r > '9' {
-					if r != '_' {
-						return fmt.Errorf("rpc: method %q has an unexpected character", method)
-					}
-				}
-			}
-		}
-	}
-	lower := strings.ToLower(method)
-	if stateChanging[lower] || strings.HasPrefix(lower, "personal_") || strings.HasPrefix(lower, "wallet_") || strings.HasPrefix(lower, "sign") {
-		return fmt.Errorf("rpc: method %q is refused: plugins read the chain, they do not sign or send", method)
-	}
-	return nil
-}
-
-var stateChanging = map[string]bool{
-	"eth_sendrawtransaction": true,
-	"eth_sendtransaction":    true,
-	"eth_signtransaction":    true,
-	"sendtransaction":        true,
-	"sendrawtransaction":     true,
-	"broadcast_tx_commit":    true,
-	"broadcast_tx_async":     true,
-	"send_tx":                true,
-	"signtransaction":        true,
-	"signmessage":            true,
 }
 
 func (h *Host) accounts(r *moejs.Realm, _ moejs.Value, _ []moejs.Value) (moejs.Value, error) {

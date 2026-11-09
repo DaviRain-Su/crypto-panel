@@ -224,6 +224,9 @@ func (ip *installPrompt) view(c *ui.Context) {
 	c.Root().Background(p.bg)
 	ui.Column(c).Fill().Padding(20).Gap(12).Children(func() {
 		kicker := i18n.StoreKickerInstall
+		if ip.req.unsigned {
+			kicker = i18n.StoreInstall
+		}
 		if ip.req.update {
 			kicker = i18n.StoreKickerUpdate
 		}

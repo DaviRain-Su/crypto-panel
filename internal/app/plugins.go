@@ -33,6 +33,9 @@ type pluginPageState struct {
 	page     pages.Page
 	err      string
 	loading  bool
+	hash     string
+	updated  time.Time
+	hasPage  bool
 }
 
 // initPlugins opens the plugins folder under the app's data directory and
@@ -45,12 +48,19 @@ func (a *App) initPlugins(dir string) {
 		mygo.Secrets.Service("crypto-panel-plugins"),
 	)
 	a.pluginRunners = map[string]*plugin.Runner{}
+	a.pluginRunnerHashes = map[string]string{}
 	a.pluginLogs = map[string]*plugin.LogBuffer{}
 	a.pluginEnabled = map[string]*bool{}
 	a.pluginDrafts = map[string]*string{}
 	a.pluginLogsOpen = map[string]bool{}
 	if err := a.plugins.EnsureOfficial(); err != nil {
 		a.pluginNotice = err.Error()
+	}
+	manager, err := plugin.NewManager(a.plugins)
+	if err != nil {
+		a.pluginNotice = "应用管理初始化失败：" + err.Error()
+	} else {
+		a.pluginManager = manager
 	}
 	a.refreshPlugins()
 }
@@ -258,7 +268,11 @@ func (a *App) removePlugin(id string) {
 	if err != nil || res.Button != 0 {
 		return
 	}
-	if err := a.plugins.Remove(id); err != nil {
+	remove := a.plugins.Remove
+	if a.pluginManager != nil {
+		remove = a.pluginManager.Remove
+	}
+	if err := remove(id); err != nil {
 		a.pluginNotice = err.Error()
 		a.invalidate()
 		return
@@ -276,7 +290,11 @@ func (a *App) setPluginEnabled(id string, enabled bool) {
 	if a.plugins == nil {
 		return
 	}
-	if err := a.plugins.SetEnabled(id, enabled); err != nil {
+	setEnabled := a.plugins.SetEnabled
+	if a.pluginManager != nil {
+		setEnabled = a.pluginManager.SetEnabled
+	}
+	if err := setEnabled(id, enabled); err != nil {
 		a.pluginNotice = err.Error()
 		a.invalidate()
 		return
@@ -293,25 +311,38 @@ func (a *App) savePluginSettings(m plugin.Manifest) {
 	if a.plugins == nil {
 		return
 	}
+	values := map[string]string{}
 	for _, field := range m.Settings {
 		draft := a.pluginDrafts[m.ID+"/"+field.Key]
-		if draft == nil {
+		if draft == nil || (field.Secret && *draft == "") {
 			continue
 		}
-		// An empty secret field means "leave the stored secret alone".
-		if field.Secret && *draft == "" {
-			continue
-		}
-		if err := a.plugins.SetSetting(m.ID, field.Key, *draft); err != nil {
-			a.pluginNotice = err.Error()
-			a.invalidate()
-			return
+		values[field.Key] = *draft
+	}
+	set := a.plugins.SetSettings
+	if a.pluginManager != nil {
+		set = a.pluginManager.SetSettings
+	}
+	_, err := set(m.ID, values)
+	// 部分系统凭据写入失败时也必须使旧设置快照失效。
+	a.stopRunner(m.ID)
+	if a.pluginKey().id == m.ID {
+		a.pluginGen++
+		a.pluginView = pluginPageState{}
+	}
+	for _, field := range m.Settings {
+		if field.Secret {
+			if draft := a.pluginDrafts[m.ID+"/"+field.Key]; draft != nil {
+				*draft = ""
+			}
 		}
 	}
-	// The runtime snapshots settings and the endpoint when it is created;
-	// drop it so the next page reads the new values.
-	a.stopRunner(m.ID)
-	if a.route.kind == "plugin" && a.route.id == m.ID {
+	if err != nil {
+		a.pluginNotice = err.Error()
+		a.invalidate()
+		return
+	}
+	if a.pluginKey().id == m.ID {
 		a.loadPluginPage()
 	}
 	a.pluginNotice = a.t(i18n.PluginSettingsSaved)
@@ -319,18 +350,22 @@ func (a *App) savePluginSettings(m plugin.Manifest) {
 }
 
 func (a *App) stopRunner(id string) {
+	delete(a.pluginRunnerHashes, id)
 	if runner, ok := a.pluginRunners[id]; ok {
-		runner.Close()
 		delete(a.pluginRunners, id)
+		// Runner.Close 仅设置原子关闭标记，当前调用的结果由 generation 丢弃。
+		runner.Close()
 	}
 }
 
-// stopAllRunners drops every runtime, so the next page of each plugin reads
-// the new endpoint or settings.
+// stopAllRunners 使旧网络和设置的运行结果失效，下一次执行重建 runtime。
 func (a *App) stopAllRunners() {
-	for id, runner := range a.pluginRunners {
-		runner.Close()
-		delete(a.pluginRunners, id)
+	a.pluginGen++
+	if a.pluginKey().id != "" {
+		a.pluginView = pluginPageState{}
+	}
+	for id := range a.pluginRunners {
+		a.stopRunner(id)
 	}
 }
 
@@ -381,6 +416,7 @@ func (a *App) openPluginApp(id string) {
 
 // openPluginDetail shows one app's settings on the Apps page.
 func (a *App) openPluginDetail(id string) {
+	a.coding.open = false
 	a.pluginDetail = id
 	a.pluginTab = "installed"
 	a.route = routePlugins
@@ -411,33 +447,69 @@ func (a *App) loadPluginPage() {
 	if key.id == "" || a.plugins == nil {
 		return
 	}
-	inst, err := a.plugins.Get(key.id)
-	if err != nil {
-		a.pluginView = pluginPageState{key: key, err: err.Error()}
+	if a.pluginView.key == key && a.pluginView.loading {
 		return
 	}
-	state := pluginPageState{
-		key:      key,
-		name:     inst.Manifest.Name,
-		unsigned: inst.Err == "" && !inst.Signed && !inst.Official,
-		official: inst.Err == "" && inst.Official,
+	var release func()
+	if a.pluginManager != nil {
+		var err error
+		release, err = a.pluginManager.TryExecution(key.id)
+		if err != nil {
+			if a.pluginView.key != key {
+				a.pluginView = pluginPageState{key: key, err: "应用正忙，请稍后刷新"}
+			}
+			return
+		}
+	} else {
+		release = func() {}
 	}
-	// A failed integrity check is the same wall as a broken manifest: the
-	// page does not run, official or signed.
+	inst, err := a.plugins.Get(key.id)
+	if err != nil {
+		release()
+		a.pluginView = pluginPageState{key: key, err: "应用不可用"}
+		return
+	}
+	state := pluginPageState{key: key, name: inst.Manifest.Name, unsigned: inst.Err == "" && !inst.Signed && !inst.Official, official: inst.Err == "" && inst.Official}
 	if inst.Err != "" {
+		release()
 		a.stopRunner(key.id)
 		state.err = inst.Err
 		a.pluginView = state
 		return
 	}
 	if !inst.Enabled {
+		release()
 		state.err = a.t(i18n.PluginDisabled)
 		a.pluginView = state
 		return
 	}
-	runner, err := a.pluginRunner(inst)
+	declared := false
+	for _, nav := range inst.Manifest.Navigation {
+		if nav.Page == key.page {
+			declared = true
+			break
+		}
+	}
+	if !declared {
+		release()
+		state.err = "页面未在应用中声明"
+		a.pluginView = state
+		return
+	}
+	state.hash, err = a.plugins.PackageHash(key.id)
 	if err != nil {
-		state.err = err.Error()
+		release()
+		state.err = "无法校验应用内容"
+		a.pluginView = state
+		return
+	}
+	if old := a.pluginView; old.key == key && old.hash == state.hash && old.hasPage {
+		state.page, state.updated, state.hasPage = old.page, old.updated, true
+	}
+	runner, err := a.pluginRunner(inst, state.hash)
+	if err != nil {
+		release()
+		state.err = "应用模块加载失败"
 		a.pluginView = state
 		return
 	}
@@ -445,30 +517,36 @@ func (a *App) loadPluginPage() {
 	gen := a.pluginGen
 	state.loading = true
 	a.pluginView = state
-	go func() {
+	a.goAsync(func() {
 		page, err := runner.Page(key.page)
-		mygo.RunOnMain(func() {
+		release()
+		a.runOnMain(func() {
 			if gen != a.pluginGen || a.pluginKey() != key {
 				return
 			}
 			state.loading = false
 			if err != nil {
-				state.err = err.Error()
+				state.err = "刷新失败，保留上次成功内容"
 			} else {
 				state.page = page
+				state.updated = time.Now()
+				state.hasPage = true
 			}
 			a.pluginView = state
 			a.invalidate()
 		})
-	}()
+	})
 }
 
 // pluginRunner returns the plugin's runtime, compiling its source the first
 // time. It runs on the main thread.
-func (a *App) pluginRunner(inst plugin.Installed) (*plugin.Runner, error) {
+func (a *App) pluginRunner(inst plugin.Installed, hash string) (*plugin.Runner, error) {
 	id := inst.Manifest.ID
 	if runner, ok := a.pluginRunners[id]; ok {
-		return runner, nil
+		if a.pluginRunnerHashes[id] == hash {
+			return runner, nil
+		}
+		a.stopRunner(id)
 	}
 	source, err := os.ReadFile(filepath.Join(inst.Dir, filepath.FromSlash(inst.Manifest.Main)))
 	if err != nil {
@@ -480,6 +558,7 @@ func (a *App) pluginRunner(inst plugin.Installed) (*plugin.Runner, error) {
 		return nil, err
 	}
 	a.pluginRunners[id] = runner
+	a.pluginRunnerHashes[id] = hash
 	return runner, nil
 }
 

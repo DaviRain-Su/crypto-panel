@@ -16,9 +16,14 @@ import (
 func (a *App) pluginsView(c *ui.Context) {
 	p := a.pal
 	a.pluginTabs(c)
+	a.pendingApplications(c)
 	if a.pluginNotice != "" {
 		ui.Text(c, a.pluginNotice).FontSize(11).TextColor(p.muted).MaxLines(2).
 			Margin(0, 0, 12, 0)
+	}
+	if a.coding.open {
+		a.creatorView(c)
+		return
 	}
 	if a.pluginTab == "store" {
 		a.storeView(c)
@@ -39,7 +44,7 @@ func (a *App) pluginsView(c *ui.Context) {
 // with the two ways to install a local plugin beside them.
 func (a *App) pluginTabs(c *ui.Context) {
 	p := a.pal
-	ui.Row(c).AlignItems(ui.Center).Gap(8).Margin(0, 0, 16, 0).Children(func() {
+	ui.Row(c).AlignItems(ui.Center).Gap(8).Wrap().Margin(0, 0, 16, 0).Children(func() {
 		selected := 0
 		if a.pluginTab == "store" {
 			selected = 1
@@ -52,6 +57,7 @@ func (a *App) pluginTabs(c *ui.Context) {
 			}
 		}
 		ui.Box(c).Grow(1)
+		a.softButton(c, "创建应用", iconSparkle, p.accent, func() { a.openCreator("") })
 		a.softButton(c, a.t(i18n.PluginInstall), nil, p.text, a.installPlugin)
 		a.softButton(c, a.t(i18n.AppZip), nil, p.text, a.installPluginZip)
 	})
@@ -208,6 +214,9 @@ func (a *App) appCard(c *ui.Context, item plugin.Installed) {
 				a.pluginLogsOpen[id] = !a.pluginLogsOpen[id]
 				a.invalidate()
 			})
+			if !item.Official && !item.Signed && strings.HasPrefix(id, "local.") {
+				a.softButton(c, "修改应用", iconSparkle, p.accent, func() { a.openCreator(id) })
+			}
 			a.softButton(c, a.t(i18n.Remove), iconTrash, p.danger, func() { a.removePlugin(id) })
 			if runner, ok := a.pluginRunners[id]; ok {
 				if n := runner.Restarts(); n > 0 {
@@ -249,6 +258,20 @@ func (a *App) pluginSettingsForm(c *ui.Context, m plugin.Manifest) {
 				input := ui.TextInput(c.Key("plugin-setting-"+key), draft).Label(field.Label)
 				if field.Secret {
 					input.Password()
+					configured := false
+					if statuses, err := a.plugins.DescribeSettings(m.ID); err == nil {
+						for _, status := range statuses {
+							if status.Key == field.Key && status.Configured != nil {
+								configured = *status.Configured
+							}
+						}
+					}
+					if configured {
+						ui.Row(c).Gap(8).Children(func() {
+							ui.Text(c, "已配置 · 留空保留").FontSize(10.5).TextColor(p.muted)
+							a.softButton(c, "清除", nil, p.danger, func() { a.clearPluginSecret(m.ID, field.Key) })
+						})
+					}
 				}
 				if field.Help != "" {
 					ui.Text(c, field.Help).FontSize(11).TextColor(p.muted).MaxLines(2)
@@ -304,19 +327,20 @@ func (a *App) pluginPageView(c *ui.Context) {
 	p := a.pal
 	a.pluginPageTabs(c)
 	view := a.pluginView
-	switch {
-	case view.key != a.pluginKey():
-		// A page is being opened; the next frame draws it.
-	case view.err != "":
+	if view.key != a.pluginKey() {
+		return
+	}
+	if view.err != "" {
 		ui.Text(c, view.err).FontSize(12).TextColor(p.danger).MaxLines(6)
-	case view.loading:
+	}
+	if view.loading {
 		ui.Text(c, a.t(i18n.Refreshing)).FontSize(12).TextColor(p.muted)
-	default:
-		// The window's header already names the page, so the page's own
-		// title is not drawn again.
-		pages.RenderBody(c, view.page, func(page string) {
-			a.openPluginPage(a.route.id, page)
-		})
+	}
+	if !view.updated.IsZero() {
+		ui.Text(c, "上次成功刷新 "+view.updated.Local().Format("15:04:05")).FontSize(10.5).TextColor(p.faint)
+	}
+	if view.hasPage || (view.err == "" && !view.loading) {
+		pages.RenderBody(c, view.page, func(page string) { a.openPluginPage(a.route.id, page) })
 	}
 }
 

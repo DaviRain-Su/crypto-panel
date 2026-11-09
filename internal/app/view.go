@@ -658,6 +658,7 @@ func (a *App) settingsView(c *ui.Context) {
 	a.settingsGroup(c, a.t(i18n.AgentSection), func() {
 		a.agentRow(c)
 	})
+	a.settingsGroup(c, "编码 Agent", func() { a.codingSettings(c) })
 	a.settingsGroup(c, a.t(i18n.SecuritySection), func() {
 		a.presenceRow(c)
 		a.settingsDivider(c)

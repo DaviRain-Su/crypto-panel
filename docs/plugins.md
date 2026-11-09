@@ -25,6 +25,16 @@ their manifests: they cannot see a key, and they cannot draw or dismiss an
 approval. Installing any other app from a folder or a zip is still marked
 **unsigned**.
 
+## 个人应用与编码 agent
+
+Apps → **创建应用** 可以让本机 ACP 编码 agent 在独立目录生成代码，校验通过后进入待确认列表。外部 agent 也可以用 [Lintel Skill](../.claude/skills/lintel-apps/SKILL.md) 和本机 HTTP API 完成同一流程；实际接口、设置和更新操作见[个人应用指南](personal-apps.md)。
+
+个人应用使用 `local.<owner>.<slug>`，安装后标为 **Unsigned**。目录包和 `.cryptoapp.json` 单文件包使用相同校验与冻结候选；单文件包包含 `plugin` manifest 和 `main` 源码，manifest 的入口必须是 `index.js`。静态校验只解析脚本，安装提议不会执行或注册应用。用户在原生窗口确认后才安装。
+
+修改个人应用必须保持 id、严格提高版本，并提供当前 `packageHash` 作为 `expectedHash`。更新保留设置、secret、KV 和开关；不兼容设置迁移或 KV 缩额会拒绝。secret 的管理接口只返回是否已配置；空串写入表示清除，未提交的字段保持原值。
+
+工具许可、安装批准与每次钱包交易批准彼此独立。Local API 没有批准、签名或广播端点，API 刷新中的 EVM / NEAR 签名请求也会被拒绝。已有文件夹、zip 和签名商店入口继续保留。真实 agent 与完整桌面流程的验证状态见[验收记录](v1-acceptance.md)。
+
 ## plugin.json
 
 ```json

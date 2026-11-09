@@ -1,8 +1,6 @@
-// Package agent is the app's read-only local API: a localhost HTTP server
-// with a bearer token, for a local agent to read the portfolio and the
-// installed apps. It cannot sign, approve, install or reach a key, and it
-// binds loopback only. The token lives in the OS keychain, not in the
-// settings file.
+// Package agent 提供仅监听回环地址的本机 API。Bearer token 授权读取、
+// 校验与安装提议，安装批准仍由宿主原生界面决定。API 不提供钱包签名或密钥，
+// token 保存在系统凭据服务中。
 package agent
 
 import (
@@ -16,6 +14,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/davirain-su/lintel/internal/plugin"
 )
 
 // Data is what the server answers with. The app implements it; every method
@@ -69,18 +69,23 @@ type Amount struct {
 // registry install whose files still match. Official is a first-party
 // example shipped with the shell. The two are independent.
 type Plugin struct {
-	ID          string      `json:"id"`
-	Name        string      `json:"name"`
-	Version     string      `json:"version"`
-	Description string      `json:"description,omitempty"`
-	Author      string      `json:"author,omitempty"`
-	Enabled     bool        `json:"enabled"`
-	Signed      bool        `json:"signed"`
-	Official    bool        `json:"official"`
-	Broken      string      `json:"broken,omitempty"`
-	Folder      string      `json:"folder,omitempty"`
-	Permissions Permissions `json:"permissions"`
-	Pages       []string    `json:"pages,omitempty"`
+	ID                    string                 `json:"id"`
+	Name                  string                 `json:"name"`
+	Version               string                 `json:"version"`
+	Description           string                 `json:"description,omitempty"`
+	Author                string                 `json:"author,omitempty"`
+	Enabled               bool                   `json:"enabled"`
+	Signed                bool                   `json:"signed"`
+	Official              bool                   `json:"official"`
+	Broken                string                 `json:"broken,omitempty"`
+	Folder                string                 `json:"folder,omitempty"`
+	Permissions           Permissions            `json:"permissions"`
+	Pages                 []string               `json:"pages,omitempty"`
+	Source                string                 `json:"source,omitempty"`
+	InstalledVia          string                 `json:"installedVia,omitempty"`
+	PackageHash           string                 `json:"packageHash,omitempty"`
+	Settings              []plugin.SettingStatus `json:"settings,omitempty"`
+	PendingInstallationID string                 `json:"pendingInstallationId,omitempty"`
 }
 
 // Permissions is what an app may do, as its manifest declares.
@@ -165,6 +170,15 @@ func (s *Server) handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /v0/portfolio", s.guard(s.portfolio))
 	mux.HandleFunc("GET /v0/plugins", s.guard(s.plugins))
+	mux.HandleFunc("GET /v0/catalog", s.guard(s.catalog))
+	mux.HandleFunc("GET /v0/examples/{id}", s.guard(s.example))
+	mux.HandleFunc("POST /v0/plugins/validate", s.guard(s.validate))
+	mux.HandleFunc("POST /v0/plugins", s.guard(s.propose))
+	mux.HandleFunc("PUT /v0/plugins/{id}", s.guard(s.propose))
+	mux.HandleFunc("GET /v0/installations/{requestId}", s.guard(s.installation))
+	mux.HandleFunc("DELETE /v0/installations/{requestId}", s.guard(s.installation))
+	mux.HandleFunc("PUT /v0/plugins/{id}/settings", s.guard(s.settings))
+	mux.HandleFunc("DELETE /v0/plugins/{id}", s.guard(s.remove))
 	mux.HandleFunc("POST /v0/plugins/{id}/refresh", s.guard(s.refresh))
 	return mux
 }
@@ -196,21 +210,41 @@ func (s *Server) portfolio(w http.ResponseWriter, _ *http.Request) {
 }
 
 func (s *Server) plugins(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]any{"plugins": s.data.Plugins()})
+	items := s.data.Plugins()
+	if items == nil {
+		items = []Plugin{}
+	}
+	jobs := []plugin.Installation{}
+	if data, ok := s.data.(Management); ok {
+		if manager := data.ApplicationManager(); manager != nil {
+			jobs = manager.Installations()
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"plugins": items, "installations": jobs})
 }
 
 func (s *Server) refresh(w http.ResponseWriter, r *http.Request) {
-	page, err := s.data.Refresh(r.PathValue("id"))
-	switch {
-	case errors.Is(err, ErrNotFound):
-		writeError(w, http.StatusNotFound, err.Error())
-	case errors.Is(err, ErrDisabled), errors.Is(err, ErrNoPages):
-		writeError(w, http.StatusConflict, err.Error())
-	case err != nil:
-		writeError(w, http.StatusBadGateway, err.Error())
-	default:
-		writeJSON(w, http.StatusOK, page)
+	if data, ok := s.data.(Management); ok {
+		result, err := data.RefreshPage(r.PathValue("id"), r.URL.Query().Get("page"))
+		if err != nil {
+			writeManagementError(w, err)
+			return
+		}
+		if result.PackageHash != "" {
+			w.Header().Set("X-Crypto-Panel-Package-Hash", result.PackageHash)
+		}
+		if !result.EvaluatedAt.IsZero() {
+			w.Header().Set("X-Crypto-Panel-Evaluated-At", result.EvaluatedAt.UTC().Format(time.RFC3339Nano))
+		}
+		writeJSON(w, http.StatusOK, result.Page)
+		return
 	}
+	page, err := s.data.Refresh(r.PathValue("id"))
+	if err != nil {
+		writeManagementError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, page)
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {

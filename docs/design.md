@@ -42,7 +42,7 @@ The app is a shell plus sandboxed plugins:
 | One number in the menu bar, click for a panel | Not taken. The shell is a desktop window with a sidebar of pages, as in mygo-music |
 | A dashboard is one file (`<name>.bar`) with permissions, inputs, script | A plugin is one folder with `plugin.json`: permissions, settings (native form), one JS module |
 | Permissions are readable, requests elsewhere are refused | `permissions.network` (host allowlist), `permissions.chains`, `permissions.read`; enforced in the host, never in the plugin |
-| Local API for agents, localhost + bearer token | `GET /v0/portfolio`, `/v0/plugins`, `POST /v0/refresh`; read-only, nothing that signs |
+| Local API for agents, localhost + bearer token | Portfolio, catalog, validation and pending app proposals; native installation review remains mandatory. Full routes: [personal-app guide](personal-apps.md). No signing or approval endpoint. |
 | Screen sidebars and global shortcuts as entry points | Not taken. Navigation is the sidebar inside the window |
 | Free tier limited by enabled dashboards | Not a product decision here; a plugin registry can count them |
 

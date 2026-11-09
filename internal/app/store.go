@@ -24,6 +24,7 @@ type installRequest struct {
 // setPluginTab switches the Plugins page between the installed plugins and
 // the store.
 func (a *App) setPluginTab(tab string) {
+	a.coding.open = false
 	if a.pluginTab == tab {
 		return
 	}
