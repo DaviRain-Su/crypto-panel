@@ -407,18 +407,6 @@ func (s *Store) PackageHash(id string) (string, error) {
 }
 
 func normalizedPackageHash(dir string) (string, error) {
-	return treeHash(dir, false)
-}
-
-// legacyTreeHash is the package hash used only for a pre-upgrade app whose
-// install.json could not be read. A non-regular install.json is not part of
-// the digest; every other symlink or special file still rejects the tree.
-// PackageHash itself stays strict.
-func legacyTreeHash(dir string) (string, error) {
-	return treeHash(dir, true)
-}
-
-func treeHash(dir string, tolerateNonRegularInstall bool) (string, error) {
 	manifest, err := LoadManifest(dir)
 	if err != nil || manifest.ValidateDir(dir) != nil {
 		return "", managementError("BROKEN_PLUGIN", "应用清单或主模块无效", 409)
@@ -428,7 +416,7 @@ func treeHash(dir string, tolerateNonRegularInstall bool) (string, error) {
 		return "", managementError("BROKEN_PLUGIN", "应用清单无效", 409)
 	}
 	canonical = append(canonical, '\n')
-	files, err := identityFiles(dir, tolerateNonRegularInstall)
+	files, err := packageIdentityFiles(dir)
 	if err != nil {
 		return "", managementError("BROKEN_PLUGIN", "应用文件树无效", 409)
 	}
@@ -450,10 +438,6 @@ func treeHash(dir string, tolerateNonRegularInstall bool) (string, error) {
 // packageIdentityFiles 列出摘要包含的文件。规则与复制后再 DigestDir 相同：
 // 跳过壳文件、垃圾文件和垃圾目录，拒绝链接与特殊文件。
 func packageIdentityFiles(dir string) ([]string, error) {
-	return identityFiles(dir, false)
-}
-
-func identityFiles(dir string, tolerateNonRegularInstall bool) ([]string, error) {
 	var files []string
 	total := int64(0)
 	err := filepath.WalkDir(dir, func(p string, d fs.DirEntry, err error) error {
@@ -470,12 +454,8 @@ func identityFiles(dir string, tolerateNonRegularInstall bool) ([]string, error)
 		rel = filepath.ToSlash(rel)
 		// 先拒绝链接、特殊文件和非法路径，再跳过壳文件与垃圾文件。
 		// 名为 kv.json / state.json / .DS_Store 的符号链接不能被跳过。
-		// 只有迁移旧应用时，非普通的 install.json 不参与摘要。
 		if strings.ContainsAny(rel, "\\\x00") || path.Clean(rel) != rel || path.IsAbs(rel) {
 			return fmt.Errorf("plugin path is invalid: %s", rel)
-		}
-		if tolerateNonRegularInstall && rel == "install.json" && (d.Type()&fs.ModeSymlink != 0 || (!d.IsDir() && !d.Type().IsRegular())) {
-			return nil
 		}
 		if d.Type()&fs.ModeSymlink != 0 || (!d.IsDir() && !d.Type().IsRegular()) {
 			return fmt.Errorf("plugin contains a symlink or special file: %s", rel)

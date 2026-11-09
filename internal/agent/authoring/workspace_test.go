@@ -17,15 +17,37 @@ import (
 	"github.com/davirain-su/lintel/internal/plugin"
 )
 
-// 凭据探针让修改准备阶段的意外读取直接失败。
-type secretProbe struct{ reads int }
+// 凭据探针让修改准备阶段的意外读取直接失败。安装来源账户不是插件秘密，
+// 宿主提议更新时要读写它。
+type secretProbe struct {
+	reads int
+	m     map[string][]byte
+}
 
-func (s *secretProbe) Get(string) ([]byte, error) {
+func (s *secretProbe) Get(key string) ([]byte, error) {
+	if strings.HasPrefix(key, "provenance:") {
+		v, ok := s.m[key]
+		if !ok {
+			return nil, os.ErrNotExist
+		}
+		return append([]byte(nil), v...), nil
+	}
 	s.reads++
 	return nil, errors.New("不应读取凭据")
 }
-func (*secretProbe) Set(string, []byte) error { return nil }
-func (*secretProbe) Delete(string) error      { return nil }
+func (s *secretProbe) Set(key string, value []byte) error {
+	if strings.HasPrefix(key, "provenance:") {
+		if s.m == nil {
+			s.m = map[string][]byte{}
+		}
+		s.m[key] = append([]byte(nil), value...)
+	}
+	return nil
+}
+func (s *secretProbe) Delete(key string) error {
+	delete(s.m, key)
+	return nil
+}
 
 func TestUpdateCopiesCompleteCodeWithoutStateOrSecrets(t *testing.T) {
 	probe := &secretProbe{}

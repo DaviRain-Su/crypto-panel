@@ -6,45 +6,61 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
-	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
+	"time"
 )
 
-// hostProvenance is the shell's own record of an install. It lives outside
-// every app directory, so a plugin file cannot replace it. API mutations and
-// update proposals trust this record, not install.json by itself.
+// provenanceKeychainDown is process-wide. A credential store that does not
+// answer is not retried for every plugin, and records then stay in memory
+// for this process only.
+var provenanceKeychainDown atomic.Bool
+
+// errProvTimeout is returned when the credential store does not answer.
+// Provenance then stays in process memory, so a later process fails closed
+// instead of trusting a file the coding agent can rewrite.
+var errProvTimeout = errors.New("provenance credential store timed out")
+
+const provenanceWriteTimeout = time.Second
+
+// hostProvenance is the shell's record of an install. Each record is stored
+// in the existing plugin credential service under ProvenanceAccount, not in
+// a file the app or the coding agent can rewrite. API mutations and update
+// proposals trust that record. A missing record, a record that does not
+// parse, or an install.json that does not match it fails closed.
 //
-// Apps installed before this record existed are classified once, when the
-// manager starts. A regular install.json is recorded as signed or unsigned
-// from its contents, and later edits must still match that digest. An
-// install.json that is missing, linked, or otherwise not a regular parseable
-// file cannot be classified; it is recorded LegacyUnsigned and stays unsigned
-// for the API while the package hash still matches. That is a one-time
-// migration limitation: a pre-upgrade install.json that was already forged
-// into a regular unsigned record is indistinguishable from a real unsigned
-// install and is trusted once. The native remove path does not consult this
-// decision.
+// Apps installed before these records existed are classified once, when the
+// manager first starts. Only a regular, parseable install.json is a trusted
+// source for that pass: it is recorded as signed or unsigned from its
+// contents, and later edits must still match its digest. A missing, linked,
+// directory, or otherwise unreadable install.json is not migrated and does
+// not become unsigned. The completion marker lives in the same credential
+// service (provenanceMigrationAccount). Deleting a record or any on-disk
+// index does not run the migration again.
 type hostProvenance struct {
-	ID             string `json:"id"`
-	Signed         bool   `json:"signed"`
-	Official       bool   `json:"official"`
-	Via            string `json:"via,omitempty"`
-	PackageHash    string `json:"packageHash,omitempty"`
-	Source         string `json:"source,omitempty"`
-	InstallDigest  string `json:"installDigest,omitempty"`
-	LegacyUnsigned bool   `json:"legacyUnsigned,omitempty"`
+	ID            string `json:"id"`
+	Signed        bool   `json:"signed"`
+	Official      bool   `json:"official"`
+	Via           string `json:"via,omitempty"`
+	PackageHash   string `json:"packageHash,omitempty"`
+	Source        string `json:"source,omitempty"`
+	InstallDigest string `json:"installDigest,omitempty"`
 }
 
-type provenanceIndex struct {
-	Records map[string]hostProvenance `json:"records"`
-}
+// provenanceMigrationAccount is the credential-service account that records
+// that the one-time migration has finished. It is not a plugin id.
+const provenanceMigrationAccount = "provenance:migration"
 
-// ProvenancePath is the host-owned index for this store. It sits beside
-// settings.json, named from the plugins directory, and never inside an app
-// directory. A store at <data>/plugins uses <data>/.plugins-provenance.json.
+// ProvenanceAccount is the credential-service account for one app's install
+// provenance. The service name is unchanged; this is an account within it.
+func ProvenanceAccount(id string) string { return "provenance:" + id }
+
+// ProvenancePath is the on-disk location an index file would occupy beside
+// settings.json. It is not a trust store: a regular file, an empty file, or
+// a symlink there is never read and never authorizes an API mutation.
 func (s *Store) ProvenancePath() string {
 	path, err := s.provenancePath()
 	if err != nil {
@@ -70,97 +86,119 @@ func installDigest(data []byte) string {
 	return "sha256:" + hex.EncodeToString(sum[:])
 }
 
-func (s *Store) loadProvenanceIndex() (provenanceIndex, error) {
-	path, err := s.provenancePath()
-	if err != nil {
-		return provenanceIndex{}, err
-	}
-	info, err := os.Lstat(path)
-	if errors.Is(err, fs.ErrNotExist) {
-		return provenanceIndex{Records: map[string]hostProvenance{}}, nil
-	}
-	if err != nil {
-		return provenanceIndex{}, err
-	}
-	if info.Mode()&fs.ModeSymlink != 0 || !info.Mode().IsRegular() {
-		return provenanceIndex{}, errors.New("provenance index is not a regular file")
-	}
-	f, err := openInstallRecord(path)
-	if err != nil {
-		return provenanceIndex{}, err
-	}
-	defer f.Close()
-	opened, err := f.Stat()
-	if err != nil || !opened.Mode().IsRegular() || !os.SameFile(info, opened) {
-		return provenanceIndex{}, errors.New("provenance index changed")
-	}
-	data, err := io.ReadAll(io.LimitReader(f, 1<<20))
-	if err != nil {
-		return provenanceIndex{}, err
-	}
-	var index provenanceIndex
-	if err := json.Unmarshal(data, &index); err != nil {
-		return provenanceIndex{}, err
-	}
-	if index.Records == nil {
-		index.Records = map[string]hostProvenance{}
-	}
-	return index, nil
+func (s *Store) keychainEnabled() bool {
+	return s.secrets != nil && !provenanceKeychainDown.Load()
 }
 
-func (s *Store) saveProvenanceIndex(index provenanceIndex) error {
-	if index.Records == nil {
-		index.Records = map[string]hostProvenance{}
+func (s *Store) markKeychainDown() {
+	provenanceKeychainDown.Store(true)
+}
+
+func (s *Store) readMem(key string) ([]byte, bool) {
+	s.provenanceMu.Lock()
+	defer s.provenanceMu.Unlock()
+	b, ok := s.provenanceMem[key]
+	if !ok || len(b) == 0 {
+		return nil, false
 	}
-	data, err := json.MarshalIndent(index, "", "  ")
-	if err != nil {
+	return append([]byte(nil), b...), true
+}
+
+func (s *Store) writeMem(key string, value []byte) {
+	s.provenanceMu.Lock()
+	defer s.provenanceMu.Unlock()
+	if s.provenanceMem == nil {
+		s.provenanceMem = map[string][]byte{}
+	}
+	s.provenanceMem[key] = append([]byte(nil), value...)
+}
+
+func (s *Store) readProv(key string) ([]byte, bool) {
+	if s.keychainEnabled() {
+		b, err := s.secrets.Get(key)
+		if err == nil && len(b) > 0 {
+			return append([]byte(nil), b...), true
+		}
+		return nil, false
+	}
+	return s.readMem(key)
+}
+
+func (s *Store) writeProv(key string, value []byte) error {
+	value = append([]byte(nil), value...)
+	if s.keychainEnabled() {
+		err := s.secretSet(key, value)
+		if err == nil {
+			return nil
+		}
+		if !errors.Is(err, errProvTimeout) {
+			return err
+		}
+		s.markKeychainDown()
+	}
+	s.writeMem(key, value)
+	return nil
+}
+
+func (s *Store) secretSet(key string, value []byte) error {
+	ch := make(chan error, 1)
+	go func() { ch <- s.secrets.Set(key, value) }()
+	select {
+	case err := <-ch:
 		return err
+	case <-time.After(provenanceWriteTimeout):
+		return errProvTimeout
 	}
-	data = append(data, '\n')
-	path, err := s.provenancePath()
-	if err != nil {
-		return err
+}
+
+func (s *Store) deleteProv(key string) {
+	if s.keychainEnabled() {
+		ch := make(chan struct{}, 1)
+		go func() {
+			_ = s.secrets.Delete(key)
+			ch <- struct{}{}
+		}()
+		select {
+		case <-ch:
+		case <-time.After(provenanceWriteTimeout):
+			s.markKeychainDown()
+		}
 	}
-	return writeFileAtomic(path, data, 0o600)
+	s.provenanceMu.Lock()
+	delete(s.provenanceMem, key)
+	s.provenanceMu.Unlock()
 }
 
 func (s *Store) getProvenance(id string) (hostProvenance, bool, error) {
-	s.provenanceMu.Lock()
-	defer s.provenanceMu.Unlock()
-	index, err := s.loadProvenanceIndex()
-	if err != nil {
-		return hostProvenance{}, false, err
+	raw, ok := s.readProv(ProvenanceAccount(id))
+	if !ok {
+		return hostProvenance{}, false, nil
 	}
-	rec, ok := index.Records[id]
-	return rec, ok, nil
+	var rec hostProvenance
+	if json.Unmarshal(raw, &rec) != nil || rec.ID != id {
+		return hostProvenance{}, false, nil
+	}
+	return rec, true, nil
 }
 
 func (s *Store) putProvenance(rec hostProvenance) error {
 	if rec.ID == "" || validatePluginID(rec.ID) != nil {
 		return errors.New("provenance id is invalid")
 	}
-	s.provenanceMu.Lock()
-	defer s.provenanceMu.Unlock()
-	index, err := s.loadProvenanceIndex()
+	data, err := json.Marshal(rec)
 	if err != nil {
 		return err
 	}
-	index.Records[rec.ID] = rec
-	return s.saveProvenanceIndex(index)
+	return s.writeProv(ProvenanceAccount(rec.ID), data)
 }
 
-func (s *Store) forgetProvenance(id string) error {
-	s.provenanceMu.Lock()
-	defer s.provenanceMu.Unlock()
-	index, err := s.loadProvenanceIndex()
-	if err != nil {
-		return err
-	}
-	if _, ok := index.Records[id]; !ok {
-		return nil
-	}
-	delete(index.Records, id)
-	return s.saveProvenanceIndex(index)
+func (s *Store) forgetProvenance(id string) {
+	s.deleteProv(ProvenanceAccount(id))
+}
+
+func (s *Store) migrationDone() bool {
+	_, ok := s.readProv(provenanceMigrationAccount)
+	return ok
 }
 
 // rememberInstall records the install the host just wrote. The on-disk
@@ -219,58 +257,55 @@ func (s *Store) adoptPersonalRecord(id, dir, packageHash string) error {
 	})
 }
 
-func (s *Store) migrateProvenance() error {
+// migrateProvenance classifies installs that predate host records. It never
+// fails the manager. Unreadable install.json files are skipped, and the pass
+// does not run again once the credential-service marker is set.
+func (s *Store) migrateProvenance() {
+	if s.migrationDone() {
+		return
+	}
 	entries, err := os.ReadDir(s.dir)
-	if errors.Is(err, fs.ErrNotExist) {
-		return nil
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return
 	}
-	if err != nil {
-		return err
-	}
+	failed := false
 	for _, entry := range entries {
 		name := entry.Name()
 		if strings.HasPrefix(name, ".") || !entry.IsDir() || validatePluginID(name) != nil {
 			continue
 		}
-		_, ok, err := s.getProvenance(name)
-		if err != nil {
-			return err
-		}
-		if ok {
-			continue
-		}
 		if err := s.migrateOne(name); err != nil {
-			return err
+			failed = true
 		}
 	}
-	return nil
+	if !failed {
+		_ = s.writeProv(provenanceMigrationAccount, []byte("done"))
+	}
 }
 
 func (s *Store) migrateOne(id string) error {
-	dir := filepath.Join(s.dir, id)
-	hash, hashErr := normalizedPackageHash(dir)
-	record, raw, readErr := readInstallBytes(dir)
-	prov := hostProvenance{ID: id}
-	// A file the host did not write, and cannot read as a regular record,
-	// is unsigned for the API. See hostProvenance. The package hash ignores
-	// that one unreadable install.json and still covers the rest of the tree.
-	if readErr != nil || hashErr != nil {
-		prov.LegacyUnsigned = true
-		if hashErr != nil {
-			hash, hashErr = legacyTreeHash(dir)
-		}
-		if hashErr == nil {
-			prov.PackageHash = hash
-		}
-		return s.putProvenance(prov)
+	if _, ok, _ := s.getProvenance(id); ok {
+		return nil
 	}
-	prov.Signed = record.Official || record.Hash != "" || record.Publisher != "" || record.Signature != ""
-	prov.Official = record.Official
-	prov.Via = record.InstalledVia
-	prov.PackageHash = hash
-	prov.Source = record.Source
-	prov.InstallDigest = installDigest(raw)
-	return s.putProvenance(prov)
+	dir := filepath.Join(s.dir, id)
+	record, raw, err := readInstallBytes(dir)
+	if err != nil {
+		// Missing, linked, a directory, or unparsable: not a trusted source.
+		return nil
+	}
+	hash, err := normalizedPackageHash(dir)
+	if err != nil || hash == "" {
+		return nil
+	}
+	return s.putProvenance(hostProvenance{
+		ID:            id,
+		Signed:        record.Official || record.Hash != "" || record.Publisher != "" || record.Signature != "",
+		Official:      record.Official,
+		Via:           record.InstalledVia,
+		PackageHash:   hash,
+		Source:        record.Source,
+		InstallDigest: installDigest(raw),
+	})
 }
 
 func apiMutationForbidden() *Error {
@@ -289,12 +324,6 @@ func (s *Store) authorizeAPIMutation(inst Installed) error {
 	if err != nil || !ok || prov.Signed || prov.Official {
 		return apiMutationForbidden()
 	}
-	// LegacyUnsigned is the one-time migration of an install.json the host
-	// could not read. The API treats that app as unsigned while the package
-	// hash still matches; native removal does not depend on this record.
-	if prov.LegacyUnsigned {
-		return nil
-	}
 	if inst.Err != "" {
 		return apiMutationForbidden()
 	}
@@ -312,16 +341,9 @@ func (s *Store) authorizeUpdate(inst Installed) error {
 	if err != nil || !ok || prov.ID != inst.Manifest.ID || prov.Signed || prov.Official {
 		return updateSourceForbidden()
 	}
-	hashTree := normalizedPackageHash
-	if prov.LegacyUnsigned {
-		hashTree = legacyTreeHash
-	}
-	hash, hashErr := hashTree(inst.Dir)
+	hash, hashErr := normalizedPackageHash(inst.Dir)
 	if hashErr != nil || hash == "" || hash != prov.PackageHash {
 		return managementError("BASE_CHANGED", "已安装内容发生变化，请重新读取后提议更新", 409)
-	}
-	if prov.LegacyUnsigned {
-		return nil
 	}
 	if err := provenanceMatchesInstall(prov, inst.Dir); err != nil {
 		return updateSourceForbidden()
@@ -334,11 +356,7 @@ func (s *Store) provenanced(inst Installed) (hostProvenance, bool, error) {
 	if err != nil || !ok || prov.ID != inst.Manifest.ID {
 		return hostProvenance{}, false, err
 	}
-	hashTree := normalizedPackageHash
-	if prov.LegacyUnsigned {
-		hashTree = legacyTreeHash
-	}
-	hash, hashErr := hashTree(inst.Dir)
+	hash, hashErr := normalizedPackageHash(inst.Dir)
 	if hashErr != nil || hash == "" || hash != prov.PackageHash {
 		return hostProvenance{}, false, hashErr
 	}

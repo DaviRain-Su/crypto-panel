@@ -56,9 +56,9 @@ func NewManager(store *Store) (*Manager, error) {
 	if err := m.recoverTransactions(); err != nil {
 		return nil, err
 	}
-	if err := store.migrateProvenance(); err != nil {
-		return nil, managementError("STORE_UNAVAILABLE", "无法建立安装来源记录", 503)
-	}
+	// 迁移失败或索引损坏都不能阻止管理器启动。没有可信来源记录时，
+	// local.* 的 API 修改会在稍后失败关闭。
+	store.migrateProvenance()
 	entries, err := os.ReadDir(m.pendingDir)
 	if err != nil {
 		return nil, managementError("STORE_UNAVAILABLE", "无法清理旧候选", 503)

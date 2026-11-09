@@ -51,9 +51,10 @@ type Installed struct {
 // plugin.json, its source, and state.json. The folder is the install unit;
 // removing it removes the plugin.
 type Store struct {
-	dir          string
-	secrets      Secrets
-	provenanceMu sync.Mutex
+	dir           string
+	secrets       Secrets
+	provenanceMu  sync.Mutex
+	provenanceMem map[string][]byte
 }
 
 // NewStore returns a store rooted at dir, which is created on first write.
@@ -260,9 +261,7 @@ func (s *Store) remove(id string) error {
 	lock.Lock()
 	defer lock.Unlock()
 	if _, err := os.Lstat(dir); errors.Is(err, fs.ErrNotExist) {
-		if ferr := s.forgetProvenance(id); ferr != nil {
-			return managementError("REMOVE_FAILED", "无法更新安装来源记录", 500)
-		}
+		s.forgetProvenance(id)
 		return nil
 	} else if err != nil {
 		return managementError("REMOVE_FAILED", "无法读取应用目录", 500)
@@ -283,9 +282,8 @@ func (s *Store) remove(id string) error {
 	if os.RemoveAll(dir) != nil {
 		return managementError("REMOVE_FAILED", "无法删除应用目录", 500)
 	}
-	if err := s.forgetProvenance(id); err != nil {
-		return managementError("REMOVE_FAILED", "应用已删除，但无法更新安装来源记录", 500)
-	}
+	// 来源记录删不掉也不把已经完成的卸载报成失败。
+	s.forgetProvenance(id)
 	return nil
 }
 

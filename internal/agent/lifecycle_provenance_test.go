@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/davirain-su/lintel/internal/plugin"
@@ -44,6 +45,9 @@ func TestForgedInstallRecordCannotAuthorizeAPIMutation(t *testing.T) {
 			if host == "" || filepath.Dir(host) == store.Dir() {
 				t.Fatalf("宿主记录不在应用目录之外: %s", host)
 			}
+			if _, err := os.Stat(filepath.Join(store.Dir(), id, "provenance.json")); err == nil {
+				t.Fatal("来源记录写进了应用目录")
+			}
 			secret := "secret-" + kind
 			if _, err := manager.SetSettings(id, map[string]string{"plain": "original", "token": secret}); err != nil {
 				t.Fatal(err)
@@ -70,7 +74,7 @@ func TestForgedInstallRecordCannotAuthorizeAPIMutation(t *testing.T) {
 					t.Fatal(err)
 				}
 			case "missing-host":
-				if err := os.Remove(host); err != nil {
+				if err := secrets.Delete(plugin.ProvenanceAccount(id)); err != nil {
 					t.Fatal(err)
 				}
 			case "hash-mismatch":
@@ -108,7 +112,7 @@ func TestPreUpgradeInstallGainsHostProvenance(t *testing.T) {
 		root := t.TempDir()
 		store := plugin.NewStore(filepath.Join(root, "plugins"), secrets)
 		id := "local.personal.upgraded"
-		writeLooseApp(t, store.Dir(), id, false)
+		writeLooseApp(t, store.Dir(), id, "regular")
 		manager, err := plugin.NewManager(store)
 		if err != nil {
 			t.Fatal(err)
@@ -134,42 +138,41 @@ func TestPreUpgradeInstallGainsHostProvenance(t *testing.T) {
 			t.Fatal("原生卸载失败")
 		}
 	})
-	t.Run("unreadable", func(t *testing.T) {
-		secrets := credentialMemory{}
-		_, base := newTestServer(t)
-		base.plugins = nil
-		root := t.TempDir()
-		store := plugin.NewStore(filepath.Join(root, "plugins"), secrets)
-		id := "local.personal.unreadable"
-		writeLooseApp(t, store.Dir(), id, true)
-		manager, err := plugin.NewManager(store)
-		if err != nil {
-			t.Fatal(err)
-		}
-		t.Cleanup(func() { manager.Close() })
-		s := New(&managedData{base, manager}, "test-token")
-		if _, err := manager.SetSettings(id, map[string]string{"plain": "original", "token": "kept"}); err != nil {
-			t.Fatal(err)
-		}
-		changed := jsonRequest(t, s, http.MethodPut, "/v0/plugins/"+id+"/settings", map[string]any{"values": map[string]string{"plain": "saved"}})
-		if changed.Code != http.StatusOK {
-			t.Fatalf("无法读取的旧 install.json 应视为未签名: %d %s", changed.Code, changed.Body)
-		}
-		if err := os.WriteFile(filepath.Join(store.Dir(), id, "index.js"), []byte(`export function page(){return {title:"Changed"};}`), 0o644); err != nil {
-			t.Fatal(err)
-		}
-		blocked := jsonRequest(t, s, http.MethodPut, "/v0/plugins/"+id+"/settings", map[string]any{"values": map[string]string{"plain": "hacked"}})
-		plain, err := store.Setting(id, "plain")
-		if err != nil || blocked.Code != http.StatusForbidden || plain != "saved" || !secretStored(secrets, "kept") {
-			t.Fatalf("包摘要变化后仍可修改: %d plain=%q %s", blocked.Code, plain, blocked.Body)
-		}
-		if err := manager.Remove(id); err != nil || secretStored(secrets, "kept") {
-			t.Fatal("原生卸载失败")
-		}
-	})
+	for _, kind := range []string{"missing", "symlink", "directory"} {
+		t.Run(kind, func(t *testing.T) {
+			secrets := credentialMemory{}
+			_, base := newTestServer(t)
+			base.plugins = nil
+			root := t.TempDir()
+			store := plugin.NewStore(filepath.Join(root, "plugins"), secrets)
+			id := "local.personal." + kind
+			writeLooseApp(t, store.Dir(), id, kind)
+			manager, err := plugin.NewManager(store)
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { manager.Close() })
+			s := New(&managedData{base, manager}, "test-token")
+			if _, err := manager.SetSettings(id, map[string]string{"plain": "original", "token": "kept"}); err != nil {
+				t.Fatal(err)
+			}
+			changed := jsonRequest(t, s, http.MethodPut, "/v0/plugins/"+id+"/settings", map[string]any{"values": map[string]string{"plain": "hacked"}})
+			plain, err := store.Setting(id, "plain")
+			if err != nil || changed.Code != http.StatusForbidden || codeOf(t, changed) != "API_MUTATION_FORBIDDEN" || plain != "original" || !secretStored(secrets, "kept") {
+				t.Fatalf("%s 升级前记录被当成未签名: %d plain=%q %s", kind, changed.Code, plain, changed.Body)
+			}
+			removed := do(t, s, http.MethodDelete, "/v0/plugins/"+id, "test-token")
+			if removed.Code != http.StatusForbidden || codeOf(t, removed) != "API_MUTATION_FORBIDDEN" || !secretStored(secrets, "kept") {
+				t.Fatalf("%s 卸载被接受: %d %s", kind, removed.Code, removed.Body)
+			}
+			if err := manager.Remove(id); err != nil || secretStored(secrets, "kept") {
+				t.Fatal("原生卸载失败")
+			}
+		})
+	}
 }
 
-func writeLooseApp(t *testing.T, root, id string, unreadableInstall bool) {
+func writeLooseApp(t *testing.T, root, id, installKind string) {
 	t.Helper()
 	dir := filepath.Join(root, id)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
@@ -183,7 +186,10 @@ func writeLooseApp(t *testing.T, root, id string, unreadableInstall bool) {
 		t.Fatal(err)
 	}
 	record := filepath.Join(dir, "install.json")
-	if unreadableInstall {
+	switch installKind {
+	case "missing":
+		return
+	case "symlink", "true":
 		forged := filepath.Join(root, "forged-install.json")
 		if err := os.WriteFile(forged, []byte("{}\n"), 0o600); err != nil {
 			t.Fatal(err)
@@ -191,10 +197,95 @@ func writeLooseApp(t *testing.T, root, id string, unreadableInstall bool) {
 		if err := os.Symlink(forged, record); err != nil {
 			t.Fatal(err)
 		}
-		return
+	case "directory":
+		if err := os.Mkdir(record, 0o700); err != nil {
+			t.Fatal(err)
+		}
+	default:
+		if err := os.WriteFile(record, []byte("{\"installedVia\":\"folder\"}\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
 	}
-	if err := os.WriteFile(record, []byte("{\"installedVia\":\"folder\"}\n"), 0o600); err != nil {
-		t.Fatal(err)
+}
+
+func TestDeletingHostRecordDoesNotRemigrate(t *testing.T) {
+	for _, kind := range []string{"missing", "symlink"} {
+		t.Run(kind, func(t *testing.T) {
+			secrets := credentialMemory{}
+			root := t.TempDir()
+			store := plugin.NewStore(filepath.Join(root, "plugins"), secrets)
+			id := "local.personal.restart" + kind
+			writeLooseApp(t, store.Dir(), id, "regular")
+			manager, err := plugin.NewManager(store)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := manager.SetSettings(id, map[string]string{"plain": "original", "token": "kept"}); err != nil {
+				t.Fatal(err)
+			}
+			_, base := newTestServer(t)
+			base.plugins = nil
+			s := New(&managedData{base, manager}, "test-token")
+			if saved := jsonRequest(t, s, http.MethodPut, "/v0/plugins/"+id+"/settings", map[string]any{"values": map[string]string{"plain": "saved"}}); saved.Code != http.StatusOK {
+				t.Fatalf("可读的旧安装记录没有迁移: %d %s", saved.Code, saved.Body)
+			}
+			if err := manager.Close(); err != nil {
+				t.Fatal(err)
+			}
+			if err := secrets.Delete(plugin.ProvenanceAccount(id)); err != nil {
+				t.Fatal(err)
+			}
+			record := filepath.Join(store.Dir(), id, "install.json")
+			if err := os.Remove(record); err != nil {
+				t.Fatal(err)
+			}
+			if kind == "symlink" {
+				forged := filepath.Join(root, "forged-install.json")
+				if err := os.WriteFile(forged, []byte("{}\n"), 0o600); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.Symlink(forged, record); err != nil {
+					t.Fatal(err)
+				}
+			}
+			index := store.ProvenancePath()
+			forgedIndex := filepath.Join(root, "forged-index.json")
+			if err := os.WriteFile(forgedIndex, []byte("{\"signed\":false}\n"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			_ = os.Remove(index)
+			if err := os.Symlink(forgedIndex, index); err != nil {
+				t.Fatal(err)
+			}
+			manager, err = plugin.NewManager(store)
+			if err != nil {
+				t.Fatalf("损坏的索引阻止了启动: %v", err)
+			}
+			t.Cleanup(func() { manager.Close() })
+			_, base = newTestServer(t)
+			base.plugins = nil
+			s = New(&managedData{base, manager}, "test-token")
+			changed := jsonRequest(t, s, http.MethodPut, "/v0/plugins/"+id+"/settings", map[string]any{"values": map[string]string{"plain": "hacked"}})
+			plain, err := store.Setting(id, "plain")
+			if err != nil || changed.Code != http.StatusForbidden || codeOf(t, changed) != "API_MUTATION_FORBIDDEN" || plain != "saved" || !secretStored(secrets, "kept") {
+				t.Fatalf("重启后重新信任了 %s: %d plain=%q %s", kind, changed.Code, plain, changed.Body)
+			}
+			removed := do(t, s, http.MethodDelete, "/v0/plugins/"+id, "test-token")
+			if removed.Code != http.StatusForbidden || !secretStored(secrets, "kept") {
+				t.Fatalf("重启后卸载被接受: %d %s", removed.Code, removed.Body)
+			}
+			body := map[string]any{"source": map[string]any{"kind": "inline", "package": map[string]any{
+				"plugin": map[string]any{"id": id, "name": "Old", "version": "2.0.0", "main": "index.js", "permissions": map[string]any{"storageKb": 1}, "settings": []any{map[string]any{"key": "plain", "label": "Plain"}, map[string]any{"key": "token", "label": "Token", "secret": true}}, "navigation": []any{map[string]any{"page": "overview", "title": "Overview"}}},
+				"main":   `export function page(){return {title:"Next"};}`,
+			}}, "expectedHash": "sha256:" + strings.Repeat("ab", 32)}
+			updated := jsonRequest(t, s, http.MethodPut, "/v0/plugins/"+id, body)
+			if updated.Code == http.StatusAccepted {
+				t.Fatalf("重启后仍可提议更新: %s", updated.Body)
+			}
+			if err := manager.Remove(id); err != nil || secretStored(secrets, "kept") {
+				t.Fatal("原生卸载失败")
+			}
+		})
 	}
 }
 

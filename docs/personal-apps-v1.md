@@ -249,9 +249,9 @@ V1 支持更高版本的同 id 个人应用更新，通过与首次安装相同�
 | `GET /v0/installations/{requestId}` | 查询任务状态 | 200 |
 | `DELETE /v0/installations/{requestId}` | 取消本机 API 尚待确认的任务。ACP 任务返回 403 `INSTALLATION_ORIGIN_FORBIDDEN` | 200，含 cancelled 任务 |
 | `GET /v0/plugins` | 已安装应用、设置元数据和本机 API 待确认摘要。不返回 ACP 任务 requestId | 200 |
-| `PUT /v0/plugins/{id}/settings` | 写入未签名 `local.*` 应用声明过的设置。宿主安装记录在应用目录之外，必须存在并与包摘要及 `install.json` 一致。缺失、不匹配、普通伪造文件、硬链接、符号链接或无法解析时返回 403 `API_MUTATION_FORBIDDEN` | 200 |
+| `PUT /v0/plugins/{id}/settings` | 写入未签名 `local.*` 应用声明过的设置。宿主安装记录在现有凭据服务的 `provenance:<id>` 账户中，必须存在并与包摘要及 `install.json` 一致。缺失、校验失败、不匹配、普通伪造文件、硬链接、符号链接或无法解析时返回 403 `API_MUTATION_FORBIDDEN` | 200 |
 | `POST /v0/plugins/{id}/refresh` | 在 API 上下文中求页面 | 200，页面 JSON |
-| `DELETE /v0/plugins/{id}` | 卸载未签名 `local.*` 应用。官方、已签名，或宿主安装记录缺失、与磁盘不一致、`install.json` 为伪造普通文件、硬链接、符号链接、目录、管道或无法解析时返回 403 `API_MUTATION_FORBIDDEN` | 204 |
+| `DELETE /v0/plugins/{id}` | 卸载未签名 `local.*` 应用。官方、已签名，或宿主安装记录缺失、无法校验、与磁盘不一致、`install.json` 为伪造普通文件、硬链接、符号链接、目录、管道或无法解析时返回 403 `API_MUTATION_FORBIDDEN` | 204 |
 
 ### 10.2 应用输入
 
@@ -392,7 +392,7 @@ HTTP 错误保留原来的字符串 error 字段，补充稳定 code；需要时
 | 状态码 | 使用范围 |
 | --- | --- |
 | 400 | 请求 JSON、字段、类型或页名错误 |
-| 401 / 403 | token 无效 / 浏览器 Origin 被拒绝 / `API_MUTATION_FORBIDDEN`（卸载或改设置的不是宿主安装记录与磁盘一致的未签名 `local.*`。记录在 `<数据目录>/.plugins-provenance.json`，与 settings.json 相邻，应用目录里的 install.json 不能充当这份记录。缺失、包摘要不一致、伪造的普通文件、硬链接、符号链接、目录、管道或无法解析都拒绝，且不打开链接或管道。升级前已安装、当时 install.json 无法作为普通文件读取的应用记为未签名，包摘要仍匹配时允许 API；原生卸载不受影响）/ `INSTALLATION_ORIGIN_FORBIDDEN`（取消 ACP 任务） |
+| 401 / 403 | token 无效 / 浏览器 Origin 被拒绝 / `API_MUTATION_FORBIDDEN`（卸载或改设置的不是宿主安装记录与磁盘一致的未签名 `local.*`。记录在现有凭据服务 `crypto-panel-plugins` 的账户 `provenance:<id>`，不在应用目录，也不信任旁边的索引文件。缺失、无法解析、包摘要不一致、伪造的普通文件、硬链接、符号链接、目录、管道或无法解析都拒绝，且不打开链接或管道。升级前的普通 install.json 只迁移一次，完成标记在同一凭据服务；缺失或链接的 install.json 不会被当成未签名。原生卸载不受影响）/ `INSTALLATION_ORIGIN_FORBIDDEN`（取消 ACP 任务） |
 | 404 | 应用、模板、源路径或任务不存在 |
 | 409 | id 冲突、版本冲突、基线变化、已有不同候选、任务不可取消、应用禁用或正忙 |
 | 413 / 415 | 大小超限 / 不支持的请求媒体类型 |
