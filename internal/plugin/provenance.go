@@ -445,15 +445,12 @@ func (s *Store) migrationSentinelExists() (bool, error) {
 	return true, nil
 }
 
-func (s *Store) createMigrationSentinel() error {
-	path, err := s.migrationSentinelPath()
-	if err != nil {
-		return err
-	}
+// createMigrationSentinelFile writes the sentinel. Tests replace it to inject
+// a failure without changing directory permissions.
+var createMigrationSentinelFile = writeMigrationSentinelFile
+
+func writeMigrationSentinelFile(path string) error {
 	f, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE|os.O_EXCL, 0o600)
-	if errors.Is(err, fs.ErrExist) {
-		return err
-	}
 	if err != nil {
 		return err
 	}
@@ -462,6 +459,14 @@ func (s *Store) createMigrationSentinel() error {
 		return err
 	}
 	return f.Sync()
+}
+
+func (s *Store) createMigrationSentinel() error {
+	path, err := s.migrationSentinelPath()
+	if err != nil {
+		return err
+	}
+	return createMigrationSentinelFile(path)
 }
 
 func apiMutationForbidden() *Error {
@@ -557,9 +562,35 @@ func (s *Store) migrationStuck() (bool, error) {
 	return started || sentinel, nil
 }
 
-// LockedLocalApps are local.* apps with no confirmed provenance while
-// migration did not finish. The local API stays closed for them until the
-// user confirms in the native UI. This does not read install.json.
+// ErrProvenanceChanged means the app on disk is not the one the confirm
+// window showed. ErrProvenanceSigned means a verified signature is present,
+// so the local API stays closed. ErrProvenanceUnhashed means there is no
+// package hash to pin. ErrProvenanceLinked means install.json has more than
+// one name.
+var (
+	ErrProvenanceChanged  = errors.New("the app changed before it was confirmed")
+	ErrProvenanceSigned   = errors.New("a signed app cannot be opened to the local API")
+	ErrProvenanceUnhashed = errors.New("the app has no package hash")
+	ErrProvenanceLinked   = errors.New("install record has more than one link")
+)
+
+// ProvenanceView is the snapshot shown in the confirm window.
+type ProvenanceView struct {
+	ID          string
+	Name        string
+	Path        string
+	PackageHash string
+	Signed      bool
+	dev         uint64
+	ino         uint64
+	nlink       uint64
+	digest      string
+}
+
+// LockedLocalApps are unsigned local.* personal apps with no confirmed
+// provenance while migration did not finish. Official examples and apps
+// whose package signature verifies are omitted: the local API cannot change
+// them, so confirming would only hide the lock. This does not follow links.
 func (s *Store) LockedLocalApps() ([]Installed, error) {
 	stuck, err := s.migrationStuck()
 	if err != nil || !stuck {
@@ -580,7 +611,11 @@ func (s *Store) LockedLocalApps() ([]Installed, error) {
 			continue
 		}
 		inst, err := s.Get(name)
-		if err != nil || inst.Manifest.ID != name {
+		if err != nil || inst.Manifest.ID != name || inst.Official {
+			continue
+		}
+		signed, _ := verifiedSignature(inst.Dir)
+		if signed || inst.Signed {
 			continue
 		}
 		out = append(out, inst)
@@ -588,15 +623,25 @@ func (s *Store) LockedLocalApps() ([]Installed, error) {
 	return out, nil
 }
 
-// ConfirmProvenance writes a host record for one locked local.* app after
-// the user approves it in the native UI. It pins the current tree and the
-// current regular install.json. A file that claims a publisher signature is
-// recorded as signed, so approval does not open the local API for it.
-// Automatic migration never calls this.
-func (s *Store) ConfirmProvenance(id string) error {
-	if !strings.HasPrefix(id, "local.") || validatePluginID(id) != nil {
+// SnapshotProvenance records what the confirm window is about to show.
+func (s *Store) SnapshotProvenance(id string) (ProvenanceView, error) {
+	view, _, err := s.inspectProvenance(id)
+	return view, err
+}
+
+// ConfirmProvenance writes a host record only when the app still matches the
+// snapshot from the open window. A verified signature is stored as signed
+// and never turned into an editable personal app. The caller holds no API
+// grant until this returns nil.
+func (s *Store) ConfirmProvenance(view ProvenanceView) error {
+	if !strings.HasPrefix(view.ID, "local.") || validatePluginID(view.ID) != nil {
 		return errors.New("only a local app can be confirmed")
 	}
+	release, err := s.tryLease(view.ID)
+	if err != nil {
+		return err
+	}
+	defer release()
 	stuck, err := s.migrationStuck()
 	if err != nil {
 		return err
@@ -604,29 +649,104 @@ func (s *Store) ConfirmProvenance(id string) error {
 	if !stuck {
 		return errors.New("provenance migration is not waiting for confirmation")
 	}
-	_, found, err := s.getProvenance(id)
+	current, raw, err := s.inspectProvenance(view.ID)
 	if err != nil {
 		return err
 	}
-	if found {
-		return nil
+	if current.PackageHash == "" {
+		return ErrProvenanceUnhashed
 	}
-	dir := filepath.Join(s.dir, id)
-	record, raw, err := readInstallBytes(dir)
+	if current.Signed {
+		if err := s.putProvenance(hostProvenance{
+			ID: current.ID, Signed: true, Via: "reconfirmed",
+			PackageHash: current.PackageHash, InstallDigest: current.digest,
+		}); err != nil {
+			return err
+		}
+		return ErrProvenanceSigned
+	}
+	if view.Signed || view.ID != current.ID || view.Path != current.Path || view.PackageHash == "" || view.PackageHash != current.PackageHash || view.digest != current.digest || view.dev != current.dev || view.ino != current.ino || view.nlink != current.nlink || current.nlink > 1 {
+		return ErrProvenanceChanged
+	}
+	record, _, err := readInstallBytes(filepath.Join(s.dir, current.ID))
 	if err != nil {
-		return err
-	}
-	hash, err := normalizedPackageHash(dir)
-	if err != nil || hash == "" {
 		return err
 	}
 	return s.putProvenance(hostProvenance{
-		ID:            id,
-		Signed:        record.Official || record.Hash != "" || record.Publisher != "" || record.Signature != "",
-		Official:      record.Official,
+		ID:            current.ID,
+		Signed:        false,
 		Via:           record.InstalledVia,
-		PackageHash:   hash,
-		Source:        record.Source,
+		PackageHash:   current.PackageHash,
 		InstallDigest: installDigest(raw),
 	})
+}
+
+func (s *Store) inspectProvenance(id string) (ProvenanceView, []byte, error) {
+	dir := filepath.Join(s.dir, id)
+	inst, err := s.Get(id)
+	if err != nil || inst.Manifest.ID != id {
+		return ProvenanceView{}, nil, errors.New("app is not installed")
+	}
+	if inst.Official {
+		return ProvenanceView{}, nil, ErrProvenanceSigned
+	}
+	path := filepath.Join(dir, "install.json")
+	info, err := os.Lstat(path)
+	if err != nil {
+		return ProvenanceView{}, nil, err
+	}
+	if info.Mode()&fs.ModeSymlink != 0 || !info.Mode().IsRegular() {
+		return ProvenanceView{}, nil, errInstallNotRegular
+	}
+	dev, ino, nlink, ok := installIdentity(info)
+	if !ok || nlink == 0 || nlink > 1 {
+		return ProvenanceView{}, nil, ErrProvenanceLinked
+	}
+	_, raw, err := readInstallBytes(dir)
+	if err != nil {
+		return ProvenanceView{}, nil, err
+	}
+	opened, err := os.Lstat(path)
+	if err != nil || !os.SameFile(info, opened) {
+		return ProvenanceView{}, nil, ErrProvenanceChanged
+	}
+	hash, err := normalizedPackageHash(dir)
+	if err != nil {
+		return ProvenanceView{}, nil, err
+	}
+	if hash == "" {
+		return ProvenanceView{}, nil, ErrProvenanceUnhashed
+	}
+	signed, _ := verifiedSignature(dir)
+	if inst.Signed {
+		signed = true
+	}
+	return ProvenanceView{
+		ID: id, Name: inst.Manifest.Name, Path: dir, PackageHash: hash, Signed: signed,
+		dev: dev, ino: ino, nlink: nlink, digest: installDigest(raw),
+	}, raw, nil
+}
+
+// verifiedSignature reports whether this directory carries a signature that
+// checks out against its own bytes. A publisher claim that does not verify
+// is not evidence. Official examples are signed for this purpose.
+func verifiedSignature(dir string) (bool, error) {
+	record, _, err := readInstallBytes(dir)
+	if err != nil {
+		return false, err
+	}
+	if record.Official {
+		return true, nil
+	}
+	if record.Publisher == "" || record.Signature == "" || record.Hash == "" {
+		return false, nil
+	}
+	digest, err := DigestDir(dir)
+	if err != nil || digest != record.Hash {
+		return false, nil
+	}
+	if err := VerifyDigest(record.Hash, record.Signature, record.Publisher); err != nil {
+		return false, nil
+	}
+	return true, nil
 }

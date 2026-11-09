@@ -30,6 +30,7 @@ func TestProvenanceLockNoticeAndConfirm(t *testing.T) {
 		t.Fatal(err)
 	}
 	a.refreshPlugins()
+	a.refreshProvenanceLocks()
 	a.route = routePlugins
 	tt := ui.NewTester(a.view, windowWidth, windowHeight)
 	if !tt.HasText("locked for the local API") {
@@ -39,9 +40,9 @@ func TestProvenanceLockNoticeAndConfirm(t *testing.T) {
 	if err := a.pluginManager.APIMayMutate(id); err == nil {
 		t.Fatal("取消确认后本机 API 被放行")
 	}
-	a.confirmProvenance = func(m plugin.Manifest, done func(bool)) {
-		if m.ID != id {
-			t.Fatalf("确认了别的应用: %s", m.ID)
+	a.confirmProvenance = func(view plugin.ProvenanceView, done func(bool)) {
+		if view.ID != id || view.Path == "" || view.PackageHash == "" || view.Signed {
+			t.Fatalf("确认窗信息不完整: %+v", view)
 		}
 		done(true)
 	}

@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+
+	"github.com/egoist/mygo"
 	"os"
 	"path/filepath"
 	"strings"
@@ -626,19 +628,14 @@ func TestStartedMarkerBlocksRemigration(t *testing.T) {
 }
 
 func TestFailedSentinelCreateDoesNotMigrate(t *testing.T) {
+	prev := createMigrationSentinelFile
+	createMigrationSentinelFile = func(string) error { return errors.New("injected sentinel failure") }
+	t.Cleanup(func() { createMigrationSentinelFile = prev })
 	sec := &scriptedSecrets{m: map[string][]byte{}}
 	root := t.TempDir()
-	plugins := filepath.Join(root, "plugins")
-	if err := os.MkdirAll(plugins, 0o700); err != nil {
-		t.Fatal(err)
-	}
-	s := NewStore(plugins, sec)
+	s := NewStore(filepath.Join(root, "plugins"), sec)
 	id := "local.personal.nosentinel"
 	plantLoose(t, s.Dir(), id)
-	if err := os.Chmod(root, 0o555); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = os.Chmod(root, 0o700) })
 	m, err := NewManager(s)
 	if err != nil {
 		t.Fatal(err)
@@ -757,9 +754,16 @@ func TestRecoveryRejectsSignedInstallRecord(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	body := fmt.Sprintf("{\n  \"installedVia\": \"local-api\",\n  \"packageHash\": %q,\n  \"hash\": %q,\n  \"publisher\": \"ed25519:attacker\",\n  \"signature\": \"forged\"\n}\n", hash, "sha256:"+strings.Repeat("ab", 32))
+	digest, err := DigestDir(filepath.Join(s.Dir(), first.PluginID))
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := fmt.Sprintf("{\n  \"installedVia\": \"local-api\",\n  \"packageHash\": %q,\n  \"hash\": %q,\n  \"publisher\": \"ed25519:attacker\",\n  \"signature\": \"ed25519:%s\"\n}\n", hash, digest, strings.Repeat("aa", 44))
 	if err := os.WriteFile(filepath.Join(s.Dir(), first.PluginID, "install.json"), []byte(body), 0o600); err != nil {
 		t.Fatal(err)
+	}
+	if got, err := s.PackageHash(first.PluginID); err != nil || got != hash {
+		t.Fatalf("恢复前置条件不成立，PackageHash=%q %v", got, err)
 	}
 	delete(s.provenanceMem, ProvenanceAccount(first.PluginID))
 	tx, err := os.MkdirTemp(m.transactionDir, "commit-")
@@ -777,6 +781,9 @@ func TestRecoveryRejectsSignedInstallRecord(t *testing.T) {
 		t.Fatal(err)
 	}
 	restarted, err := NewManager(s)
+	if err == nil || !strings.Contains(err.Error(), "无法记录已恢复应用的安装来源") {
+		t.Fatalf("恢复没有走到拒绝已签名记录的路径: %v", err)
+	}
 	if restarted != nil {
 		t.Cleanup(func() { restarted.Close() })
 	}
@@ -784,7 +791,188 @@ func TestRecoveryRejectsSignedInstallRecord(t *testing.T) {
 	if gerr == nil && found && !rec.Signed {
 		t.Fatal("恢复把带签名的 install.json 记成了未签名")
 	}
-	if err == nil {
-		requireCode(t, restarted.APIMayMutate(first.PluginID), "API_MUTATION_FORBIDDEN")
+}
+
+func TestSecretNotFoundIsNotAReadError(t *testing.T) {
+	sec := &notFoundSecrets{m: map[string][]byte{}}
+	root := t.TempDir()
+	s := NewStore(filepath.Join(root, "plugins"), sec)
+	id := "local.personal.notfound"
+	plantLoose(t, s.Dir(), id)
+	m, err := NewManager(s)
+	if err != nil {
+		t.Fatal(err)
 	}
+	t.Cleanup(func() { m.Close() })
+	if err := m.APIMayMutate(id); err != nil {
+		t.Fatal("ErrSecretNotFound 被当成读错误，迁移没有完成")
+	}
+}
+
+type notFoundSecrets struct {
+	mu sync.Mutex
+	m  map[string][]byte
+}
+
+func (s *notFoundSecrets) Get(key string) ([]byte, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	v, ok := s.m[key]
+	if !ok {
+		return nil, mygo.ErrSecretNotFound
+	}
+	return append([]byte(nil), v...), nil
+}
+func (s *notFoundSecrets) Set(key string, value []byte) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.m == nil {
+		s.m = map[string][]byte{}
+	}
+	s.m[key] = append([]byte(nil), value...)
+	return nil
+}
+func (s *notFoundSecrets) Delete(key string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	delete(s.m, key)
+	return nil
+}
+
+func stuckUnsigned(t *testing.T, id string) *Store {
+	t.Helper()
+	sec := &scriptedSecrets{m: map[string][]byte{}}
+	s := NewStore(filepath.Join(t.TempDir(), "plugins"), sec)
+	plantLoose(t, s.Dir(), id)
+	path, err := s.migrationSentinelPath()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte("1\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return s
+}
+
+func TestConfirmProvenancePinsTheOpenedSnapshot(t *testing.T) {
+	id := "local.personal.confirm"
+	s := stuckUnsigned(t, id)
+	locked, err := s.LockedLocalApps()
+	if err != nil || len(locked) != 1 || locked[0].Manifest.ID != id {
+		t.Fatalf("锁定列表: %+v %v", locked, err)
+	}
+	view, err := s.SnapshotProvenance(id)
+	if err != nil || view.Signed || view.Path == "" || view.PackageHash == "" {
+		t.Fatalf("快照: %+v %v", view, err)
+	}
+	if err := os.WriteFile(filepath.Join(s.Dir(), id, "index.js"), []byte(`export function page(){return {title:"Changed"};}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.ConfirmProvenance(view); !errors.Is(err, ErrProvenanceChanged) {
+		t.Fatalf("摘要变化仍被确认: %v", err)
+	}
+	if _, found, _ := s.getProvenance(id); found {
+		t.Fatal("失败的确认写下了记录")
+	}
+	m, err := NewManager(s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { m.Close() })
+	requireCode(t, m.APIMayMutate(id), "API_MUTATION_FORBIDDEN")
+	locked, err = s.LockedLocalApps()
+	if err != nil || len(locked) != 1 {
+		t.Fatalf("失败后离开了锁定列表: %+v %v", locked, err)
+	}
+	view, err = s.SnapshotProvenance(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.ConfirmProvenance(view); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.APIMayMutate(id); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestConfirmDoesNotDowngradeSignedApp(t *testing.T) {
+	id := "local.personal.downgrade"
+	s := stuckUnsigned(t, id)
+	dir := filepath.Join(s.Dir(), id)
+	if err := signInstall(t, dir); err != nil {
+		t.Fatal(err)
+	}
+	locked, err := s.LockedLocalApps()
+	if err != nil || len(locked) != 0 {
+		t.Fatalf("已签名应用出现在锁定列表: %+v %v", locked, err)
+	}
+	view, err := s.SnapshotProvenance(id)
+	if err != nil || !view.Signed {
+		t.Fatalf("快照没有标成已签名: %+v %v", view, err)
+	}
+	if err := s.ConfirmProvenance(view); !errors.Is(err, ErrProvenanceSigned) {
+		t.Fatalf("已签名确认没有返回错误: %v", err)
+	}
+	rec, found, gerr := s.getProvenance(id)
+	if gerr != nil || !found || !rec.Signed {
+		t.Fatalf("已验证签名没有按已签名记录: %+v found=%v err=%v", rec, found, gerr)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "install.json"), []byte("{}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.ConfirmProvenance(view); !errors.Is(err, ErrProvenanceChanged) {
+		t.Fatalf("打开窗口后换掉 install.json 仍被确认: %v", err)
+	}
+	rec, found, gerr = s.getProvenance(id)
+	if gerr != nil || !found || !rec.Signed {
+		t.Fatalf("换文件后签名记录被改掉: %+v found=%v err=%v", rec, found, gerr)
+	}
+	m, err := NewManager(s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { m.Close() })
+	requireCode(t, m.APIMayMutate(id), "API_MUTATION_FORBIDDEN")
+}
+
+func TestConfirmRejectsHardLinkedInstallRecord(t *testing.T) {
+	id := "local.personal.hardlink"
+	s := stuckUnsigned(t, id)
+	view, err := s.SnapshotProvenance(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	record := filepath.Join(s.Dir(), id, "install.json")
+	forged := filepath.Join(s.Dir(), "forged.json")
+	if err := os.WriteFile(forged, []byte("{}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(record); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Link(forged, record); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.ConfirmProvenance(view); err == nil {
+		t.Fatal("硬链接的 install.json 被确认")
+	}
+	if _, found, _ := s.getProvenance(id); found {
+		t.Fatal("硬链接确认写下了记录")
+	}
+}
+
+func signInstall(t *testing.T, dir string) error {
+	t.Helper()
+	digest, err := DigestDir(dir)
+	if err != nil {
+		return err
+	}
+	_, priv, err := ed25519.GenerateKey(nil)
+	if err != nil {
+		return err
+	}
+	pub := priv.Public().(ed25519.PublicKey)
+	body := fmt.Sprintf("{\n  \"installedVia\": \"store\",\n  \"hash\": %q,\n  \"publisher\": %q,\n  \"signature\": %q\n}\n", digest, PublicKeyString(pub), SignDigest(priv, digest))
+	return os.WriteFile(filepath.Join(dir, "install.json"), []byte(body), 0o600)
 }

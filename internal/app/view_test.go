@@ -38,7 +38,7 @@ func newTestApp(t *testing.T) *App {
 	a.runOnMain = func(fn func()) { fn() }
 	a.goAsync = func(fn func()) { fn() }
 	a.confirmInstall = func(_ plugin.Manifest, _ installRequest, done func(bool)) { done(true) }
-	a.confirmProvenance = func(_ plugin.Manifest, done func(bool)) { done(false) }
+	a.confirmProvenance = func(_ plugin.ProvenanceView, done func(bool)) { done(false) }
 	a.confirmConnect = func(string) bool { return true }
 	a.approve = func(approvalRequest) bool { return true }
 	a.dappConnected = map[string]bool{}

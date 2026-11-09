@@ -167,7 +167,7 @@ func (a *App) storeState(entry plugin.RegistryEntry) (*plugin.Installed, bool) {
 // openProvenanceConfirm is the native approval for re-saving one personal
 // app's install provenance after a credential-store failure. It does not
 // read install.json; ConfirmProvenance runs only after the user agrees.
-func (a *App) openProvenanceConfirm(m plugin.Manifest, done func(bool)) {
+func (a *App) openProvenanceConfirm(view plugin.ProvenanceView, done func(bool)) {
 	if a.win == nil || a.installOpen {
 		done(false)
 		return
@@ -203,10 +203,18 @@ func (a *App) openProvenanceConfirm(m plugin.Manifest, done func(bool)) {
 			c.Root().Background(p.bg)
 			ui.Column(c).Fill().Padding(20).Gap(12).Children(func() {
 				ui.Text(c, a.t(i18n.ProvenanceLockedTitle)).FontSize(20).FontWeight(700).MaxLines(2)
-				ui.Text(c, a.t(i18n.ProvenanceLockedBody, m.Name)).FontSize(13).MaxLines(5)
+				ui.Text(c, view.Name).FontSize(14).FontWeight(600).MaxLines(1)
+				ui.Text(c, a.t(i18n.ProvenanceLockedPath, view.Path)).FontSize(12).MaxLines(3)
+				ui.Text(c, a.t(i18n.ProvenanceLockedHash, view.PackageHash)).FontSize(12).MaxLines(2)
+				state := a.t(i18n.ProvenanceLockedUnsigned)
+				if view.Signed {
+					state = a.t(i18n.ProvenanceLockedSigned)
+				}
+				ui.Text(c, state).FontSize(12).MaxLines(1)
+				ui.Text(c, a.t(i18n.ProvenanceLockedWarn)).FontSize(13).MaxLines(6)
 				ui.Row(c).Gap(8).Children(func() {
-					a.primaryButton(c, a.t(i18n.ProvenanceLockedAction, m.Name), nil, false, func() { decide(true) })
-					a.softButton(c, a.t(i18n.Cancel), nil, p.muted, func() { decide(false) })
+					a.primaryButton(c, a.t(i18n.Cancel), nil, false, func() { decide(false) })
+					a.softButton(c, a.t(i18n.ProvenanceLockedAction, view.Name), nil, p.muted, func() { decide(true) })
 				})
 			})
 		}),

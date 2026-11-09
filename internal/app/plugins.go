@@ -71,6 +71,7 @@ func (a *App) initPlugins(dir string) {
 		a.pluginManager = manager
 	}
 	a.refreshPlugins()
+	a.refreshProvenanceLocks()
 }
 
 // refreshPlugins re-reads the plugins folder. It runs on the main thread,
@@ -121,6 +122,24 @@ func (a *App) refreshPlugins() {
 	if a.route.kind == "plugin" && !a.pluginPageAvailable(items, a.route.id) {
 		a.closePluginPage()
 	}
+}
+
+// refreshProvenanceLocks reloads the locked-app list off the UI thread.
+// The Apps page only reads the cached slice.
+func (a *App) refreshProvenanceLocks() {
+	if a.plugins == nil || a.goAsync == nil || a.runOnMain == nil {
+		return
+	}
+	plugins := a.plugins
+	a.goAsync(func() {
+		list, err := plugins.LockedLocalApps()
+		a.runOnMain(func() {
+			if err == nil && a.plugins == plugins {
+				a.provenanceLocked = list
+			}
+			a.invalidate()
+		})
+	})
 }
 
 // pluginPageAvailable tells whether id is installed, readable and on.
@@ -185,6 +204,7 @@ func (a *App) installPlugin() {
 		}
 		a.pluginNotice = a.t(i18n.PluginInstalled, m.Name)
 		a.refreshPlugins()
+		a.refreshProvenanceLocks()
 		a.invalidate()
 	})
 }
@@ -233,6 +253,7 @@ func (a *App) installPluginZip() {
 		}
 		a.pluginNotice = a.t(i18n.PluginInstalled, m.Name)
 		a.refreshPlugins()
+		a.refreshProvenanceLocks()
 		a.invalidate()
 	})
 }
@@ -261,6 +282,7 @@ func (a *App) removeBrokenPlugin(dir string) {
 	}
 	a.pluginNotice = a.t(i18n.PluginRemoved, name)
 	a.refreshPlugins()
+	a.refreshProvenanceLocks()
 	a.invalidate()
 }
 
@@ -299,6 +321,7 @@ func (a *App) removePlugin(id string) {
 	delete(a.pluginLogs, id)
 	a.pluginNotice = a.t(i18n.PluginRemoved, inst.Manifest.Name)
 	a.refreshPlugins()
+	a.refreshProvenanceLocks()
 	a.invalidate()
 }
 

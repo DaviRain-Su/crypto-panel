@@ -42,8 +42,8 @@ func (a *App) pluginsView(c *ui.Context) {
 }
 
 func (a *App) provenanceLockNotice(c *ui.Context) {
-	locked, err := a.pluginsLocked()
-	if err != nil || len(locked) == 0 {
+	locked := a.provenanceLocked
+	if len(locked) == 0 {
 		return
 	}
 	p := a.pal
@@ -59,29 +59,34 @@ func (a *App) provenanceLockNotice(c *ui.Context) {
 	})
 }
 
-func (a *App) pluginsLocked() ([]plugin.Installed, error) {
-	if a.plugins == nil {
-		return nil, nil
-	}
-	return a.plugins.LockedLocalApps()
-}
-
 func (a *App) askProvenanceConfirm(id, name string) {
-	manifest := plugin.Manifest{ID: id, Name: name}
+	if a.plugins == nil {
+		return
+	}
+	view, err := a.plugins.SnapshotProvenance(id)
+	if err != nil || view.Signed || view.PackageHash == "" {
+		a.pluginNotice = a.t(i18n.ProvenanceLockedFailed)
+		a.invalidate()
+		a.refreshProvenanceLocks()
+		return
+	}
 	ask := a.confirmProvenance
 	if ask == nil {
 		ask = a.openProvenanceConfirm
 	}
-	ask(manifest, func(ok bool) {
+	ask(view, func(ok bool) {
 		if !ok || a.plugins == nil {
 			return
 		}
-		if err := a.plugins.ConfirmProvenance(id); err != nil {
-			a.pluginNotice = err.Error()
+		if err := a.plugins.ConfirmProvenance(view); err != nil || a.pluginManager != nil && a.pluginManager.APIMayMutate(id) != nil {
+			a.pluginNotice = a.t(i18n.ProvenanceLockedFailed)
+			a.invalidate()
+			a.refreshProvenanceLocks()
 			return
 		}
 		a.pluginNotice = a.t(i18n.ProvenanceLockedDone, name)
 		a.refreshPlugins()
+		a.invalidate()
 	})
 }
 
