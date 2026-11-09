@@ -49,9 +49,11 @@ shown and watched but not yet used to send (that needs a bundler).
   one module, run each in its own [moejs](https://github.com/MoeForge/moejs)
   runtime — pure Go, one realm each, with memory and time limits — and only the
   host functions its manifest grants. Installed apps sit on the Apps page as a
-  launcher: click one to open it, or open its settings, logs and switch. An app
-  installs from a folder, a local zip, or the store, with its permissions
-  shown before anything is unpacked.
+  launcher: click one to open it, or open its settings, logs and switch. A
+  first launch includes two official examples, Gas and Fear & Greed, so that
+  launcher shows how an app is opened. Any other app installs from a folder,
+  a local zip, or the store, with its permissions shown before anything is
+  unpacked.
 - **Plugin UI is data.** A plugin returns pages (`stats`, `table`, `cards`,
   `links`, `chart`); the shell draws them with native UI. No HTML, no
   plugin-drawn dialogs, so an approval prompt cannot be imitated.
@@ -180,6 +182,15 @@ An app installs three ways:
 - **Store** reads the registry URL set in Settings, with a search box over
   names, ids, authors and descriptions, and installs a signed entry after the
   permission prompt.
+
+A first launch also includes two official examples, so the launcher is not
+empty: **Gas** (`com.example.gas`) and **Fear & Greed**
+(`com.example.feargreed`). Gas names chains for `host.rpc` and never an RPC
+URL; Fear & Greed uses allowlisted `host.fetch`. The launcher labels them
+**Official**. They run with only the permissions in their manifests, so they
+cannot see a key and cannot draw or dismiss an approval. Removing one leaves
+it removed. Folder, zip and store installs are unchanged for every other app,
+and a folder or zip install stays labeled **Unsigned**.
 
 Local installs are unsigned and the app says so. See
 [`docs/store.md`](docs/store.md) for the registry format and signing.
@@ -350,9 +361,10 @@ network access to the NEAR testnet RPC and 1Click.
 
 11. **Ask a plugin for a NEAR signature (optional).** Install a plugin whose
     manifest grants `sign` and a NEAR chain; its `host.requestNearSign` opens
-    the same approval window. The test fixtures in
-    `internal/plugin/testdata/examples` show the host API. No NEAR plugin is
-    shipped.
+    the same approval window. Gas and Fear & Greed ship with the shell as
+    official examples of how apps are used; neither one asks to sign, and no
+    NEAR plugin is shipped. Their source is
+    `internal/plugin/testdata/examples`.
 
 ## Tests
 

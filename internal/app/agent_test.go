@@ -13,6 +13,7 @@ import (
 
 	"github.com/egoist/mygo/ui"
 
+	"github.com/davirain-su/crypto-panel/internal/agent"
 	"github.com/davirain-su/crypto-panel/internal/chain"
 	"github.com/davirain-su/crypto-panel/internal/chains"
 	"github.com/davirain-su/crypto-panel/internal/pages"
@@ -80,17 +81,27 @@ func TestAgentPortfolio(t *testing.T) {
 
 func TestAgentPlugins(t *testing.T) {
 	a := newTestApp(t)
-	installExamplePlugin(t, a, "gas")
 	plugins := a.Plugins()
-	if len(plugins) != 1 {
+	if len(plugins) != 2 {
 		t.Fatalf("plugins = %+v", plugins)
 	}
-	p := plugins[0]
-	if p.ID != "com.example.gas" || p.Name != "Gas" || !p.Enabled {
-		t.Fatalf("plugin = %+v", p)
+	byID := map[string]agent.Plugin{}
+	for _, p := range plugins {
+		byID[p.ID] = p
 	}
-	if len(p.Permissions.Chains) != 2 || len(p.Pages) != 1 || p.Pages[0] != "overview" {
-		t.Fatalf("plugin = %+v", p)
+	p, ok := byID["com.example.gas"]
+	if !ok || p.Name != "Gas" || !p.Enabled || !p.Official || p.Signed {
+		t.Fatalf("gas = %+v", p)
+	}
+	if len(p.Permissions.Chains) != 2 || len(p.Pages) != 1 || p.Pages[0] != "overview" || p.Permissions.Sign {
+		t.Fatalf("gas = %+v", p)
+	}
+	fg, ok := byID["com.example.feargreed"]
+	if !ok || fg.Name != "Fear & Greed" || !fg.Official || fg.Signed || fg.Permissions.Sign {
+		t.Fatalf("feargreed = %+v", fg)
+	}
+	if len(fg.Permissions.Network) != 1 || fg.Permissions.Network[0] != "api.alternative.me" {
+		t.Fatalf("feargreed = %+v", fg)
 	}
 }
 
@@ -105,7 +116,15 @@ func TestAgentPluginsShowsBrokenFolders(t *testing.T) {
 	}
 	a.refreshPlugins()
 	plugins := a.Plugins()
-	if len(plugins) != 1 || plugins[0].Broken == "" || plugins[0].Folder != "broken" {
+	var broken agent.Plugin
+	found := false
+	for _, p := range plugins {
+		if p.Folder == "broken" {
+			broken = p
+			found = true
+		}
+	}
+	if !found || broken.Broken == "" || len(plugins) != 3 {
 		t.Fatalf("plugins = %+v", plugins)
 	}
 }

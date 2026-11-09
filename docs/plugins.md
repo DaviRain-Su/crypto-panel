@@ -14,10 +14,16 @@ it returns with native UI. An app never draws, never injects HTML, never sees
 a key, and cannot open a window or an approval prompt. Everything it can do is
 a function the shell installs on the `host` global, granted by the manifest.
 
-The examples in
-[`internal/plugin/testdata/examples`](../internal/plugin/testdata/examples)
-are complete working apps: `gas` reads two EVM chains through the shell's RPC
-broker, `fear-greed` fetches one allowlisted API and draws a chart.
+Two official examples ship with the shell, so a first launch already has
+apps to open from the Apps launcher. **Gas** (`com.example.gas`) reads
+Ethereum and Base through `host.rpc`, naming chains and never an RPC URL.
+**Fear & Greed** (`com.example.feargreed`) fetches one allowlisted API and
+draws a chart. Their source is
+[`internal/plugin/testdata/examples`](../internal/plugin/testdata/examples).
+They are labeled **Official**. They still run with only the permissions in
+their manifests: they cannot see a key, and they cannot draw or dismiss an
+approval. Installing any other app from a folder or a zip is still marked
+**unsigned**.
 
 ## plugin.json
 
@@ -229,6 +235,12 @@ can fail early with the shell's own error instead of at the end of `page()`.
 
 ## Install, publish, sign
 
+- **Official examples**: Gas and Fear & Greed are copied in on first launch
+  from the embedded copies of `testdata/examples`, and the launcher labels
+  them **Official**. Their files are checked against that embedded copy every
+  time the shell reads them; a copy that changed shows as broken instead of
+  running. Removing one leaves it removed. Folder, zip, and store installs
+  keep their own rules.
 - **From a folder**: Apps → **Install from folder…**. The permission prompt
   shows what the app may do; a folder install is marked **unsigned**.
 - **From a zip**: Apps → **Install from zip…**. A single top-level folder is
@@ -252,11 +264,18 @@ broken instead of running.
 
 ## Trying it
 
+Gas and Fear & Greed are already on the Apps launcher after a first launch.
+**Open** shows the page; **App settings** shows the switch, pages and log.
+
+To start a new app from the gas example, copy it and give it a new id (the
+shell already uses `com.example.gas`):
+
 ```sh
 mkdir -p ~/my-app
 cp internal/plugin/testdata/examples/gas/* ~/my-app/
 ```
 
-Then Apps → **Install from folder…** → `~/my-app`. The app appears on the
-launcher; **Open** shows its page, **App settings** shows its switch, pages,
-settings form and log.
+Then change `id` in `plugin.json` and Apps → **Install from folder…** →
+`~/my-app`. A folder install is marked **unsigned**. The app appears on the
+launcher beside the official examples; **Open** shows its page, **App
+settings** shows its switch, pages, settings form and log.

@@ -325,6 +325,7 @@ const (
 	PluginEmptyWhy      Key = "pluginEmptyWhy"
 	PluginOpenStore     Key = "pluginOpenStore"
 	PluginUnsigned      Key = "pluginUnsigned"
+	PluginOfficial      Key = "pluginOfficial"
 	PluginLogs          Key = "pluginLogs"
 	PluginLogsEmpty     Key = "pluginLogsEmpty"
 	PluginRemoveTitle   Key = "pluginRemoveTitle"
@@ -711,6 +712,7 @@ var messages = map[Key]map[string]string{
 	PluginEmptyWhy:      {English: "An app is a plugin: a folder with plugin.json and a JavaScript file. Install one from a folder, a zip, or the store.", Chinese: "应用就是插件：包含 plugin.json 和 JavaScript 文件的文件夹。可以从文件夹、zip 或商店安装。"},
 	PluginOpenStore:     {English: "Open store", Chinese: "打开商店"},
 	PluginUnsigned:      {English: "Unsigned", Chinese: "未签名"},
+	PluginOfficial:      {English: "Official", Chinese: "官方"},
 	PluginLogs:          {English: "Logs", Chinese: "日志"},
 	PluginLogsEmpty:     {English: "Nothing logged yet.", Chinese: "还没有日志。"},
 	PluginRemoveTitle:   {English: "Remove app?", Chinese: "移除应用？"},
@@ -740,7 +742,7 @@ var messages = map[Key]map[string]string{
 	StoreLoadFailed:    {English: "Could not load the store: %s", Chinese: "无法加载商店：%s"},
 	StoreRetry:         {English: "Retry", Chinese: "重试"},
 	StoreNoRegistry:    {English: "No plugin registry yet", Chinese: "还没有设置插件源"},
-	StoreNoRegistryWhy: {English: "The app ships with no plugins. Add a registry URL in Settings to browse signed plugins, or install one from a folder.", Chinese: "应用默认不带任何插件。在设置里填入插件源地址即可浏览已签名插件，也可以从文件夹安装。"},
+	StoreNoRegistryWhy: {English: "Add a registry URL in Settings to browse signed plugins, or install one from a folder.", Chinese: "在设置里填入插件源地址即可浏览已签名插件，也可以从文件夹安装。"},
 	StoreOpenSettings:  {English: "Open Settings", Chinese: "打开设置"},
 	StoreSource:        {English: "Registry: %s", Chinese: "插件源：%s"},
 	StoreSourceFolder:  {English: "a folder", Chinese: "本地文件夹"},

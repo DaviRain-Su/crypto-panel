@@ -8,8 +8,9 @@ import (
 	"testing"
 )
 
-// examplesDir is where the example plugins live: test fixtures, not shipped
-// with the app.
+// examplesDir is the source of the official examples. The shell embeds these
+// folders and copies them in on first launch; tests also install them by
+// hand, which stays an unsigned folder install.
 var examplesDir = filepath.Join("testdata", "examples")
 
 // installExample installs one example into a fresh store and returns its

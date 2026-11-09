@@ -123,20 +123,19 @@ func TestScreenshots(t *testing.T) {
 	a.nearSendNotice = i18n.T(i18n.English, i18n.WalletNearSendSent, a.nearSendHash)
 	save(t, ui.NewTester(a.view, windowWidth, windowHeight), "new-wallet-near")
 
+	// First launch puts the two official examples on the launcher. The empty
+	// launcher is what remains after they are removed; the store catalog is
+	// still empty until a registry URL is set.
 	a = newTestApp(t)
-	a.route = routePlugins
-	save(t, ui.NewTester(a.view, windowWidth, windowHeight), "new-plugins-empty")
-	a.setPluginTab("store")
-	save(t, ui.NewTester(a.view, windowWidth, windowHeight), "new-store-empty")
-
-	// The launcher with two installed apps, and one app's own settings page.
-	a = newTestApp(t)
-	installExamplePlugin(t, a, "gas")
-	installExamplePlugin(t, a, "fear-greed")
 	a.route = routePlugins
 	save(t, ui.NewTester(a.view, windowWidth, windowHeight), "new-apps-launcher")
 	a.openPluginDetail("com.example.gas")
 	save(t, ui.NewTester(a.view, windowWidth, windowHeight), "new-apps-detail")
+	removeAllPlugins(t, a)
+	a.closePluginDetail()
+	save(t, ui.NewTester(a.view, windowWidth, windowHeight), "new-plugins-empty")
+	a.setPluginTab("store")
+	save(t, ui.NewTester(a.view, windowWidth, windowHeight), "new-store-empty")
 
 	a = newTestApp(t)
 	a.passkeyKind = passkey.KindTouchID

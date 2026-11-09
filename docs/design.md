@@ -398,7 +398,7 @@ crypto-panel/
   main.go                 mygo.App.SetName; app.New; App.Run
   internal/app/           shell: window, sidebar, routes, pages, settings
   internal/plugin/        manifest, moejs runtime, host API, store, registry, install
-  internal/plugin/testdata/examples/  example plugins used by the tests
+  internal/plugin/testdata/examples/  Gas and Fear & Greed, embedded on first launch
   internal/pages/         declarative page tree → ui
   internal/passkey/       the system check: LocalAuthentication via purego
   internal/passkeywallet/ NEAR passkey wallet: StateInit, RequestMessage, proof

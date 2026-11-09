@@ -16,6 +16,7 @@ var live = flag.Bool("live", false, "hit the public endpoints in TestLiveGasPlug
 
 func TestPluginsEmptyView(t *testing.T) {
 	a := newTestApp(t)
+	removeAllPlugins(t, a)
 	a.route = routePlugins
 	tt := ui.NewTester(a.view, windowWidth, windowHeight)
 	for _, want := range []string{"No apps yet", "Install from folder…", "Install from zip…", "plugin.json"} {
@@ -25,10 +26,20 @@ func TestPluginsEmptyView(t *testing.T) {
 	}
 }
 
-// installExamplePlugin copies one shipped example into the app's store.
+// installExamplePlugin returns one example from the app's store, installing
+// the testdata folder only when first launch has not already seeded it.
 func installExamplePlugin(t *testing.T, a *App, name string) string {
 	t.Helper()
-	m, err := a.plugins.Install(filepath.Join("..", "plugin", "testdata", "examples", name))
+	src := filepath.Join("..", "plugin", "testdata", "examples", name)
+	m, err := plugin.LoadManifest(src)
+	if err != nil {
+		t.Fatalf("manifest %s: %v", name, err)
+	}
+	if _, err := a.plugins.Get(m.ID); err == nil {
+		a.refreshPlugins()
+		return m.ID
+	}
+	m, err = a.plugins.Install(src)
 	if err != nil {
 		t.Fatalf("installing %s: %v", name, err)
 	}
@@ -36,21 +47,115 @@ func installExamplePlugin(t *testing.T, a *App, name string) string {
 	return m.ID
 }
 
-func TestPluginsLauncherShowsInstalled(t *testing.T) {
+// removeAllPlugins deletes every installed app, including the official
+// examples a first launch seeds.
+func removeAllPlugins(t *testing.T, a *App) {
+	t.Helper()
+	items, err := a.plugins.List()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, item := range items {
+		if item.Manifest.ID != "" {
+			if err := a.plugins.Remove(item.Manifest.ID); err != nil {
+				t.Fatal(err)
+			}
+			continue
+		}
+		if err := a.plugins.RemoveAt(item.Dir); err != nil {
+			t.Fatal(err)
+		}
+	}
+	a.refreshPlugins()
+}
+
+func TestOfficialExamplesOnFirstLaunch(t *testing.T) {
 	a := newTestApp(t)
-	installExamplePlugin(t, a, "gas")
 	a.route = routePlugins
 	tt := ui.NewTester(a.view, windowWidth, windowHeight)
-	for _, want := range []string{"Gas", "Unsigned", "v1.0.0", "Open", "App settings"} {
+	for _, want := range []string{"Gas", "Fear & Greed", "Official", "v1.0.0", "Open", "App settings", "2 APPS · 2 ON"} {
 		if !tt.HasText(want) {
 			t.Errorf("missing %q in %q", want, tt.Texts())
 		}
 	}
-	if err := tt.Click("Open"); err != nil {
+	if tt.HasText("Unsigned") || tt.HasText("No apps yet") {
+		t.Fatalf("official examples are labeled as a local install: %q", tt.Texts())
+	}
+	for _, id := range []string{"com.example.gas", "com.example.feargreed"} {
+		inst, ok := a.installedPlugin(id)
+		if !ok || !inst.Official || inst.Signed || inst.Source != plugin.OfficialSource {
+			t.Fatalf("%s = %+v, ok %v", id, inst, ok)
+		}
+		if inst.Manifest.Permissions.Sign || len(inst.Manifest.Permissions.Read) != 0 {
+			t.Fatalf("%s permissions = %+v", id, inst.Manifest.Permissions)
+		}
+	}
+	gas, _ := a.installedPlugin("com.example.gas")
+	if len(gas.Manifest.Permissions.Chains) != 2 || len(gas.Manifest.Permissions.Network) != 0 {
+		t.Fatalf("gas permissions = %+v", gas.Manifest.Permissions)
+	}
+	fg, _ := a.installedPlugin("com.example.feargreed")
+	if len(fg.Manifest.Permissions.Network) != 1 || fg.Manifest.Permissions.Network[0] != "api.alternative.me" ||
+		len(fg.Manifest.Permissions.Chains) != 0 {
+		t.Fatalf("feargreed permissions = %+v", fg.Manifest.Permissions)
+	}
+	a.openPluginDetail("com.example.gas")
+	tt = ui.NewTester(a.view, windowWidth, windowHeight)
+	for _, want := range []string{"All apps", "com.example.gas", "Official", "Logs"} {
+		if !tt.HasText(want) {
+			t.Errorf("missing %q in %q", want, tt.Texts())
+		}
+	}
+	if tt.HasText("Unsigned") {
+		t.Fatalf("app settings calls the official example unsigned: %q", tt.Texts())
+	}
+	a.openPluginApp("com.example.gas")
+	if a.route.kind != "plugin" || a.route.id != "com.example.gas" || a.route.page != "overview" {
+		t.Fatalf("Open went to %+v", a.route)
+	}
+}
+
+func TestFolderInstallStaysUnsigned(t *testing.T) {
+	a := newTestApp(t)
+	dir := filepath.Join(t.TempDir(), "local")
+	writeAgentPlugin(t, dir, "com.example.local", "export function page() { return { title: 'Local' }; }")
+	if _, err := a.plugins.Install(dir); err != nil {
 		t.Fatal(err)
 	}
-	if a.route.kind != "plugin" || a.route.page != "overview" {
-		t.Fatalf("Open went to %+v", a.route)
+	a.refreshPlugins()
+	a.route = routePlugins
+	tt := ui.NewTester(a.view, windowWidth, windowHeight)
+	if !tt.HasText("Unsigned") || !tt.HasText("Official") {
+		t.Fatalf("folder and official installs are not both labeled: %q", tt.Texts())
+	}
+	inst, ok := a.installedPlugin("com.example.local")
+	if !ok || inst.Official || inst.Signed || inst.Source != "" {
+		t.Fatalf("folder install = %+v, ok %v", inst, ok)
+	}
+}
+
+func TestTamperedOfficialExampleDoesNotOpen(t *testing.T) {
+	a := newTestApp(t)
+	inst, err := a.plugins.Get("com.example.gas")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(inst.Dir, "index.js"), []byte("tampered"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	a.refreshPlugins()
+	a.route = routePlugins
+	tt := ui.NewTester(a.view, windowWidth, windowHeight)
+	if !tt.HasText("changed") {
+		t.Fatalf("the tampered example is not shown as broken: %q", tt.Texts())
+	}
+	a.openPluginApp("com.example.gas")
+	if a.route.kind == "plugin" {
+		t.Fatalf("Open ran a tampered official example: %+v", a.route)
+	}
+	a.openPluginPage("com.example.gas", "overview")
+	if a.pluginView.err == "" || a.pluginView.official || a.pluginView.page.Title != "" {
+		t.Fatalf("page = %+v", a.pluginView)
 	}
 }
 
@@ -59,10 +164,13 @@ func TestPluginsAppDetail(t *testing.T) {
 	id := installExamplePlugin(t, a, "gas")
 	a.openPluginDetail(id)
 	tt := ui.NewTester(a.view, windowWidth, windowHeight)
-	for _, want := range []string{"All apps", id, "Remove", "Logs", "Gas"} {
+	for _, want := range []string{"All apps", id, "Remove", "Logs", "Gas", "Official"} {
 		if !tt.HasText(want) {
 			t.Errorf("missing %q in %q", want, tt.Texts())
 		}
+	}
+	if tt.HasText("Unsigned") {
+		t.Fatalf("official example is unsigned: %q", tt.Texts())
 	}
 	if err := tt.Click("All apps"); err != nil {
 		t.Fatal(err)
@@ -86,6 +194,31 @@ func TestPluginsBrokenFolder(t *testing.T) {
 	tt := ui.NewTester(a.view, windowWidth, windowHeight)
 	if !tt.HasText("broken") {
 		t.Fatalf("the broken folder is not shown: %q", tt.Texts())
+	}
+}
+
+func TestOfficialPageHeader(t *testing.T) {
+	a := newTestApp(t)
+	a.route = route{kind: "plugin", id: "com.example.gas", page: "overview"}
+	a.pluginView = pluginPageState{
+		key:      a.pluginKey(),
+		name:     "Gas",
+		official: true,
+		page: pages.Page{
+			Title: "Gas",
+			Sections: []pages.Section{{
+				Stats: []pages.Stat{{Label: "Ethereum gas", Value: "1.00 gwei"}},
+			}},
+		},
+	}
+	tt := ui.NewTester(a.view, windowWidth, windowHeight)
+	for _, want := range []string{"Gas", "Official", "Ethereum gas", "1.00 gwei"} {
+		if !tt.HasText(want) {
+			t.Errorf("missing %q in %q", want, tt.Texts())
+		}
+	}
+	if tt.HasText("Unsigned") {
+		t.Fatalf("the official page is marked unsigned: %q", tt.Texts())
 	}
 }
 

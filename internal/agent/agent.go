@@ -65,7 +65,9 @@ type Amount struct {
 	Contract string `json:"contract,omitempty"`
 }
 
-// Plugin is one installed app, as GET /v0/plugins lists it.
+// Plugin is one installed app, as GET /v0/plugins lists it. Signed is a
+// registry install whose files still match. Official is a first-party
+// example shipped with the shell. The two are independent.
 type Plugin struct {
 	ID          string      `json:"id"`
 	Name        string      `json:"name"`
@@ -74,6 +76,7 @@ type Plugin struct {
 	Author      string      `json:"author,omitempty"`
 	Enabled     bool        `json:"enabled"`
 	Signed      bool        `json:"signed"`
+	Official    bool        `json:"official"`
 	Broken      string      `json:"broken,omitempty"`
 	Folder      string      `json:"folder,omitempty"`
 	Permissions Permissions `json:"permissions"`

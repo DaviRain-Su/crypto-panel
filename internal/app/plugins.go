@@ -29,12 +29,14 @@ type pluginPageState struct {
 	key      pluginPageKey
 	name     string
 	unsigned bool
+	official bool
 	page     pages.Page
 	err      string
 	loading  bool
 }
 
-// initPlugins opens the plugins folder under the app's data directory.
+// initPlugins opens the plugins folder under the app's data directory and
+// seeds the official examples on first launch.
 func (a *App) initPlugins(dir string) {
 	a.plugins = plugin.NewStore(
 		filepath.Join(dir, "plugins"),
@@ -45,6 +47,9 @@ func (a *App) initPlugins(dir string) {
 	a.pluginEnabled = map[string]*bool{}
 	a.pluginDrafts = map[string]*string{}
 	a.pluginLogsOpen = map[string]bool{}
+	if err := a.plugins.EnsureOfficial(); err != nil {
+		a.pluginNotice = err.Error()
+	}
 	a.refreshPlugins()
 }
 
@@ -412,7 +417,16 @@ func (a *App) loadPluginPage() {
 	state := pluginPageState{
 		key:      key,
 		name:     inst.Manifest.Name,
-		unsigned: !inst.Signed,
+		unsigned: inst.Err == "" && !inst.Signed && !inst.Official,
+		official: inst.Err == "" && inst.Official,
+	}
+	// A failed integrity check is the same wall as a broken manifest: the
+	// page does not run, official or signed.
+	if inst.Err != "" {
+		a.stopRunner(key.id)
+		state.err = inst.Err
+		a.pluginView = state
+		return
 	}
 	if !inst.Enabled {
 		state.err = a.t(i18n.PluginDisabled)
