@@ -639,4 +639,17 @@ func TestParseRegistrySkipLogIsQuotedAndCapped(t *testing.T) {
 	if !strings.Contains(out, "skipped 1 more local.* registry entries") {
 		t.Fatalf("没有汇总被省略的条目: %q", out)
 	}
+	buf.Reset()
+	wide := "local." + strings.Repeat("中", 80)
+	body, err = json.Marshal(Registry{Version: 1, Name: "Wide", Plugins: []RegistryEntry{{ID: wide}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ParseRegistry(body); err != nil {
+		t.Fatal(err)
+	}
+	logged := buf.String()
+	if !strings.Contains(logged, strings.Repeat("中", 58)) || strings.Contains(logged, strings.Repeat("中", 59)) {
+		t.Fatalf("截断没有按字符而不是字节: %q", logged)
+	}
 }

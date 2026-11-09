@@ -261,14 +261,18 @@ func (s *Store) Remove(id string) error {
 	return s.remove(id)
 }
 
+// removePluginDir deletes an app directory. Tests replace it so a failed
+// uninstall can be injected without depending on directory permissions.
+var removePluginDir = os.RemoveAll
+
 func (s *Store) remove(id string) error {
-	s.forgetSeenHash(id)
 	dir := filepath.Join(s.dir, id)
 	kv := &KV{path: filepath.Join(dir, "kv.json")}
 	lock := kv.fileLock()
 	lock.Lock()
 	defer lock.Unlock()
 	if _, err := os.Lstat(dir); errors.Is(err, fs.ErrNotExist) {
+		s.forgetSeenHash(id)
 		return s.reportProvenanceDelete(id)
 	} else if err != nil {
 		return managementError("REMOVE_FAILED", "无法读取应用目录", 500)
@@ -286,9 +290,10 @@ func (s *Store) remove(id string) error {
 			}
 		}
 	}
-	if os.RemoveAll(dir) != nil {
+	if removePluginDir(dir) != nil {
 		return managementError("REMOVE_FAILED", "无法删除应用目录", 500)
 	}
+	s.forgetSeenHash(id)
 	return s.reportProvenanceDelete(id)
 }
 

@@ -6,9 +6,13 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
+	"sync"
 	"testing"
+	"unsafe"
 
+	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
 
 	"github.com/davirain-su/lintel/internal/i18n"
@@ -113,6 +117,130 @@ func TestProvenanceLockNoticeAndConfirm(t *testing.T) {
 	}
 	if tt.HasText("Confirm Locked") {
 		t.Fatal("确认成功后锁定按钮还在")
+	}
+}
+
+func TestProvenanceCancelButtonDoesNotConfirm(t *testing.T) {
+	a := newTestApp(t)
+	confirmed := false
+	decide := func(ok bool) {
+		if ok {
+			confirmed = true
+		}
+	}
+	cancel := provenanceConfirmClosed(decide)
+	tt := ui.NewTester(a.provenanceConfirmView(plugin.ProvenanceView{
+		Name: "Locked", Path: "/tmp/locked", PackageHash: "sha256:ab",
+	}, decide, cancel), 460, 360)
+	info, ok := tt.Access("Cancel")
+	if !ok {
+		t.Fatalf("没有取消按钮: %q", tt.Texts())
+	}
+	tt.ClickAt(info.Bounds.X+info.Bounds.W/2, info.Bounds.Y+info.Bounds.H/2)
+	if confirmed {
+		t.Fatal("取消按钮被当成了确认")
+	}
+}
+
+func TestProvenanceWindowCloseWiringDoesNotConfirm(t *testing.T) {
+	a := newTestApp(t)
+	a.win = new(mygo.Window)
+	var opened *mygo.Window
+	prev := newProvenanceWindow
+	newProvenanceWindow = func(mygo.WindowOptions) *mygo.Window {
+		opened = new(mygo.Window)
+		return opened
+	}
+	prevFocus := focusProvenanceWindow
+	focusProvenanceWindow = func(*mygo.Window) {}
+	prevClose := closeProvenanceWindow
+	closeProvenanceWindow = func(*mygo.Window) {}
+	t.Cleanup(func() {
+		newProvenanceWindow = prev
+		focusProvenanceWindow = prevFocus
+		closeProvenanceWindow = prevClose
+	})
+	confirmed := false
+	a.openProvenanceConfirm(plugin.ProvenanceView{Name: "Locked", Path: "/tmp/locked", PackageHash: "sha256:ab"}, func(ok bool) {
+		if ok {
+			confirmed = true
+		}
+	})
+	if opened == nil {
+		t.Fatal("没有创建确认窗")
+	}
+	fireProvenanceClose(opened)
+	if confirmed {
+		t.Fatal("窗口关闭回调被当成了确认")
+	}
+}
+
+func TestSignedSnapshotDoesNotOpenConfirm(t *testing.T) {
+	a := newTestApp(t)
+	sec := a.pluginSecrets.(memStore)
+	delete(sec, "provenance:migration")
+	id := "local.personal.locked"
+	appDir := filepath.Join(a.plugins.Dir(), id)
+	if err := os.MkdirAll(appDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	manifest := []byte(`{"id":"local.personal.locked","name":"Locked","version":"1.0.0","main":"index.js","permissions":{"storageKb":1},"navigation":[{"title":"Overview","page":"overview"}]}`)
+	if err := os.WriteFile(filepath.Join(appDir, "plugin.json"), manifest, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(appDir, "index.js"), []byte(`export function page(){return {title:"Locked"};}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	digest, err := plugin.DigestDir(appDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, priv, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pub := priv.Public().(ed25519.PublicKey)
+	body := fmt.Sprintf("{\n  \"installedVia\": \"store\",\n  \"hash\": %q,\n  \"publisher\": %q,\n  \"signature\": %q\n}\n", digest, plugin.PublicKeyString(pub), plugin.SignDigest(priv, digest))
+	if err := os.WriteFile(filepath.Join(appDir, "install.json"), []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	a.refreshPlugins()
+	a.refreshProvenanceLocks()
+	asked := false
+	a.confirmProvenance = func(_ plugin.ProvenanceView, done func(bool)) {
+		asked = true
+		done(true)
+	}
+	a.askProvenanceConfirm(id, "Locked")
+	if asked {
+		t.Fatal("已签名快照仍进入了确认")
+	}
+	if _, ok := sec[plugin.ProvenanceAccount(id)]; ok {
+		t.Fatal("已签名快照写下了记录")
+	}
+}
+
+func fireProvenanceClose(w *mygo.Window) {
+	rv := reflect.ValueOf(w).Elem().FieldByName("onClose")
+	type closeListener struct {
+		id   uint64
+		fn   func(*mygo.CloseEvent)
+		once bool
+	}
+	type closeListeners struct {
+		mu   sync.Mutex
+		next uint64
+		list []closeListener
+	}
+	list := (*closeListeners)(unsafe.Pointer(rv.UnsafeAddr()))
+	list.mu.Lock()
+	fns := append([]closeListener(nil), list.list...)
+	list.mu.Unlock()
+	if len(fns) == 0 {
+		panic("provenance window registered no close callback")
+	}
+	for _, fn := range fns {
+		fn.fn(&mygo.CloseEvent{Window: w})
 	}
 }
 

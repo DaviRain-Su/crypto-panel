@@ -177,7 +177,7 @@ func (a *App) openProvenanceConfirm(view plugin.ProvenanceView, done func(bool))
 	finish := func(ok bool) {
 		a.installOpen = false
 		if win != nil {
-			win.Close()
+			closeProvenanceWindow(win)
 		}
 		done(ok)
 	}
@@ -190,7 +190,7 @@ func (a *App) openProvenanceConfirm(view plugin.ProvenanceView, done func(bool))
 		finish(ok)
 	}
 	cancel := provenanceConfirmClosed(decide)
-	win = mygo.NewWindow(mygo.WindowOptions{
+	win = newProvenanceWindow(mygo.WindowOptions{
 		Title:           a.t(i18n.ProvenanceLockedTitle),
 		Width:           460,
 		Height:          360,
@@ -199,30 +199,42 @@ func (a *App) openProvenanceConfirm(view plugin.ProvenanceView, done func(bool))
 		Parent:          a.win,
 		Modal:           true,
 		BackgroundColor: "light-dark(#f6f4ef, #141513)",
-		Content: ui.View(func(c *ui.Context) {
-			p := a.pal
-			c.Root().Background(p.bg)
-			ui.Column(c).Fill().Padding(20).Gap(12).Children(func() {
-				ui.Text(c, a.t(i18n.ProvenanceLockedTitle)).FontSize(20).FontWeight(700).MaxLines(2)
-				ui.Text(c, view.Name).FontSize(14).FontWeight(600).MaxLines(1)
-				ui.Text(c, a.t(i18n.ProvenanceLockedPath, view.Path)).FontSize(12).MaxLines(3)
-				ui.Text(c, a.t(i18n.ProvenanceLockedHash, view.PackageHash)).FontSize(12).MaxLines(2)
-				ui.Text(c, a.t(i18n.ProvenanceLockedUnsigned)).FontSize(12).MaxLines(1)
-				ui.Text(c, a.t(i18n.ProvenanceLockedWarn)).FontSize(13).MaxLines(6)
-				ui.Row(c).Gap(8).Children(func() {
-					a.primaryButton(c, a.t(i18n.Cancel), nil, false, func() { cancel(nil) })
-					a.softButton(c, a.t(i18n.ProvenanceLockedAction, view.Name), nil, p.muted, func() { decide(true) })
-				})
-			})
-		}),
+		Content:         ui.View(a.provenanceConfirmView(view, decide, cancel)),
 	})
 	win.OnClose(cancel)
-	win.Focus()
+	focusProvenanceWindow(win)
 }
+
+// newProvenanceWindow creates the confirm window. Tests replace it so they
+// can run the registered close callback without a display.
+var newProvenanceWindow = mygo.NewWindow
+
+var focusProvenanceWindow = (*mygo.Window).Focus
+
+var closeProvenanceWindow = (*mygo.Window).Close
 
 // provenanceConfirmClosed is the window's close path. Closing must not confirm.
 func provenanceConfirmClosed(decide func(bool)) func(*mygo.CloseEvent) {
 	return func(*mygo.CloseEvent) { decide(false) }
+}
+
+func (a *App) provenanceConfirmView(view plugin.ProvenanceView, decide func(bool), cancel func(*mygo.CloseEvent)) func(*ui.Context) {
+	return func(c *ui.Context) {
+		p := a.pal
+		c.Root().Background(p.bg)
+		ui.Column(c).Fill().Padding(20).Gap(12).Children(func() {
+			ui.Text(c, a.t(i18n.ProvenanceLockedTitle)).FontSize(20).FontWeight(700).MaxLines(2)
+			ui.Text(c, view.Name).FontSize(14).FontWeight(600).MaxLines(1)
+			ui.Text(c, a.t(i18n.ProvenanceLockedPath, view.Path)).FontSize(12).MaxLines(3)
+			ui.Text(c, a.t(i18n.ProvenanceLockedHash, view.PackageHash)).FontSize(12).MaxLines(2)
+			ui.Text(c, a.t(i18n.ProvenanceLockedUnsigned)).FontSize(12).MaxLines(1)
+			ui.Text(c, a.t(i18n.ProvenanceLockedWarn)).FontSize(13).MaxLines(6)
+			ui.Row(c).Gap(8).Children(func() {
+				a.primaryButton(c, a.t(i18n.Cancel), nil, false, func() { cancel(nil) })
+				a.softButton(c, a.t(i18n.ProvenanceLockedAction, view.Name), nil, p.muted, func() { decide(true) })
+			})
+		})
+	}
 }
 
 // askInstall is the shell's permission prompt: what the plugin may do, in
