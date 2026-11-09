@@ -253,6 +253,7 @@ func (a *App) agentPlugins() []agent.Plugin {
 			Author:      m.Author,
 			Enabled:     item.Enabled,
 			Signed:      item.Signed,
+			Official:    item.Official,
 			Permissions: agent.Permissions{
 				Network:   m.Permissions.Network,
 				Chains:    m.Permissions.Chains,

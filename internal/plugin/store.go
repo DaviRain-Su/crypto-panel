@@ -26,14 +26,17 @@ type Secrets interface {
 var ErrNotInstalled = errors.New("plugin is not installed")
 
 // Installed is one plugin in the store. Signed is set when it came from a
-// registry and its files still match the hash that was signed; Source is
-// where it came from. Err is set when its files cannot be read, so the
-// manager can show a broken plugin instead of hiding it.
+// registry and its files still match the hash that was signed. Official is
+// set when it is a first-party example shipped with the shell and its files
+// still match the copy embedded in the app. Source is where it came from.
+// Err is set when its files cannot be read, so the manager can show a broken
+// plugin instead of hiding it.
 type Installed struct {
 	Manifest Manifest
 	Dir      string
 	Enabled  bool
 	Signed   bool
+	Official bool
 	Source   string
 	Err      string
 }
@@ -109,13 +112,21 @@ func (s *Store) Get(id string) (Installed, error) {
 	return inst, nil
 }
 
-// verifyInstall reads a plugin's install record and, for a signed plugin,
-// checks that its files still are what was signed. A plugin installed from
-// a folder has no record and is left unsigned.
+// verifyInstall reads a plugin's install record. An official example must
+// still match the copy embedded in the app, and that match does not make it
+// signed. A signed plugin must still match the hash that was signed. A
+// folder install has no record and is left unsigned, even when its files are
+// the same bytes as an official example.
 func verifyInstall(dir string, inst *Installed) error {
 	info, err := loadInstallInfo(dir)
 	if err != nil {
 		return fmt.Errorf("install record: %w", err)
+	}
+	if err := verifyOfficial(dir, inst, info); err != nil {
+		return err
+	}
+	if inst.Official {
+		return nil
 	}
 	if info.Hash == "" {
 		return nil

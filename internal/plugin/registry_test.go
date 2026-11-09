@@ -199,7 +199,7 @@ func TestPrepareInstallsSignedPlugin(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Get: %v", err)
 	}
-	if !inst.Signed || inst.Source != entry.URL {
+	if !inst.Signed || inst.Official || inst.Source != entry.URL {
 		t.Fatalf("installed = %+v", inst)
 	}
 	if inst.Err != "" {

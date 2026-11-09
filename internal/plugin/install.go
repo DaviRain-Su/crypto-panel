@@ -215,14 +215,16 @@ func (ar *Archive) Close() {
 	ar.dir = ""
 }
 
-// installInfo is the shell's record of a signed install, kept beside the
-// plugin's state. It is not part of the plugin's digest.
+// installInfo is the shell's record of an install, kept beside the plugin's
+// state. It is not part of the plugin's digest. Official marks a first-party
+// example the shell seeded; it is not a publisher signature.
 type installInfo struct {
 	Source    string `json:"source,omitempty"`
 	Hash      string `json:"hash"`
 	Signature string `json:"signature"`
 	Publisher string `json:"publisher"`
 	Installed string `json:"installed,omitempty"`
+	Official  bool   `json:"official,omitempty"`
 }
 
 func loadInstallInfo(dir string) (installInfo, error) {

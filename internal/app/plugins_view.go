@@ -102,9 +102,7 @@ func (a *App) appTile(c *ui.Context, item plugin.Installed) {
 			ui.Column(c).Grow(1).Gap(2).Children(func() {
 				ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
 					ui.Text(c, m.Name).FontSize(14).FontWeight(600).MaxLines(1)
-					if !item.Signed {
-						ui.Badge(c, a.t(i18n.PluginUnsigned))
-					}
+					a.trustBadge(c, item.Official, !item.Signed && !item.Official)
 				})
 				ui.Text(c, "v"+m.Version).FontSize(10.5).TextColor(p.faint).MaxLines(1)
 			})
@@ -178,9 +176,7 @@ func (a *App) appCard(c *ui.Context, item plugin.Installed) {
 			ui.Column(c).Grow(1).Gap(2).Children(func() {
 				ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
 					ui.Text(c, m.Name).FontSize(13.5).FontWeight(600).MaxLines(1)
-					if !item.Signed {
-						ui.Badge(c, a.t(i18n.PluginUnsigned))
-					}
+					a.trustBadge(c, item.Official, !item.Signed && !item.Official)
 					ui.Text(c, "v"+m.Version).FontSize(10.5).TextColor(p.faint).MaxLines(1)
 				})
 				ui.Text(c, id).FontSize(10.5).TextColor(p.faint).MaxLines(1)
@@ -288,9 +284,20 @@ func (a *App) pluginLogsView(c *ui.Context, id string) {
 	})
 }
 
+// trustBadge marks an app as an official example or as an unsigned local
+// install. A store install is signed and carries neither badge.
+func (a *App) trustBadge(c *ui.Context, official, unsigned bool) {
+	switch {
+	case official:
+		ui.Badge(c, a.t(i18n.PluginOfficial))
+	case unsigned:
+		ui.Badge(c, a.t(i18n.PluginUnsigned))
+	}
+}
+
 // pluginPageView draws one page of a plugin. The header (the plugin's name,
-// the unsigned badge and the refresh button) is the shell's, never the
-// plugin's to draw.
+// the official or unsigned badge, and the refresh button) is the shell's,
+// never the plugin's to draw.
 func (a *App) pluginPageView(c *ui.Context) {
 	p := a.pal
 	a.pluginPageTabs(c)

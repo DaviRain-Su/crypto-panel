@@ -236,8 +236,8 @@ func (a *App) pageHeader(c *ui.Context) {
 			}
 			ui.Row(c).Gap(10).AlignItems(ui.Center).Children(func() {
 				ui.Text(c, title).FontSize(28).FontWeight(700).LetterSpacing(-0.6).MaxLines(1)
-				if a.route.kind == "plugin" && a.pluginView.unsigned {
-					ui.Badge(c, a.t(i18n.PluginUnsigned))
+				if a.route.kind == "plugin" {
+					a.trustBadge(c, a.pluginView.official, a.pluginView.unsigned)
 				}
 			})
 		})
