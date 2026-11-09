@@ -447,7 +447,7 @@ func TestGitHubStyleArchive(t *testing.T) {
 		if err != nil {
 			return err
 		}
-		w, err := zw.Create("crypto-panel-1.0.0/" + filepath.ToSlash(rel))
+		w, err := zw.Create("lintel-1.0.0/" + filepath.ToSlash(rel))
 		if err != nil {
 			return err
 		}

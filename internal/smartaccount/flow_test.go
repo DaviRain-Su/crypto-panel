@@ -7,7 +7,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 
-	"github.com/davirain-su/crypto-panel/internal/webauthn"
+	"github.com/davirain-su/lintel/internal/webauthn"
 )
 
 // TestPasskeyUserOperationFlow walks the whole local path: register a
@@ -16,8 +16,8 @@ import (
 // account verifies on chain.
 func TestPasskeyUserOperationFlow(t *testing.T) {
 	const (
-		rpID   = "crypto-panel.app"
-		origin = "https://crypto-panel.app"
+		rpID   = "lintel.example"
+		origin = "https://lintel.example"
 	)
 	auth, err := webauthn.NewSoftAuthenticator(rpID, origin)
 	if err != nil {

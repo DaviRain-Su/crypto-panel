@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/davirain-su/crypto-panel/internal/chain"
+	"github.com/davirain-su/lintel/internal/chain"
 )
 
 var live = flag.Bool("live", false, "hit the public endpoint in TestLiveEndpoint")
@@ -30,7 +30,7 @@ type tokenAccount struct {
 	amount string
 }
 
-// fakeRPC answers the handful of methods the panel uses.
+// fakeRPC answers the handful of methods the app uses.
 type fakeRPC struct {
 	mu            sync.Mutex
 	genesis       string

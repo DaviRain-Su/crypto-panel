@@ -14,8 +14,8 @@ import (
 	"github.com/egoist/mygo/ui"
 	"github.com/ethereum/go-ethereum/common"
 
-	"github.com/davirain-su/crypto-panel/internal/chains"
-	"github.com/davirain-su/crypto-panel/internal/webauthn"
+	"github.com/davirain-su/lintel/internal/chains"
+	"github.com/davirain-su/lintel/internal/webauthn"
 )
 
 func recoveryData(t *testing.T, pk *PasskeyAccount) []byte {

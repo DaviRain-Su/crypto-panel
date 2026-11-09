@@ -8,8 +8,8 @@ import (
 
 	"github.com/egoist/mygo/ui"
 
-	"github.com/davirain-su/crypto-panel/internal/pages"
-	"github.com/davirain-su/crypto-panel/internal/plugin"
+	"github.com/davirain-su/lintel/internal/pages"
+	"github.com/davirain-su/lintel/internal/plugin"
 )
 
 var live = flag.Bool("live", false, "hit the public endpoints in TestLiveGasPlugin")

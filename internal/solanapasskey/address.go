@@ -20,7 +20,7 @@
 // LazorFroiVuAjcwwQ2me83vTr5nc5NRxSaTg3pmEXC8) was not deployed on mainnet
 // when this was written, so the address we publish is the v1 vault of the
 // program that is actually on mainnet. Devnet v1 is a different program id
-// and therefore a different vault; the panel has no Solana devnet preset.
+// and therefore a different vault; the app has no Solana devnet preset.
 package solanapasskey
 
 import (
@@ -30,8 +30,8 @@ import (
 
 	"filippo.io/edwards25519"
 
-	"github.com/davirain-su/crypto-panel/internal/base58"
-	"github.com/davirain-su/crypto-panel/internal/passkeywallet"
+	"github.com/davirain-su/lintel/internal/base58"
+	"github.com/davirain-su/lintel/internal/passkeywallet"
 )
 
 const (
@@ -51,7 +51,9 @@ const (
 
 	// seedLabel domains the user seed so it cannot collide with a seed some
 	// other app chose for the same public key. The NUL keeps the label from
-	// running into the key bytes.
+	// running into the key bytes. The label is part of the vault address.
+	// Renaming it would derive a different vault for the same passkey, so
+	// it stays on the original domain string.
 	seedLabel = "crypto-panel passkey solana v1"
 
 	pdaMarker = "ProgramDerivedAddress"

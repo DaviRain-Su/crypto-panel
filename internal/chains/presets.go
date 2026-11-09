@@ -1,10 +1,10 @@
-// Package chains is the registry of networks the panel ships with: the EVM
+// Package chains is the registry of networks the app ships with: the EVM
 // family (Ethereum, Base) and the Solana family, and the reader each one
 // needs. A network's ID is its CAIP-2 identifier, so it stays unique across
 // families and is what settings store.
 package chains
 
-import "github.com/davirain-su/crypto-panel/internal/chain"
+import "github.com/davirain-su/lintel/internal/chain"
 
 // Ethereum is the default network.
 var Ethereum = chain.Network{

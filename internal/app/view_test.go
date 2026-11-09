@@ -8,11 +8,11 @@ import (
 
 	"github.com/egoist/mygo/ui"
 
-	"github.com/davirain-su/crypto-panel/internal/chain"
-	"github.com/davirain-su/crypto-panel/internal/chains"
-	"github.com/davirain-su/crypto-panel/internal/i18n"
-	"github.com/davirain-su/crypto-panel/internal/plugin"
-	"github.com/davirain-su/crypto-panel/internal/wallet"
+	"github.com/davirain-su/lintel/internal/chain"
+	"github.com/davirain-su/lintel/internal/chains"
+	"github.com/davirain-su/lintel/internal/i18n"
+	"github.com/davirain-su/lintel/internal/plugin"
+	"github.com/davirain-su/lintel/internal/wallet"
 )
 
 const (
@@ -47,7 +47,7 @@ func newTestApp(t *testing.T) *App {
 func TestViewEmptyState(t *testing.T) {
 	a := newTestApp(t)
 	tt := ui.NewTester(a.view, windowWidth, windowHeight)
-	for _, want := range []string{"Crypto Panel", "Wallet & watch", "No addresses yet", "Add"} {
+	for _, want := range []string{"Lintel", "Wallet & watch", "No addresses yet", "Add"} {
 		if !tt.HasText(want) {
 			t.Errorf("missing %q in %q", want, tt.Texts())
 		}
@@ -275,7 +275,7 @@ func TestViewSpeaksChinese(t *testing.T) {
 	a := newTestApp(t)
 	a.settings.Language = i18n.Chinese
 	tt := ui.NewTester(a.view, windowWidth, windowHeight)
-	for _, want := range []string{"加密面板", "钱包与只读", "还没有地址", "添加"} {
+	for _, want := range []string{"门厅", "钱包与只读", "还没有地址", "添加"} {
 		if !tt.HasText(want) {
 			t.Errorf("missing %q in %q", want, tt.Texts())
 		}

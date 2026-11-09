@@ -6,7 +6,7 @@ import (
 
 	"github.com/egoist/mygo/ui"
 
-	"github.com/davirain-su/crypto-panel/internal/chains"
+	"github.com/davirain-su/lintel/internal/chains"
 )
 
 func TestSendNearSignsAfterApproval(t *testing.T) {

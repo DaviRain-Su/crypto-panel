@@ -6,9 +6,9 @@ import (
 
 	"github.com/egoist/mygo"
 
-	"github.com/davirain-su/crypto-panel/internal/i18n"
-	"github.com/davirain-su/crypto-panel/internal/neartx"
-	"github.com/davirain-su/crypto-panel/internal/wallet"
+	"github.com/davirain-su/lintel/internal/i18n"
+	"github.com/davirain-su/lintel/internal/neartx"
+	"github.com/davirain-su/lintel/internal/wallet"
 )
 
 // The NEAR wallet's actions, the ed25519 counterpart of the EVM ones in

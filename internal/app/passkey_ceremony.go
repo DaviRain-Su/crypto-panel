@@ -12,8 +12,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/davirain-su/crypto-panel/internal/webauthn"
-	passkeypage "github.com/davirain-su/crypto-panel/web/passkey"
+	"github.com/davirain-su/lintel/internal/webauthn"
+	passkeypage "github.com/davirain-su/lintel/web/passkey"
 )
 
 // ceremonyTimeout is how long the app waits for the browser to finish one

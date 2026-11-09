@@ -1,4 +1,4 @@
-module github.com/davirain-su/crypto-panel
+module github.com/davirain-su/lintel
 
 go 1.27.3
 

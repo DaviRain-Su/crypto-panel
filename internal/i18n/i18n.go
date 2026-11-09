@@ -434,7 +434,7 @@ const (
 )
 
 var messages = map[Key]map[string]string{
-	AppTitle:        {English: "Crypto Panel", Chinese: "加密面板"},
+	AppTitle:        {English: "Lintel", Chinese: "门厅"},
 	WatchOnly:       {English: "Wallet & watch", Chinese: "钱包与只读"},
 	NavPortfolio:    {English: "Portfolio", Chinese: "持仓"},
 	NavWallet:       {English: "Wallet", Chinese: "钱包"},
@@ -568,7 +568,7 @@ var messages = map[Key]map[string]string{
 	PasskeyBody:           {English: "One passkey, held by your device or password manager, controls a NEAR account, an EVM smart account at the same address on every EVM chain, and a Solana vault.", Chinese: "一个由设备或密码管理器保管的 Passkey，控制一个 NEAR 账户、在所有 EVM 链上地址相同的 EVM 智能账户，以及一个 Solana 金库。"},
 	PasskeyCreate:         {English: "Create passkey", Chinese: "创建 Passkey"},
 	PasskeyWaiting:        {English: "Waiting for your passkey…", Chinese: "等待 Passkey 确认…"},
-	PasskeyFine:           {English: "The private key never leaves the authenticator. Crypto Panel stores only the public key. To restore this wallet later, keep the original passkey and an exported public recovery file.", Chinese: "私钥不会离开认证器。Crypto Panel 只保存公钥。以后恢复此钱包时，必须同时保留原 Passkey 和导出的公开恢复文件。"},
+	PasskeyFine:           {English: "The private key never leaves the authenticator. Lintel stores only the public key. To restore this wallet later, keep the original passkey and an exported public recovery file.", Chinese: "私钥不会离开认证器。门厅只保存公钥。以后恢复此钱包时，必须同时保留原 Passkey 和导出的公开恢复文件。"},
 	PasskeyCreated:        {English: "Passkey created. Export the public recovery file before funding the NEAR account. The Solana vault is not on chain — do not send SOL there.", Chinese: "Passkey 已创建。请先导出公开恢复文件，再为 NEAR 账户充值。Solana 金库尚未在链上创建——不要向那里发送 SOL。"},
 	PasskeyPreparedTitle:  {English: "One passkey, every network", Chinese: "一把 Passkey，覆盖每个网络"},
 	PasskeyPreparedBody:   {English: "These addresses were prepared together. The private key never left the authenticator.", Chinese: "这些地址是一起准备好的。私钥没有离开认证器。"},
@@ -728,7 +728,7 @@ var messages = map[Key]map[string]string{
 	IntentsApproveRefund:      {English: "Refund to", Chinese: "退款到"},
 	IntentsApproveRecipient:   {English: "Recipient", Chinese: "收款地址"},
 	IntentsApproveSource:      {English: "Requested by", Chinese: "请求来自"},
-	IntentsApproveSourceValue: {English: "Crypto Panel · dry run", Chinese: "Crypto Panel · dry 运行"},
+	IntentsApproveSourceValue: {English: "Lintel · dry run", Chinese: "门厅 · dry 运行"},
 	IntentsApproveWarning:     {English: "This is a dry quote: no funds move and nothing is signed. A real swap would need your explicit consent.", Chinese: "这是 dry 报价：资金不会移动，也不会签名。真正成交需要你明确同意。"},
 	IntentsApproveAccept:      {English: "Accept quote", Chinese: "接受报价"},
 	IntentsIntentText:         {English: "Swap %s %s on %s for at least %s %s on %s; refund to %s.", Chinese: "用 %s %s（%s）换至少 %s %s（%s）；退款到 %s。"},

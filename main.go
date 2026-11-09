@@ -1,6 +1,8 @@
-// Crypto Panel is a desktop app for watching crypto. It is watch-only:
-// addresses are added, balances are read from one pinned endpoint, plugins
-// run in their own sandboxed runtimes, and no key ever enters the app.
+// Lintel is a native desktop app. The window is a sidebar of Portfolio,
+// Wallet, Apps, Intents, DApp, and Settings. A wallet is a named container
+// of EVM, NEAR, and Solana accounts whose keys live in the OS keychain.
+// Plugins are sandboxed and return page data; every signature goes through
+// the shell's own decoded approval.
 package main
 
 import (
@@ -8,11 +10,11 @@ import (
 
 	"github.com/egoist/mygo"
 
-	"github.com/davirain-su/crypto-panel/internal/app"
+	"github.com/davirain-su/lintel/internal/app"
 )
 
 func main() {
-	mygo.App.SetName("Crypto Panel")
+	mygo.App.SetName("Lintel")
 	// Opening the app again shows the running one's window instead of
 	// starting a second copy. Asked before anything else, so the second one
 	// touches no data on its way out.

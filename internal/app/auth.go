@@ -6,8 +6,8 @@ import (
 
 	"github.com/egoist/mygo"
 
-	"github.com/davirain-su/crypto-panel/internal/i18n"
-	"github.com/davirain-su/crypto-panel/internal/passkey"
+	"github.com/davirain-su/lintel/internal/i18n"
+	"github.com/davirain-su/lintel/internal/passkey"
 )
 
 // The wallet's second factor is the operating system's own check: Touch ID

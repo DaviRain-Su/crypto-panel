@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Test DApp · Crypto Panel</title>
+  <title>Test DApp · Lintel</title>
   <style>
     :root {
       color-scheme: light dark;
@@ -94,12 +94,12 @@
       </svg>
     </span>
     <div>
-      <p class="kicker">Crypto Panel · test DApp</p>
+      <p class="kicker">Lintel · test DApp</p>
       <h1>Ask the local wallet to sign</h1>
     </div>
   </header>
   <p class="lead">
-    This page runs in Crypto Panel's isolated web view. It can ask the wallet to
+    This page runs in Lintel's isolated web view. It can ask the wallet to
     connect and to sign; it never sees a key, and every request opens the shell's
     own approval window.
   </p>
@@ -158,7 +158,7 @@
   </section>
 
   <p class="fine">
-    The page is served from <span class="mono" id="origin"></span>. Crypto Panel
+    The page is served from <span class="mono" id="origin"></span>. Lintel
     accepts a DApp origin over HTTPS, or HTTP on localhost, and reads the origin
     from the web view's own URL — never from this page's request.
   </p>
@@ -177,7 +177,7 @@
 
   function wallet() {
     if (!window.nearWallet) {
-      throw new Error("The Crypto Panel wallet bridge is not injected. Open this page from Crypto Panel's Apps page.");
+      throw new Error("The Lintel wallet bridge is not injected. Open this page from Lintel's DApp page.");
     }
     return window.nearWallet;
   }

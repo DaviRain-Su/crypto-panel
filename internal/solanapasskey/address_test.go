@@ -6,8 +6,8 @@ import (
 
 	"filippo.io/edwards25519"
 
-	"github.com/davirain-su/crypto-panel/internal/base58"
-	"github.com/davirain-su/crypto-panel/internal/passkeywallet"
+	"github.com/davirain-su/lintel/internal/base58"
+	"github.com/davirain-su/lintel/internal/passkeywallet"
 )
 
 // pinnedKey is the same SEC-1 point the NEAR passkey tests pin: 0x02 and the

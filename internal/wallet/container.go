@@ -19,7 +19,7 @@ type SolanaAccount struct {
 }
 
 // Container is one named wallet: a single identity's account on each chain
-// family the panel can sign for. A slot is empty when the wallet was migrated
+// family the app can sign for. A slot is empty when the wallet was migrated
 // from an older single-chain account, or when the user imported only one key.
 // There is no seed phrase. The three keys are independent.
 type Container struct {

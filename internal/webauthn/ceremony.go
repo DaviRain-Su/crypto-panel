@@ -18,7 +18,8 @@ const (
 
 // The callback the ceremony page navigates to. It is a fixed custom scheme,
 // not a URL the page takes from its query, so a malicious link cannot turn
-// the page into an open redirect.
+// the page into an open redirect. The scheme stays cryptopanel so an
+// already-registered callback still resolves.
 const (
 	CallbackScheme = "cryptopanel"
 	CallbackHost   = "passkey"
@@ -141,7 +142,7 @@ func ParseCallback(raw string) (CeremonyResult, error) {
 		return CeremonyResult{}, fmt.Errorf("webauthn: callback: %w", err)
 	}
 	if u.Scheme != CallbackScheme || u.Host != CallbackHost {
-		return CeremonyResult{}, errors.New("webauthn: not a crypto-panel passkey callback")
+		return CeremonyResult{}, errors.New("webauthn: not a lintel passkey callback")
 	}
 	q := u.Query()
 	if code := q.Get("error"); code != "" {

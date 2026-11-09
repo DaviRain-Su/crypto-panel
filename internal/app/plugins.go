@@ -10,12 +10,12 @@ import (
 
 	"github.com/egoist/mygo"
 
-	"github.com/davirain-su/crypto-panel/internal/chain"
-	"github.com/davirain-su/crypto-panel/internal/chains"
-	"github.com/davirain-su/crypto-panel/internal/i18n"
-	"github.com/davirain-su/crypto-panel/internal/pages"
-	"github.com/davirain-su/crypto-panel/internal/plugin"
-	"github.com/davirain-su/crypto-panel/internal/wallet"
+	"github.com/davirain-su/lintel/internal/chain"
+	"github.com/davirain-su/lintel/internal/chains"
+	"github.com/davirain-su/lintel/internal/i18n"
+	"github.com/davirain-su/lintel/internal/pages"
+	"github.com/davirain-su/lintel/internal/plugin"
+	"github.com/davirain-su/lintel/internal/wallet"
 )
 
 // pluginPageKey names one page of one plugin, as the manager opens it.
@@ -40,6 +40,8 @@ type pluginPageState struct {
 func (a *App) initPlugins(dir string) {
 	a.plugins = plugin.NewStore(
 		filepath.Join(dir, "plugins"),
+		// Same service name as before the product rename, so plugin
+		// secrets already in the keychain stay reachable.
 		mygo.Secrets.Service("crypto-panel-plugins"),
 	)
 	a.pluginRunners = map[string]*plugin.Runner{}

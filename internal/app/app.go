@@ -18,18 +18,18 @@ import (
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
 
-	"github.com/davirain-su/crypto-panel/internal/agent"
-	"github.com/davirain-su/crypto-panel/internal/chain"
-	"github.com/davirain-su/crypto-panel/internal/i18n"
-	"github.com/davirain-su/crypto-panel/internal/intents"
-	"github.com/davirain-su/crypto-panel/internal/passkey"
-	"github.com/davirain-su/crypto-panel/internal/plugin"
-	"github.com/davirain-su/crypto-panel/internal/prices"
-	"github.com/davirain-su/crypto-panel/internal/wallet"
+	"github.com/davirain-su/lintel/internal/agent"
+	"github.com/davirain-su/lintel/internal/chain"
+	"github.com/davirain-su/lintel/internal/i18n"
+	"github.com/davirain-su/lintel/internal/intents"
+	"github.com/davirain-su/lintel/internal/passkey"
+	"github.com/davirain-su/lintel/internal/plugin"
+	"github.com/davirain-su/lintel/internal/prices"
+	"github.com/davirain-su/lintel/internal/wallet"
 )
 
 // The main window's default and smallest size in DIPs, and the sidebar's
-// width. The window is a normal desktop window, not a menu bar panel.
+// width. The window is a normal desktop window.
 const (
 	windowWidth     = 1060
 	windowHeight    = 760
@@ -255,7 +255,7 @@ func New() (*App, error) {
 	path := filepath.Join(dir, "settings.json")
 	settings, loadErr := LoadSettings(path)
 	if loadErr != nil {
-		log.Printf("crypto-panel: %v", loadErr)
+		log.Printf("lintel: %v", loadErr)
 	}
 	a := &App{
 		settings:       settings,
@@ -268,6 +268,8 @@ func New() (*App, error) {
 	}
 	a.newReader()
 	a.initPlugins(dir)
+	// Keychain service names are how existing secrets are found. They stay
+	// on the original name so a rename of the product does not orphan them.
 	a.agentSecrets = mygo.Secrets.Service("crypto-panel-agent")
 	secrets := mygo.Secrets.Service("crypto-panel-wallet")
 	a.keyring = wallet.NewKeyring(secrets, settings.Wallet)
@@ -300,7 +302,7 @@ func (a *App) newReader() {
 	a.stopAllRunners()
 	reader, err := a.settings.Reader()
 	if err != nil {
-		log.Printf("crypto-panel: %v", err)
+		log.Printf("lintel: %v", err)
 		a.reader = nil
 		return
 	}
@@ -453,7 +455,7 @@ func (a *App) touch() { a.gen++ }
 func (a *App) save() {
 	if err := SaveSettings(a.settingsPath, a.settings); err != nil {
 		a.settingsErr = a.t(i18n.SaveFailed)
-		log.Printf("crypto-panel: saving settings: %v", err)
+		log.Printf("lintel: saving settings: %v", err)
 		return
 	}
 	a.settingsErr = ""

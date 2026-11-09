@@ -6,12 +6,12 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/davirain-su/crypto-panel/internal/chain"
-	"github.com/davirain-su/crypto-panel/internal/chain/evm"
-	"github.com/davirain-su/crypto-panel/internal/chain/solana"
-	"github.com/davirain-su/crypto-panel/internal/chains"
-	"github.com/davirain-su/crypto-panel/internal/i18n"
-	"github.com/davirain-su/crypto-panel/internal/wallet"
+	"github.com/davirain-su/lintel/internal/chain"
+	"github.com/davirain-su/lintel/internal/chain/evm"
+	"github.com/davirain-su/lintel/internal/chain/solana"
+	"github.com/davirain-su/lintel/internal/chains"
+	"github.com/davirain-su/lintel/internal/i18n"
+	"github.com/davirain-su/lintel/internal/wallet"
 )
 
 const (

@@ -9,8 +9,8 @@ import (
 )
 
 const (
-	testRPID   = "crypto-panel.app"
-	testOrigin = "https://crypto-panel.app"
+	testRPID   = "lintel.example"
+	testOrigin = "https://lintel.example"
 )
 
 func newTestAuthenticator(t *testing.T) *SoftAuthenticator {

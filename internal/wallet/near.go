@@ -9,7 +9,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/davirain-su/crypto-panel/internal/neartx"
+	"github.com/davirain-su/lintel/internal/neartx"
 )
 
 // NearAccount is one NEAR account of the wallet. Its key is not here: it is

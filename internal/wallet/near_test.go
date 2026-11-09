@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/davirain-su/crypto-panel/internal/neartx"
+	"github.com/davirain-su/lintel/internal/neartx"
 )
 
 func TestNearCreate(t *testing.T) {

@@ -13,11 +13,11 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 
-	"github.com/davirain-su/crypto-panel/internal/chain"
-	"github.com/davirain-su/crypto-panel/internal/chains"
-	"github.com/davirain-su/crypto-panel/internal/passkeywallet"
-	"github.com/davirain-su/crypto-panel/internal/wallet"
-	"github.com/davirain-su/crypto-panel/internal/webauthn"
+	"github.com/davirain-su/lintel/internal/chain"
+	"github.com/davirain-su/lintel/internal/chains"
+	"github.com/davirain-su/lintel/internal/passkeywallet"
+	"github.com/davirain-su/lintel/internal/wallet"
+	"github.com/davirain-su/lintel/internal/webauthn"
 )
 
 // softCeremony runs the WebAuthn ceremonies in memory, over the same

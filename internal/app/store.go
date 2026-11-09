@@ -5,8 +5,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/davirain-su/crypto-panel/internal/i18n"
-	"github.com/davirain-su/crypto-panel/internal/plugin"
+	"github.com/davirain-su/lintel/internal/i18n"
+	"github.com/davirain-su/lintel/internal/plugin"
 )
 
 // The plugin store's actions. A catalog is a static JSON file listing signed

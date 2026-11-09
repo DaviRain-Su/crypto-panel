@@ -13,7 +13,7 @@ import (
 
 	"github.com/MoeForge/moejs"
 
-	"github.com/davirain-su/crypto-panel/internal/pages"
+	"github.com/davirain-su/lintel/internal/pages"
 )
 
 // Account is one watched address, as host.accounts returns it.
@@ -300,7 +300,7 @@ func (h *Host) doFetch(rawURL string, req fetchRequest) (fetchResponse, error) {
 		}
 		httpReq.Header.Set(name, value)
 	}
-	httpReq.Header.Set("User-Agent", "crypto-panel-plugin/"+h.deps.Manifest.Version)
+	httpReq.Header.Set("User-Agent", "lintel-plugin/"+h.deps.Manifest.Version)
 	ctx, cancel := context.WithTimeout(context.Background(), fetchTimeout)
 	defer cancel()
 	// Every hop is checked: a redirect to a host outside the allowlist is

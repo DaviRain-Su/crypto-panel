@@ -7,10 +7,10 @@ import (
 	"math/big"
 	"strings"
 
-	"github.com/davirain-su/crypto-panel/internal/chain"
+	"github.com/davirain-su/lintel/internal/chain"
 )
 
-// The two token programs whose accounts the panel reads. Token-2022 mints
+// The two token programs whose accounts the app reads. Token-2022 mints
 // are as common as classic SPL ones now, so both are asked.
 const (
 	TokenProgram     = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
@@ -93,7 +93,7 @@ func (b *Broker) NativeBalance(ctx context.Context, ep Endpoint, addr string) (*
 }
 
 // tokenAccounts is the jsonParsed answer of getTokenAccountsByOwner, cut
-// down to the fields the panel reads.
+// down to the fields the app reads.
 type tokenAccounts struct {
 	Value []struct {
 		Account struct {

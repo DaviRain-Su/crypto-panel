@@ -10,10 +10,10 @@ import (
 
 	"github.com/egoist/mygo"
 
-	"github.com/davirain-su/crypto-panel/internal/chain"
-	"github.com/davirain-su/crypto-panel/internal/chains"
-	"github.com/davirain-su/crypto-panel/internal/wallet"
-	"github.com/davirain-su/crypto-panel/internal/webauthn"
+	"github.com/davirain-su/lintel/internal/chain"
+	"github.com/davirain-su/lintel/internal/chains"
+	"github.com/davirain-su/lintel/internal/wallet"
+	"github.com/davirain-su/lintel/internal/webauthn"
 )
 
 type hookedPasskeyCeremony struct {
@@ -232,7 +232,7 @@ func TestPasskeyApprovalCancelReleasesPromptAndLock(t *testing.T) {
 	}
 	result := make(chan bool, 1)
 	go func() {
-		result <- a.approvePasskey(op, approvalRequest{pluginName: "Crypto Panel", sourceKind: "wallet"})
+		result <- a.approvePasskey(op, approvalRequest{pluginName: "Lintel", sourceKind: "wallet"})
 	}()
 	<-opened
 	// Hide the stand-in window so cancel does not call Invalidate.

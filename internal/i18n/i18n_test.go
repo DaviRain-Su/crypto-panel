@@ -13,13 +13,13 @@ func TestEveryMessageIsTranslated(t *testing.T) {
 }
 
 func TestT(t *testing.T) {
-	if got := T(English, AppTitle); got != "Crypto Panel" {
+	if got := T(English, AppTitle); got != "Lintel" {
 		t.Errorf("English title = %q", got)
 	}
-	if got := T(Chinese, AppTitle); got != "加密面板" {
+	if got := T(Chinese, AppTitle); got != "门厅" {
 		t.Errorf("Chinese title = %q", got)
 	}
-	if got := T("de", AppTitle); got != "Crypto Panel" {
+	if got := T("de", AppTitle); got != "Lintel" {
 		t.Errorf("unknown language = %q, want the English fallback", got)
 	}
 	if got := T(English, AccountMany, 3); got != "3 accounts" {

@@ -17,8 +17,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/davirain-su/crypto-panel/internal/chains"
-	"github.com/davirain-su/crypto-panel/internal/version"
+	"github.com/davirain-su/lintel/internal/chains"
+	"github.com/davirain-su/lintel/internal/version"
 )
 
 // Manifest is plugin.json: what a plugin is and what it may do. The schema
@@ -65,7 +65,7 @@ type SettingField struct {
 	Link   string `json:"link,omitempty"`
 }
 
-// NavItem is one page the plugin adds to the panel.
+// NavItem is one page the plugin adds to the app.
 type NavItem struct {
 	Title string `json:"title"`
 	Page  string `json:"page"`

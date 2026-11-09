@@ -14,7 +14,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/davirain-su/crypto-panel/internal/version"
+	"github.com/davirain-su/lintel/internal/version"
 )
 
 // Host is the endpoint's host, for logs and errors. A URL may carry an API
@@ -37,7 +37,7 @@ type Options struct {
 	// disables caching.
 	CacheTTL time.Duration
 	// MinInterval spaces requests to one endpoint (default 50ms), so a
-	// panel with many addresses does not burst a public endpoint;
+	// app with many addresses does not burst a public endpoint;
 	// negative sends every request at once.
 	MinInterval time.Duration
 	// Now is the clock, for tests; nil uses time.Now.
@@ -189,7 +189,7 @@ func (b *Broker) do(ctx context.Context, rawURL, method string, params any, time
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")
-	req.Header.Set("User-Agent", "crypto-panel/"+version.Version)
+	req.Header.Set("User-Agent", "lintel/"+version.Version)
 	resp, err := b.opts.Client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", Host(rawURL), err)

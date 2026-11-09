@@ -13,8 +13,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/davirain-su/crypto-panel/internal/base58"
-	"github.com/davirain-su/crypto-panel/internal/webauthn"
+	"github.com/davirain-su/lintel/internal/base58"
+	"github.com/davirain-su/lintel/internal/webauthn"
 )
 
 // testKey is the reference executor's pinned P-256 key: 0x02 followed by the

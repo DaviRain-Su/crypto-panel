@@ -44,7 +44,7 @@ func NewAt(baseURL string) *Client {
 	cfg := sdk.NewConfiguration()
 	cfg.Servers = sdk.ServerConfigurations{{URL: strings.TrimRight(baseURL, "/")}}
 	cfg.HTTPClient = &http.Client{Timeout: 25 * time.Second}
-	cfg.UserAgent = "crypto-panel"
+	cfg.UserAgent = "lintel"
 	return &Client{api: sdk.NewAPIClient(cfg)}
 }
 

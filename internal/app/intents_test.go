@@ -10,9 +10,9 @@ import (
 
 	"github.com/egoist/mygo/ui"
 
-	"github.com/davirain-su/crypto-panel/internal/i18n"
-	"github.com/davirain-su/crypto-panel/internal/intents"
-	"github.com/davirain-su/crypto-panel/internal/wallet"
+	"github.com/davirain-su/lintel/internal/i18n"
+	"github.com/davirain-su/lintel/internal/intents"
+	"github.com/davirain-su/lintel/internal/wallet"
 )
 
 const (
@@ -158,7 +158,7 @@ func TestIntentsQuoteShowsResultLanguage(t *testing.T) {
 		"Deadline", "Deposit", "None — a dry quote issues no deposit address",
 		"Refund to", "alice.testnet", "Recipient", testRecipient,
 		"Intent", "Swap 1 wNEAR on NEAR for at least 9.9 USDC on Ethereum; refund to alice.testnet.",
-		"Requested by", "Crypto Panel · dry run",
+		"Requested by", "Lintel · dry run",
 		"no funds move and nothing is signed", "Accept quote", "Reject",
 	} {
 		if !tt.HasText(want) {

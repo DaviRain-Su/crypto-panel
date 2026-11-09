@@ -9,8 +9,8 @@ import (
 	"github.com/egoist/mygo"
 	ethcrypto "github.com/ethereum/go-ethereum/crypto"
 
-	"github.com/davirain-su/crypto-panel/internal/i18n"
-	"github.com/davirain-su/crypto-panel/internal/wallet"
+	"github.com/davirain-su/lintel/internal/i18n"
+	"github.com/davirain-su/lintel/internal/wallet"
 )
 
 // The wallet's actions. Every one runs on the main thread, from a click. A
@@ -114,7 +114,7 @@ func (a *App) walletFailure(err error) string {
 }
 
 // createWalletAccount makes a new wallet and a fresh key for every chain the
-// panel can sign for: EVM (secp256k1), NEAR (ed25519 implicit) and Solana
+// app can sign for: EVM (secp256k1), NEAR (ed25519 implicit) and Solana
 // (ed25519). The keys are already in the keychain, and they are shown once
 // so the user can write them down. There is no seed phrase tying them together.
 func (a *App) createWalletAccount() {

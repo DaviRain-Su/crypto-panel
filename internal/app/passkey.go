@@ -15,16 +15,16 @@ import (
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 
-	"github.com/davirain-su/crypto-panel/internal/chain"
-	"github.com/davirain-su/crypto-panel/internal/chains"
-	"github.com/davirain-su/crypto-panel/internal/i18n"
-	"github.com/davirain-su/crypto-panel/internal/nearid"
-	"github.com/davirain-su/crypto-panel/internal/neartx"
-	"github.com/davirain-su/crypto-panel/internal/passkeywallet"
-	"github.com/davirain-su/crypto-panel/internal/smartaccount"
-	"github.com/davirain-su/crypto-panel/internal/solanapasskey"
-	"github.com/davirain-su/crypto-panel/internal/wallet"
-	"github.com/davirain-su/crypto-panel/internal/webauthn"
+	"github.com/davirain-su/lintel/internal/chain"
+	"github.com/davirain-su/lintel/internal/chains"
+	"github.com/davirain-su/lintel/internal/i18n"
+	"github.com/davirain-su/lintel/internal/nearid"
+	"github.com/davirain-su/lintel/internal/neartx"
+	"github.com/davirain-su/lintel/internal/passkeywallet"
+	"github.com/davirain-su/lintel/internal/smartaccount"
+	"github.com/davirain-su/lintel/internal/solanapasskey"
+	"github.com/davirain-su/lintel/internal/wallet"
+	"github.com/davirain-su/lintel/internal/webauthn"
 )
 
 const (
@@ -35,7 +35,7 @@ const (
 	passkeyGas = 330_000_000_000_000
 	// passkeyEVMChainID is the EVM chain the smart account address is read
 	// from. The factory and the account address are the same on every EVM
-	// chain the panel reads, so one chain is enough to derive it.
+	// chain the app reads, so one chain is enough to derive it.
 	passkeyEVMChainID = "eip155:1"
 )
 
@@ -175,9 +175,9 @@ func (a *App) createPasskey() {
 			Mode:            webauthn.CeremonyCreate,
 			Challenge:       challenge,
 			UserID:          userID,
-			UserName:        "crypto-panel",
-			UserDisplayName: "Crypto Panel",
-			RPName:          "Crypto Panel",
+			UserName:        "lintel",
+			UserDisplayName: "Lintel",
+			RPName:          "Lintel",
 		})
 		if err != nil {
 			a.failPasskey(op, failed, err)
@@ -480,7 +480,7 @@ func (a *App) deployPasskey() {
 			return
 		}
 		if !a.approvePasskey(op, approvalRequest{
-			pluginName: "Crypto Panel", sourceKind: "wallet", description: description,
+			pluginName: "Lintel", sourceKind: "wallet", description: description,
 			network: network, near: summary, fromAddr: pk.NEARAccount, fromLabel: "Passkey",
 		}) {
 			if err := op.ctx.Err(); err != nil {
@@ -601,7 +601,7 @@ func (a *App) sendPasskeyNear() {
 			return
 		}
 		if !a.approvePasskey(op, approvalRequest{
-			pluginName:  "Crypto Panel",
+			pluginName:  "Lintel",
 			sourceKind:  "wallet",
 			description: description,
 			network:     network,

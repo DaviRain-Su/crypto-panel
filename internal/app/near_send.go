@@ -5,10 +5,10 @@ import (
 
 	"github.com/egoist/mygo"
 
-	"github.com/davirain-su/crypto-panel/internal/chain"
-	"github.com/davirain-su/crypto-panel/internal/i18n"
-	"github.com/davirain-su/crypto-panel/internal/nearid"
-	"github.com/davirain-su/crypto-panel/internal/plugin"
+	"github.com/davirain-su/lintel/internal/chain"
+	"github.com/davirain-su/lintel/internal/i18n"
+	"github.com/davirain-su/lintel/internal/nearid"
+	"github.com/davirain-su/lintel/internal/plugin"
 )
 
 // sendNear is the wallet's own transfer: it validates the form, asks the
@@ -68,7 +68,7 @@ func (a *App) sendNear() {
 	a.invalidate()
 	a.goAsync(func() {
 		res, err := signNearTransaction(nearSignDeps{
-			sourceName: "Crypto Panel",
+			sourceName: "Lintel",
 			sourceKind: "wallet",
 			account:    a.nearSignAccount,
 			key:        a.nearSignKey,

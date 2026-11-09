@@ -1,5 +1,5 @@
 // Package chain is the trusted chain layer's vocabulary: the two families
-// the panel speaks (EVM networks and Solana), what a network is, and the
+// the app speaks (EVM networks and Solana), what a network is, and the
 // balances a reader returns. The readers themselves live in the evm and
 // solana packages, and internal/chains picks one for a network.
 package chain
@@ -12,7 +12,7 @@ import (
 
 // Family is a kind of chain with its own address format, RPC dialect and
 // token standard. EVM covers every eip155 network; NEAR and Solana are the
-// other families the panel speaks.
+// other families the app speaks.
 type Family string
 
 const (
@@ -21,7 +21,7 @@ const (
 	Solana Family = "solana"
 )
 
-// Network is one chain the panel can watch.
+// Network is one chain the app can use.
 type Network struct {
 	// ID is the CAIP-2 identifier: "eip155:1", "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp".
 	ID     string `json:"id"`
@@ -43,7 +43,7 @@ type Network struct {
 	Tokens    []Token `json:"tokens"`
 }
 
-// Token is a token the panel shows by default. Address is an ERC-20
+// Token is a token the app shows by default. Address is an ERC-20
 // contract on EVM and an SPL mint on Solana.
 type Token struct {
 	Symbol   string `json:"symbol"`
@@ -52,7 +52,7 @@ type Token struct {
 	Decimals int    `json:"decimals"`
 }
 
-// DisplayFrac is how many fraction digits the panel shows for this token.
+// DisplayFrac is how many fraction digits the app shows for this token.
 // Stablecoins read as money; nine-decimal tokens keep enough to see dust.
 func (t Token) DisplayFrac() int {
 	switch {

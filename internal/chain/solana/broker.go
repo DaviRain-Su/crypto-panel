@@ -1,7 +1,7 @@
 // Package solana reads Solana networks: the broker that pins an endpoint by
-// its genesis hash, the typed reads the panel shows, and the parsing of
+// its genesis hash, the typed reads the app shows, and the parsing of
 // lamports and SPL token accounts. Solana is the second chain family the
-// panel speaks, beside EVM.
+// app speaks, beside EVM.
 package solana
 
 import (
@@ -11,7 +11,7 @@ import (
 	"net/url"
 	"sync"
 
-	"github.com/davirain-su/crypto-panel/internal/chain/rpc"
+	"github.com/davirain-su/lintel/internal/chain/rpc"
 )
 
 // Endpoint is one RPC endpoint and the cluster it must serve. Genesis is
@@ -79,7 +79,7 @@ type GenesisMismatchError struct {
 }
 
 func (e *GenesisMismatchError) Error() string {
-	return fmt.Sprintf("%s serves genesis %s, but the panel is set to %s", e.Endpoint, e.Got, e.Want)
+	return fmt.Sprintf("%s serves genesis %s, but the app is set to %s", e.Endpoint, e.Got, e.Want)
 }
 
 func (b *Broker) verify(ctx context.Context, ep Endpoint) error {

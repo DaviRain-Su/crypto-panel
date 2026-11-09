@@ -1,23 +1,27 @@
-# Crypto Panel — design
+# Lintel — design
 
-**Status:** draft, for review. **Repo:** this one — `crypto-panel`, a project of its own,
+**Status:** draft, for review. **Repo:** [lintel](https://github.com/DaviRain-Su/lintel), a project of its own,
 built on [MyGo](https://github.com/egoist/mygo) (and its Zig bindings as an option).
 **References:** [Metrix.Bar](https://metrix.bar),
 [mygo-music](https://github.com/egoist/mygo-music).
 
 ## 1. What it is
 
-A native desktop app for watching crypto: balances, positions, prices, gas, yields,
-NFTs, and whatever a plugin shows — in one window with a sidebar of pages.
-**Self-custody.** It has a native wallet whose keys live in the OS keychain;
-anything that moves funds is signed by the shell after a decoded approval, and
-never passes through a plugin.
+A native desktop app (Go + MyGo), not a menu-bar widget and not a metrics-only
+dashboard. The window has a sidebar of pages — Portfolio, Wallet, Apps,
+Intents, DApp, Settings — and plugins add pages of their own: balances,
+positions, prices, gas, and whatever an app returns.
 
-The longer aim is a host for blockchain apps, the way a music app hosts sources:
+**Self-custody.** A wallet is a named container. Creating one prepares an EVM
+account, a NEAR account, and a Solana account together. Keys live in the OS
+keychain. There is no mnemonic. Anything that moves funds is signed by the
+shell after a decoded approval, and never passes through a plugin. Approval
+is never skipped.
+
+The shell is a host for chain apps, the way a music app hosts sources:
 each app is a plugin with its own pages, and adding an app is installing a plugin.
-What those apps all need is a wallet, so the native wallet — watch-only
-addresses, then accounts whose keys the shell holds — is the milestone that
-opens the rest.
+Watch-only addresses were the first milestone. The wallet whose keys the shell
+holds is what the app is now.
 
 The app is a shell plus sandboxed plugins:
 
@@ -35,11 +39,11 @@ The app is a shell plus sandboxed plugins:
 
 | Idea | How we use it |
 |---|---|
-| One number in the menu bar, click for a panel | The shell's home is a desktop window with a sidebar of pages, as in mygo-music; the menu bar headline is a later entry point (M4) |
+| One number in the menu bar, click for a panel | Not taken. The shell is a desktop window with a sidebar of pages, as in mygo-music |
 | A dashboard is one file (`<name>.bar`) with permissions, inputs, script | A plugin is one folder with `plugin.json`: permissions, settings (native form), one JS module |
 | Permissions are readable, requests elsewhere are refused | `permissions.network` (host allowlist), `permissions.chains`, `permissions.read`; enforced in the host, never in the plugin |
 | Local API for agents, localhost + bearer token | `GET /v0/portfolio`, `/v0/plugins`, `POST /v0/refresh`; read-only, nothing that signs |
-| Screen sidebars and global shortcuts as entry points | Later milestones: `mygo.GlobalShortcut` and a panel window at a screen edge |
+| Screen sidebars and global shortcuts as entry points | Not taken. Navigation is the sidebar inside the window |
 | Free tier limited by enabled dashboards | Not a product decision here; a plugin registry can count them |
 
 Not taken: their Worker sandbox. We run plugins in Go's JS engine (below), so the
@@ -66,7 +70,7 @@ What changes for crypto: **no `host.spawn`**, **no keys in the sandbox**, and a
 
 | Need | MyGo |
 |---|---|
-| Main window, sidebar, pages | `mygo.NewWindow`, `package ui`, `examples/menubar-flyout` for a tray later |
+| Main window, sidebar, pages | `mygo.NewWindow`, `package ui`. MyGo's menu-bar example is not used |
 | Native UI pages | `package ui` (and this fork's Zig SDK, 297 Element methods) |
 | HTTP and WebSocket | `plugins/fetch`, `plugins/websocket` (Go), `zig/host/fetch`, `zig/host/websocket` |
 | Secrets | `mygo.Secrets` (Keychain, libsecret, CredMan) |
@@ -186,7 +190,7 @@ Module exports, one function per capability; what is not exported is not done.
 Every function takes one object and answers a value or a promise.
 
 ```js
-// The panel's home: sections of cards, lists, tables, charts.
+// A plugin page: sections of cards, lists, tables, charts.
 export function home({ chain, address }) { … }
 
 // A page of the plugin's own, from `navigation`.
@@ -303,6 +307,8 @@ presence check above. One P-256 passkey controls three accounts:
   (`LazorjRFNavitUaBu5m3WaNPjU1maipvSW2rZfAFAKi`, deployed on mainnet): user
   seed `SHA-256("crypto-panel passkey solana v1" || 0x00 || compressed
   P-256 key)`, wallet PDA `["wallet", seed]`, vault `["vault", wallet]`.
+  That domain string is part of the address. It is not a display name and
+  must not be renamed, or the same passkey would derive a different vault.
   The vault is the address that program would sign for after the secp256r1
   precompile (`Secp256r1SigVerify1111111111111111111111111`) accepts the
   passkey. `internal/solanapasskey` derives it and the app stores it on the
@@ -310,7 +316,7 @@ presence check above. One P-256 passkey controls three accounts:
   exist yet and must not be funded: the program does not bind the seed to the
   owner, and a sunset v1 binary refuses new creates. v2 mainnet is a different
   program id and was not deployed when this was written. Devnet uses another
-  program id, so its vault is a different address; the panel watches Solana
+  program id, so its vault is a different address; the app watches Solana
   mainnet. Sending SOL is not wired.
 
 The ceremony runs in the system browser, on a page the app serves on
@@ -392,12 +398,11 @@ Key custody:
   approves the shell's own decode and, when enabled, the system check.
 - **M4: hardware wallets.** The only way to sign in the recommended setup.
 
-## 9. Menu bar (later) and agent API (Metrix.Bar)
+## 9. Agent API
 
-- **The app is a window first.** The portfolio's headline lives in the window's
-  sidebar and page header. A menu bar item showing the headline number, opening
-  the window on click, is an M4 entry point; the plugin that provides the
-  headline is a setting (`navigation` + `headline: true` in the manifest).
+The shell is a desktop window. The portfolio's headline lives in the window's
+sidebar and page header. A menu-bar widget is not a milestone.
+
 - **Agent API** (implemented): `localhost` HTTP with a bearer token the user
   can rotate:
 
@@ -409,7 +414,7 @@ Key custody:
 
   Read-only by construction: no endpoint signs, and `requestSign` is not reachable
   over the API. An agent can prepare a transaction *description* to show the user,
-  not approve one. `/v0/prices` is not implemented: the app has no fiat prices.
+  not approve one. `/v0/prices` is not implemented. The window can show an approximate USD value from CoinGecko; the API does not.
 
 ## 10. Changes this repository would carry
 
@@ -428,7 +433,7 @@ Nothing in `package ui` needs to change for M0–M2.
 ## 11. Repository layout
 
 ```
-crypto-panel/
+lintel/
   main.go                 mygo.App.SetName; app.New; App.Run
   internal/app/           shell: window, sidebar, routes, pages, settings
   internal/plugin/        manifest, moejs runtime, host API, store, registry, install
@@ -463,7 +468,7 @@ crypto-panel/
 | **M1** | Plugin runtime: manifest, moejs realm, limits, `setting`/`kv`/`fetch`/`rpc`/`render`, manager UI (install from folder, enable, disable, logs), two example fixtures — **done** | A third-party plugin added by hand shows a page; a plugin that fetches outside its allowlist is refused and the refusal is visible |
 | **M2** | Install from GitHub/zip, signature + hash, permission prompts, restart-on-abuse, the malicious-plugin suite — **done** | All §13 fixtures behave as specified; an unsigned network install is refused |
 | **M3** | Native wallet: decoded approval UI; hot wallet in the OS keychain; the system check on unlock, reveal and sign; `host.requestSign` behind `sign: true` — **done** | A signing plugin cannot get a signature without an explicit, decoded approval and, when enabled, the system check |
-| **M4** | Hardware wallet; agent API (**done**); menu bar headline, screen-edge panel and global shortcut | An agent reads the portfolio over the API; a Ledger signs a transfer the user approved |
+| **M4** | Hardware wallet; agent API (**done**) | An agent reads the portfolio over the API; a hardware wallet signs a transfer the user approved |
 
 ## 13. Testing
 
@@ -493,8 +498,7 @@ crypto-panel/
    remembers the key it was installed with and refuses a different one on update.
 5. **Hot wallet at all?** Watch-only + hardware covers most users; a hot wallet adds
    a class of risk the plugin sandbox cannot mitigate.
-6. **Name.** `Crypto Panel`, `Ledger View`, something else; it should not collide with
-   existing wallets.
+6. ~~**Name.**~~ Resolved: **Lintel** in English, **门厅** in Chinese.
 
 ## 15. PR checklist
 

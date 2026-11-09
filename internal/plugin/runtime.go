@@ -9,7 +9,7 @@ import (
 
 	"github.com/MoeForge/moejs"
 
-	"github.com/davirain-su/crypto-panel/internal/pages"
+	"github.com/davirain-su/lintel/internal/pages"
 )
 
 const (

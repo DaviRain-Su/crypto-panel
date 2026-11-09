@@ -19,7 +19,7 @@ func TestPricesReadsKnownSymbols(t *testing.T) {
 		if got := r.URL.Query().Get("vs_currencies"); got != "usd" {
 			t.Errorf("vs_currencies = %q", got)
 		}
-		if ua := r.Header.Get("User-Agent"); ua != "crypto-panel" {
+		if ua := r.Header.Get("User-Agent"); ua != "lintel" {
 			t.Errorf("User-Agent = %q", ua)
 		}
 		_, _ = w.Write([]byte(`{"ethereum":{"usd":3120.5},"near":{"usd":4.25}}`))
