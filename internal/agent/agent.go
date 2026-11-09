@@ -153,16 +153,15 @@ func (s *Server) Addr() string {
 	return s.ln.Addr().String()
 }
 
-// Close stops the server. The listener is closed here as well as by the
-// server, because Serve may not have registered it yet when Close runs.
+// Close 先停止 HTTP 服务，再关闭可能尚未被 Serve 登记的 listener。
 func (s *Server) Close() error {
 	if s.srv == nil {
 		return nil
 	}
+	err := s.srv.Close()
 	if s.ln != nil {
 		_ = s.ln.Close()
 	}
-	err := s.srv.Close()
 	s.srv = nil
 	s.ln = nil
 	return err
