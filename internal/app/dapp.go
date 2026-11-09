@@ -510,10 +510,11 @@ func (a *App) dappBody(c *ui.Context) {
 		if a.dappErr != "" {
 			ui.Text(c, a.dappErr).FontSize(11).TextColor(p.danger).MaxLines(2)
 		}
-		if a.network().Family != chain.Near {
+		wrongNetwork := a.network().Family != chain.Near
+		if wrongNetwork {
 			ui.Row(c).Gap(10).Padding(10, 12).Radius(9).Background(p.inset).
 				AlignItems(ui.Center).Children(func() {
-				ui.Text(c, a.t(i18n.DappNearOnly)).FontSize(11.5).TextColor(p.muted).
+				ui.Text(c, a.t(i18n.DappNearOnly)).FontSize(12).TextColor(p.muted).
 					Grow(1).MaxLines(2)
 				a.softButton(c, a.t(i18n.DappSwitchNear), nil, p.accent, func() {
 					a.setNetwork(chains.NearTestnet.ID)
@@ -522,6 +523,10 @@ func (a *App) dappBody(c *ui.Context) {
 		}
 		if a.dappView != nil {
 			ui.WebView(c, a.dappView).Grow(1).Radius(12).Border(1, p.hairline)
+			return
+		}
+		// The banner or the error already says why nothing is open.
+		if a.dappErr != "" || wrongNetwork {
 			return
 		}
 		ui.Column(c).Grow(1).Center().Gap(8).Padding(30).Radius(14).

@@ -57,8 +57,12 @@ func (a *App) pluginTabs(c *ui.Context) {
 			}
 		}
 		ui.Box(c).Grow(1)
-		a.softButton(c, "创建应用", iconSparkle, p.accent, func() { a.openCreator("") })
-		a.softButton(c, a.t(i18n.PluginInstall), nil, p.text, a.installPlugin)
+		a.softButton(c, a.t(i18n.CreateApp), iconSparkle, p.accent, func() { a.openCreator("") })
+		// The empty state already offers the folder install, so the toolbar
+		// does not repeat it.
+		if len(a.pluginItems) > 0 {
+			a.softButton(c, a.t(i18n.PluginInstall), nil, p.text, a.installPlugin)
+		}
 		a.softButton(c, a.t(i18n.AppZip), nil, p.text, a.installPluginZip)
 	})
 }
@@ -85,7 +89,14 @@ func (a *App) emptyPlugins(c *ui.Context) {
 // appGrid is the launcher: one tile per installed app, as a desktop's app
 // folder.
 func (a *App) appGrid(c *ui.Context) {
-	ui.Grid(c).Columns(2).Gap(12).Children(func() {
+	// pageBox is the shared page column. A wide window gets three cards;
+	// the default 1060 window stays at two. Each card stops growing past
+	// 400 so a lone tile does not span the row.
+	cols := 2
+	if w := a.pageBox.Bounds(c).W; w >= 980 {
+		cols = 3
+	}
+	ui.Grid(c).Columns(cols).Gap(12).JustifyItems(ui.Start).Children(func() {
 		for _, item := range a.pluginItems {
 			a.appTile(c, item)
 		}
@@ -103,7 +114,7 @@ func (a *App) appTile(c *ui.Context, item plugin.Installed) {
 	m := item.Manifest
 	id := m.ID
 	enabled := item.Enabled
-	ui.Column(c).Key("app:"+id).Gap(10).Padding(16).Radius(14).
+	ui.Column(c).Key("app:"+id).Gap(10).Padding(16).Radius(14).MaxWidth(400).FillWidth().
 		Background(p.card).Border(1, p.hairline).Shadow(0, 1, 2, 0, p.shadow).Children(func() {
 		ui.Row(c).Gap(12).AlignItems(ui.Center).Children(func() {
 			a.pluginTile(c, m.Name)
@@ -139,16 +150,16 @@ func (a *App) appTile(c *ui.Context, item plugin.Installed) {
 func (a *App) brokenAppTile(c *ui.Context, item plugin.Installed) {
 	p := a.pal
 	name := filepath.Base(item.Dir)
-	ui.Column(c).Key("app:"+name).Gap(8).Padding(16).Radius(14).
+	ui.Column(c).Key("app:"+name).Gap(8).Padding(16).Radius(14).MaxWidth(400).FillWidth().
 		Background(p.card).Border(1, p.hairline).Children(func() {
 		ui.Row(c).Gap(12).AlignItems(ui.Center).Children(func() {
 			a.pluginTile(c, "?")
 			ui.Column(c).Grow(1).Gap(2).Children(func() {
 				ui.Text(c, name).FontSize(13.5).FontWeight(600).MaxLines(1)
-				ui.Text(c, a.t(i18n.AppBroken)).FontSize(11).TextColor(p.danger).MaxLines(1)
+				ui.Text(c, a.t(i18n.AppBroken)).FontSize(12).TextColor(p.danger).MaxLines(1)
 			})
 		})
-		ui.Text(c, item.Err).FontSize(11).TextColor(p.danger).MaxLines(3)
+		ui.Text(c, a.pluginErrText(item.Err)).FontSize(12).TextColor(p.danger).MaxLines(3)
 		ui.Row(c).Children(func() {
 			a.softButton(c, a.t(i18n.Remove), iconTrash, p.danger, func() {
 				a.removeBrokenPlugin(item.Dir)
@@ -219,7 +230,7 @@ func (a *App) appCard(c *ui.Context, item plugin.Installed) {
 				a.invalidate()
 			})
 			if !item.Official && !item.Signed && strings.HasPrefix(id, "local.") {
-				a.softButton(c, "修改应用", iconSparkle, p.accent, func() { a.openCreator(id) })
+				a.softButton(c, a.t(i18n.EditApp), iconSparkle, p.accent, func() { a.openCreator(id) })
 			}
 			a.softButton(c, a.t(i18n.Remove), iconTrash, p.danger, func() { a.removePlugin(id) })
 			if runner, ok := a.pluginRunners[id]; ok {
@@ -272,8 +283,8 @@ func (a *App) pluginSettingsForm(c *ui.Context, m plugin.Manifest) {
 					}
 					if configured {
 						ui.Row(c).Gap(8).Children(func() {
-							ui.Text(c, "已配置 · 留空保留").FontSize(10.5).TextColor(p.muted)
-							a.softButton(c, "清除", nil, p.danger, func() { a.clearPluginSecret(m.ID, field.Key) })
+							ui.Text(c, a.t(i18n.SecretConfigured)).FontSize(12).TextColor(p.muted)
+							a.softButton(c, a.t(i18n.SecretClear), nil, p.danger, func() { a.clearPluginSecret(m.ID, field.Key) })
 						})
 					}
 				}
@@ -334,18 +345,52 @@ func (a *App) pluginPageView(c *ui.Context) {
 	if view.key != a.pluginKey() {
 		return
 	}
-	if view.err != "" {
-		ui.Text(c, view.err).FontSize(12).TextColor(p.danger).MaxLines(6)
+	if view.err != "" && !view.hasPage {
+		a.noticeCard(c, a.t(i18n.PluginErrorTitle), view.err, true)
+		return
+	}
+	if view.loading && !view.hasPage {
+		a.noticeCard(c, a.t(i18n.PluginLoadingTitle), a.t(i18n.Refreshing), false)
+		return
 	}
 	if view.loading {
-		ui.Text(c, a.t(i18n.Refreshing)).FontSize(12).TextColor(p.muted)
+		a.noticeCard(c, a.t(i18n.Refreshing), a.t(i18n.PluginStale), false)
+	}
+	if view.err != "" {
+		a.noticeCard(c, a.t(i18n.PluginErrorTitle), view.err, true)
 	}
 	if !view.updated.IsZero() {
-		ui.Text(c, "上次成功刷新 "+view.updated.Local().Format("15:04:05")).FontSize(10.5).TextColor(p.faint)
+		ui.Text(c, a.t(i18n.PluginRefreshedAt, view.updated.Local().Format("15:04:05"))).
+			FontSize(12).TextColor(p.muted)
 	}
 	if view.hasPage || (view.err == "" && !view.loading) {
 		pages.RenderBody(c, view.page, func(page string) { a.openPluginPage(a.route.id, page) })
 	}
+}
+
+// noticeCard is the shared empty, error and loading block.
+func (a *App) noticeCard(c *ui.Context, title, body string, danger bool) {
+	p := a.pal
+	color := p.muted
+	if danger {
+		color = p.danger
+	}
+	ui.Column(c).Gap(8).Padding(22).Radius(14).Background(p.card).
+		Border(1, p.hairline).Margin(8, 0, 0, 0).Children(func() {
+		ui.Text(c, title).FontSize(15).FontWeight(700).TextColor(color)
+		if body != "" {
+			ui.Text(c, body).FontSize(12.5).TextColor(color).MaxLines(6)
+		}
+	})
+}
+
+// pluginErrText translates the errors the shell itself wrote. A checker's
+// own sentence is shown as it arrived.
+func (a *App) pluginErrText(err string) string {
+	if err == plugin.ErrBrokenManifest {
+		return a.t(i18n.BrokenManifest)
+	}
+	return err
 }
 
 // pluginPageTabs switches between the pages an app declares, when it has

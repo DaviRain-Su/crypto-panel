@@ -225,7 +225,7 @@ func TestDappPageView(t *testing.T) {
 	tt := ui.NewTester(a.view, windowWidth, windowHeight)
 	for _, want := range []string{
 		"Apps", "WEB APPS, SIGNED BY THE LOCAL WALLET", "DApp URL",
-		"Open a web app", "isolated", "Open",
+		"DApp signing works on a NEAR network", "Open",
 	} {
 		if !tt.HasText(want) {
 			t.Errorf("missing %q in %q", want, tt.Texts())

@@ -199,7 +199,7 @@ func (a *App) restorePasskey(data []byte) {
 				return
 			}
 			a.settings.Passkey = pk
-			a.watchPasskeyAccount(pk.NEARAccount, "Passkey")
+			a.watchPasskeyAccount(pk.NEARAccount, a.t(i18n.PasskeyAddressLabel))
 			a.save()
 			a.passkeyNotice = a.t(i18n.PasskeyRestored)
 			a.touch()

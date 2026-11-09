@@ -218,8 +218,8 @@ func (a *App) createPasskey() {
 			}
 			a.settings.Passkey = pk
 			a.settings.ActiveWallet = wallet.PasskeyContainerID
-			a.watchPasskeyAccount(account, "Passkey")
-			a.watchPasskeyAccount(pk.SolanaAddress, "Passkey")
+			a.watchPasskeyAccount(account, a.t(i18n.PasskeyAddressLabel))
+			a.watchPasskeyAccount(pk.SolanaAddress, a.t(i18n.PasskeyAddressLabel))
 			a.save()
 			a.passkeyNotice = created
 			a.passkeyPrepared = true
@@ -278,9 +278,9 @@ func (a *App) watchPasskeyChains() {
 		return
 	}
 	before := len(a.settings.Accounts)
-	a.watchPasskeyAccount(pk.NEARAccount, "Passkey")
-	a.watchPasskeyAccount(pk.EVMAddress, "Passkey")
-	a.watchPasskeyAccount(pk.SolanaAddress, "Passkey")
+	a.watchPasskeyAccount(pk.NEARAccount, a.t(i18n.PasskeyAddressLabel))
+	a.watchPasskeyAccount(pk.EVMAddress, a.t(i18n.PasskeyAddressLabel))
+	a.watchPasskeyAccount(pk.SolanaAddress, a.t(i18n.PasskeyAddressLabel))
 	if len(a.settings.Accounts) != before {
 		a.save()
 	}
@@ -481,7 +481,7 @@ func (a *App) deployPasskey() {
 		}
 		if !a.approvePasskey(op, approvalRequest{
 			pluginName: "Lintel", sourceKind: "wallet", description: description,
-			network: network, near: summary, fromAddr: pk.NEARAccount, fromLabel: "Passkey",
+			network: network, near: summary, fromAddr: pk.NEARAccount, fromLabel: a.t(i18n.PasskeyAddressLabel),
 		}) {
 			if err := op.ctx.Err(); err != nil {
 				a.failPasskeySend(op, err)
@@ -607,7 +607,7 @@ func (a *App) sendPasskeyNear() {
 			network:     network,
 			near:        summary,
 			fromAddr:    pk.NEARAccount,
-			fromLabel:   "Passkey",
+			fromLabel:   a.t(i18n.PasskeyAddressLabel),
 		}) {
 			if err := op.ctx.Err(); err != nil {
 				a.failPasskeySend(op, err)

@@ -431,6 +431,77 @@ const (
 	StoreRegistry     Key = "storeRegistry"
 	StoreSettingsHelp Key = "storeSettingsHelp"
 	StoreInvalidURL   Key = "storeInvalidURL"
+
+	CreateApp                 Key = "createApp"
+	PluginRefreshedAt         Key = "pluginRefreshedAt"
+	PluginStale               Key = "pluginStale"
+	PluginErrorTitle          Key = "pluginErrorTitle"
+	PluginLoadingTitle        Key = "pluginLoadingTitle"
+	CodingSection             Key = "codingSection"
+	CodingIntro               Key = "codingIntro"
+	CodingIntroBody           Key = "codingIntroBody"
+	CodingExecutable          Key = "codingExecutable"
+	CodingArgs                Key = "codingArgs"
+	CodingSave                Key = "codingSave"
+	CodingTest                Key = "codingTest"
+	CodingConnected           Key = "codingConnected"
+	CreateAppTitle            Key = "createAppTitle"
+	EditAppTitle              Key = "editAppTitle"
+	CreateAppBody             Key = "createAppBody"
+	CreateAppSecret           Key = "createAppSecret"
+	CreateAppSlug             Key = "createAppSlug"
+	CreateAppPrompt           Key = "createAppPrompt"
+	CreateAppStart            Key = "createAppStart"
+	CreateAppCancel           Key = "createAppCancel"
+	CreateAppSettings         Key = "createAppSettings"
+	CreateAppBack             Key = "createAppBack"
+	CreateAppWorking          Key = "createAppWorking"
+	CodingPermissionTitle     Key = "codingPermissionTitle"
+	CodingPermissionBody      Key = "codingPermissionBody"
+	CodingPermissionNotWallet Key = "codingPermissionNotWallet"
+	CodingDeny                Key = "codingDeny"
+	PendingApps               Key = "pendingApps"
+	PendingInstall            Key = "pendingInstall"
+	PendingUpdate             Key = "pendingUpdate"
+	PendingLine               Key = "pendingLine"
+	PendingMeta               Key = "pendingMeta"
+	PendingUnsigned           Key = "pendingUnsigned"
+	PendingExpires            Key = "pendingExpires"
+	PendingReview             Key = "pendingReview"
+	PendingCancel             Key = "pendingCancel"
+	BrokenManifest            Key = "brokenManifest"
+	WalletDefaultName         Key = "walletDefaultName"
+	PasskeyAddressLabel       Key = "passkeyAddressLabel"
+	PasskeyDetails            Key = "passkeyDetails"
+	PortfolioIncomplete       Key = "portfolioIncomplete"
+	FiatUnavailable           Key = "fiatUnavailable"
+	CodingNeedExecutable      Key = "codingNeedExecutable"
+	CodingArgsJSON            Key = "codingArgsJSON"
+	CodingArgsInvalid         Key = "codingArgsInvalid"
+	CodingChecking            Key = "codingChecking"
+	CodingConnectFailed       Key = "codingConnectFailed"
+	CodingPersonalOnly        Key = "codingPersonalOnly"
+	CodingCannotVerify        Key = "codingCannotVerify"
+	CodingPromptEmpty         Key = "codingPromptEmpty"
+	CodingSlugRequired        Key = "codingSlugRequired"
+	CodingSlugInvalid         Key = "codingSlugInvalid"
+	CodingCanceled            Key = "codingCanceled"
+	CodingIncomplete          Key = "codingIncomplete"
+	CodingValidated           Key = "codingValidated"
+	CodingCanceling           Key = "codingCanceling"
+	CodingWindowTitle         Key = "codingWindowTitle"
+	EditApp                   Key = "editApp"
+	SecretConfigured          Key = "secretConfigured"
+	SecretClear               Key = "secretClear"
+	PluginBusy                Key = "pluginBusy"
+	PluginUnavailable         Key = "pluginUnavailable"
+	PluginPageMissing         Key = "pluginPageMissing"
+	PluginVerifyFailed        Key = "pluginVerifyFailed"
+	PluginLoadFailed          Key = "pluginLoadFailed"
+	PluginRefreshKept         Key = "pluginRefreshKept"
+	PluginManagerFailed       Key = "pluginManagerFailed"
+	PendingExpired            Key = "pendingExpired"
+	SecretCleared             Key = "secretCleared"
 )
 
 var messages = map[Key]map[string]string{
@@ -846,6 +917,77 @@ var messages = map[Key]map[string]string{
 	StoreRegistry:     {English: "Plugin registry", Chinese: "插件源"},
 	StoreSettingsHelp: {English: "A registry is a JSON file that lists signed plugins. Leave empty for no store.", Chinese: "插件源是一个列出已签名插件的 JSON 文件。留空则不启用商店。"},
 	StoreInvalidURL:   {English: "Enter an https registry URL.", Chinese: "请输入 https 插件源地址。"},
+
+	CreateApp:                 {English: "Create app", Chinese: "创建应用"},
+	PluginRefreshedAt:         {English: "Last successful refresh %s", Chinese: "上次成功刷新 %s"},
+	PluginStale:               {English: "Showing the last successful result while this refresh finishes.", Chinese: "这次刷新还没完成，显示的是上次成功的结果。"},
+	PluginErrorTitle:          {English: "This page didn't load", Chinese: "这一页没有载入"},
+	PluginLoadingTitle:        {English: "Loading this page", Chinese: "正在载入"},
+	CodingSection:             {English: "Coding agent", Chinese: "编码 Agent"},
+	CodingIntro:               {English: "Use a local coding agent to create and edit personal apps.", Chinese: "用本机编码 Agent 创建、修改个人应用。"},
+	CodingIntroBody:           {English: "Install an ACP adapter and sign in to it first. Testing the connection only shakes hands; it does not send a generation request.", Chinese: "先安装 ACP 适配器并完成它自己的登录。测试连接只做协议握手，不发送生成请求。"},
+	CodingExecutable:          {English: "ACP executable", Chinese: "ACP 可执行文件"},
+	CodingArgs:                {English: "Arguments (JSON array)", Chinese: "参数（JSON 数组）"},
+	CodingSave:                {English: "Save agent", Chinese: "保存 Agent"},
+	CodingTest:                {English: "Test connection", Chinese: "测试连接"},
+	CodingConnected:           {English: "Connected %s %s", Chinese: "已连接 %s %s"},
+	CreateAppTitle:            {English: "Create a personal app", Chinese: "创建个人应用"},
+	EditAppTitle:              {English: "Edit %s", Chinese: "修改个人应用 · %s"},
+	CreateAppBody:             {English: "Describe the features and the data it should use. When it is ready, review the permissions, then decide whether to install.", Chinese: "描述你要使用的功能和数据来源。生成完成后，先审阅权限，再决定安装。"},
+	CreateAppSecret:           {English: "Do not put private keys or API keys in the request. App credentials are filled in after install.", Chinese: "不要在需求中填写私钥或 API key。应用凭据在安装后的设置中填写。"},
+	CreateAppSlug:             {English: "Short name, for example my-pools", Chinese: "应用短名，例如 my-pools"},
+	CreateAppPrompt:           {English: "What it should do", Chinese: "需求"},
+	CreateAppStart:            {English: "Generate", Chinese: "开始生成"},
+	CreateAppCancel:           {English: "Cancel generation", Chinese: "取消生成"},
+	CreateAppSettings:         {English: "Agent settings", Chinese: "Agent 设置"},
+	CreateAppBack:             {English: "Back to apps", Chinese: "返回应用"},
+	CreateAppWorking:          {English: "Generating…", Chinese: "正在生成…"},
+	CodingPermissionTitle:     {English: "Coding tool permission", Chinese: "编码工具许可"},
+	CodingPermissionBody:      {English: "The local agent wants to run a tool. The working directory is not a system sandbox. Check the paths it will touch and the commands it will run.", Chinese: "本机 Agent 请求执行工具操作。工作目录不是系统沙箱，请检查它将访问的路径和执行的命令。"},
+	CodingPermissionNotWallet: {English: "This permission does not approve an app install or a wallet transaction.", Chinese: "此许可不批准应用安装或钱包交易。"},
+	CodingDeny:                {English: "Deny", Chinese: "拒绝"},
+	PendingApps:               {English: "Waiting for your review", Chinese: "待确认的应用"},
+	PendingInstall:            {English: "Install", Chinese: "安装"},
+	PendingUpdate:             {English: "Update", Chinese: "更新"},
+	PendingLine:               {English: "%s · %s v%s", Chinese: "%s · %s v%s"},
+	PendingMeta:               {English: "%s · %s · %s", Chinese: "%s · %s · %s"},
+	PendingUnsigned:           {English: "Unsigned · %s", Chinese: "未签名 · %s"},
+	PendingExpires:            {English: "Nothing runs until you confirm. Expires %s", Chinese: "确认前不会运行。到期时间 %s"},
+	PendingReview:             {English: "Review permissions", Chinese: "审阅权限"},
+	PendingCancel:             {English: "Cancel request", Chinese: "取消请求"},
+	BrokenManifest:            {English: "The app manifest could not be read.", Chinese: "应用清单无法读取或无效。"},
+	WalletDefaultName:         {English: "Wallet %d", Chinese: "钱包 %d"},
+	PasskeyAddressLabel:       {English: "Passkey", Chinese: "通行密钥"},
+	PasskeyDetails:            {English: "How recovery works", Chinese: "恢复说明"},
+	PortfolioIncomplete:       {English: "Incomplete — some addresses did not refresh.", Chinese: "不完整 — 部分地址没有刷新成功。"},
+	FiatUnavailable:           {English: "Prices unavailable", Chinese: "暂时无法获取价格"},
+	CodingNeedExecutable:      {English: "Enter the path of an installed ACP executable.", Chinese: "请填写已安装的 ACP 可执行文件"},
+	CodingArgsJSON:            {English: "Arguments must be a JSON array of strings, for example [\"--flag\"].", Chinese: "参数必须是 JSON 字符串数组，例如 [\"--flag\"]"},
+	CodingArgsInvalid:         {English: "An argument is too long or contains an invalid character.", Chinese: "参数过长或包含无效字符"},
+	CodingChecking:            {English: "Checking the ACP handshake and session…", Chinese: "正在检查 ACP 握手与会话能力…"},
+	CodingConnectFailed:       {English: "Connection failed: %s", Chinese: "连接失败：%s"},
+	CodingPersonalOnly:        {English: "Only an unsigned personal app in the local.* namespace can be edited.", Chinese: "只能修改 local.* 命名空间的 Unsigned 个人应用"},
+	CodingCannotVerify:        {English: "The current app could not be checked.", Chinese: "无法校验当前应用"},
+	CodingPromptEmpty:         {English: "Describe the app, in at most 32 KiB.", Chinese: "需求不能为空，且不能超过 32 KiB"},
+	CodingSlugRequired:        {English: "Enter a short name.", Chinese: "请填写应用短名"},
+	CodingSlugInvalid:         {English: "Use lowercase letters, digits and hyphens, at most 64 characters.", Chinese: "短名只能使用小写字母、数字和连字符，最多 64 字符"},
+	CodingCanceled:            {English: "Generation canceled.", Chinese: "已取消生成"},
+	CodingIncomplete:          {English: "Generation did not finish: %s", Chinese: "生成未完成：%s"},
+	CodingValidated:           {English: "%s v%s passed validation. Review its permissions before it is installed.", Chinese: "%s v%s 已通过校验，请在待确认区域审阅权限"},
+	CodingCanceling:           {English: "Canceling…", Chinese: "正在取消…"},
+	CodingWindowTitle:         {English: "Coding tool permission", Chinese: "编码工具许可"},
+	EditApp:                   {English: "Edit app", Chinese: "修改应用"},
+	SecretConfigured:          {English: "Configured · leave blank to keep", Chinese: "已配置 · 留空保留"},
+	SecretClear:               {English: "Clear", Chinese: "清除"},
+	PluginBusy:                {English: "This app is busy. Try again shortly.", Chinese: "应用正忙，请稍后刷新"},
+	PluginUnavailable:         {English: "This app is unavailable.", Chinese: "应用不可用"},
+	PluginPageMissing:         {English: "That page is not declared by the app.", Chinese: "页面未在应用中声明"},
+	PluginVerifyFailed:        {English: "The app contents could not be checked.", Chinese: "无法校验应用内容"},
+	PluginLoadFailed:          {English: "The app module failed to load.", Chinese: "应用模块加载失败"},
+	PluginRefreshKept:         {English: "Refresh failed. The last successful page is still shown.", Chinese: "刷新失败，保留上次成功内容"},
+	PluginManagerFailed:       {English: "App management failed to start: %s", Chinese: "应用管理初始化失败：%s"},
+	PendingExpired:            {English: "That request has finished or expired. Submit it again.", Chinese: "此请求已结束或过期，请重新提交"},
+	SecretCleared:             {English: "Cleared the secret setting.", Chinese: "已清除秘密设置"},
 }
 
 // T says key in lang, in English if lang has no translation, with args

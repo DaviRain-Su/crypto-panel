@@ -236,6 +236,9 @@ func (a *App) intentsApprover() func(intentsApprovalRequest) bool {
 func (a *App) intentsBody(c *ui.Context) {
 	p := a.pal
 	ui.Column(c).Gap(18).Children(func() {
+		// Above the form, so a menu that opens downward does not slice it.
+		// MyGo's popup always opens down; this is the shell-side mitigation.
+		a.intentsAssetsState(c)
 		ui.Column(c).Gap(12).Padding(16).Radius(14).Background(p.card).
 			Border(1, p.hairline).Shadow(0, 1, 2, 0, p.shadow).Children(func() {
 			ui.Row(c).Gap(12).Children(func() {
@@ -269,13 +272,15 @@ func (a *App) intentsBody(c *ui.Context) {
 					a.intentsBusy || !a.intentsTokensLoaded, a.requestIntentsQuote)
 			})
 			if a.intentsBusy {
-				ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
+				ui.Row(c).Gap(8).AlignItems(ui.Center).Padding(10, 12).Radius(9).
+					Background(p.inset).Children(func() {
 					ui.Spinner(c).Size(14, 14)
-					ui.Text(c, a.t(i18n.IntentsQuoting)).FontSize(11.5).TextColor(p.muted)
+					ui.Text(c, a.t(i18n.IntentsQuoting)).FontSize(12).TextColor(p.muted)
 				})
 			}
 			if a.intentsErr != "" {
-				ui.Text(c, a.intentsErr).FontSize(11.5).TextColor(p.danger).MaxLines(3)
+				ui.Text(c, a.intentsErr).FontSize(12).TextColor(p.danger).
+					Padding(10, 12).Radius(9).Background(p.dangerSoft).MaxLines(3)
 			}
 			if a.intentsNotice != "" {
 				ui.Text(c, a.intentsNotice).FontSize(11.5).TextColor(p.muted).MaxLines(2)
@@ -284,7 +289,6 @@ func (a *App) intentsBody(c *ui.Context) {
 		if a.intentsQuote != nil {
 			a.intentsQuoteCard(c)
 		}
-		a.intentsAssetsState(c)
 	})
 }
 
@@ -397,7 +401,7 @@ func (a *App) intentsQuoteCard(c *ui.Context) {
 		a.intentsRow(c, p, a.t(i18n.IntentsRefundRow), q.Request.RefundTo)
 		a.intentsRow(c, p, a.t(i18n.IntentsRecipientRow), q.Request.Recipient)
 		ui.Row(c).Gap(10).AlignItems(ui.Center).Children(func() {
-			a.softButton(c, a.t(i18n.IntentsReview), nil, p.accent, a.reviewIntentsQuote)
+			a.primaryButton(c, a.t(i18n.IntentsReview), nil, false, a.reviewIntentsQuote)
 			ui.Text(c, a.t(i18n.IntentsQuotedBy, q.CorrelationID)).FontSize(10.5).
 				TextColor(p.faint).Grow(1).MaxLines(1)
 		})
@@ -405,9 +409,10 @@ func (a *App) intentsQuoteCard(c *ui.Context) {
 }
 
 func (a *App) intentsRow(c *ui.Context, p palette, label, value string) {
+	shown, tip := shortIfAddress(value)
 	ui.Row(c).Gap(10).AlignItems(ui.Start).Children(func() {
-		ui.Text(c, label).FontSize(11).FontWeight(600).TextColor(p.muted).Width(128)
-		ui.Text(c, value).Font("monospace").FontSize(11.5).Grow(1).MaxLines(2)
+		ui.Text(c, label).FontSize(12).FontWeight(600).TextColor(p.muted).Width(156)
+		ui.Text(c, shown).Font("monospace").FontSize(12).Grow(1).MaxLines(3).Tooltip(tip)
 	})
 }
 

@@ -58,7 +58,7 @@ func (a *App) initPlugins(dir string) {
 	}
 	manager, err := plugin.NewManager(a.plugins)
 	if err != nil {
-		a.pluginNotice = "应用管理初始化失败：" + err.Error()
+		a.pluginNotice = a.t(i18n.PluginManagerFailed, err.Error())
 	} else {
 		a.pluginManager = manager
 	}
@@ -473,7 +473,7 @@ func (a *App) loadPluginPage() {
 		release, err = a.pluginManager.TryExecution(key.id)
 		if err != nil {
 			if a.pluginView.key != key {
-				a.pluginView = pluginPageState{key: key, err: "应用正忙，请稍后刷新"}
+				a.pluginView = pluginPageState{key: key, err: a.t(i18n.PluginBusy)}
 			}
 			return
 		}
@@ -483,7 +483,7 @@ func (a *App) loadPluginPage() {
 	inst, err := a.plugins.Get(key.id)
 	if err != nil {
 		release()
-		a.pluginView = pluginPageState{key: key, err: "应用不可用"}
+		a.pluginView = pluginPageState{key: key, err: a.t(i18n.PluginUnavailable)}
 		return
 	}
 	state := pluginPageState{key: key, name: inst.Manifest.Name, unsigned: inst.Err == "" && !inst.Signed && !inst.Official, official: inst.Err == "" && inst.Official}
@@ -509,14 +509,14 @@ func (a *App) loadPluginPage() {
 	}
 	if !declared {
 		release()
-		state.err = "页面未在应用中声明"
+		state.err = a.t(i18n.PluginPageMissing)
 		a.pluginView = state
 		return
 	}
 	state.hash, err = a.plugins.PackageHash(key.id)
 	if err != nil {
 		release()
-		state.err = "无法校验应用内容"
+		state.err = a.t(i18n.PluginVerifyFailed)
 		a.pluginView = state
 		return
 	}
@@ -526,7 +526,7 @@ func (a *App) loadPluginPage() {
 	runner, err := a.pluginRunner(inst, state.hash)
 	if err != nil {
 		release()
-		state.err = "应用模块加载失败"
+		state.err = a.t(i18n.PluginLoadFailed)
 		a.pluginView = state
 		return
 	}
@@ -543,7 +543,7 @@ func (a *App) loadPluginPage() {
 			}
 			state.loading = false
 			if err != nil {
-				state.err = "刷新失败，保留上次成功内容"
+				state.err = a.t(i18n.PluginRefreshKept)
 			} else {
 				state.page = page
 				state.updated = time.Now()

@@ -171,37 +171,126 @@ func renderChart(c *ui.Context, spec *Chart) {
 	ui.Column(c).Padding(14).Radius(10).Background(t.Surface).Border(1, t.Border).Children(func() {
 		chart.Plot(c, axes, func(area ui.Element) {
 			if spec.Kind == "line" {
+				xs, ys := lineFractions(x, y, values)
 				area.Draw(func(p *ui.Painter, r ui.Rect) {
-					for i := 1; i < len(values); i++ {
-						p.Line(
-							chart.X(r, x.At(i-1)), chart.Y(r, y.At(values[i-1])),
-							chart.X(r, x.At(i)), chart.Y(r, y.At(values[i])),
-							2, t.Accent,
-						)
-					}
+					// StrokePath follows every sample. Painter.Line only
+					// paints the horizontal or vertical edge of a box, so
+					// a diagonal becomes a right angle.
+					p.FillPath(areaPath(r, xs, ys), t.Accent.Alpha(0.16))
+					p.StrokePath(linePath(r, xs, ys), 2, t.Accent)
 				})
 				return
 			}
 			for i, v := range values {
 				chart.Rect(c, x.Band(i), y.Span(0, v)).Background(t.Accent).Radius(2)
 			}
-		}).Height(150).Gap(6)
+		}).Height(220).Gap(6)
 	})
 }
 
-// xTicks labels at most five points, so a 60-point chart stays readable.
+// lineFractions maps each sample onto the plot, in the series' order.
+// x grows from the first sample to the last and never steps backward.
+func lineFractions(x chart.Band, y chart.Linear, values []float64) (xs, ys []float32) {
+	xs = make([]float32, len(values))
+	ys = make([]float32, len(values))
+	for i, v := range values {
+		xs[i] = x.At(i)
+		ys[i] = y.At(v)
+	}
+	return xs, ys
+}
+
+// lineVertices is the line through every sample, in order.
+func lineVertices(r ui.Rect, xs, ys []float32) [][2]float32 {
+	n := min(len(xs), len(ys))
+	out := make([][2]float32, n)
+	for i := 0; i < n; i++ {
+		out[i] = [2]float32{chart.X(r, xs[i]), chart.Y(r, ys[i])}
+	}
+	return out
+}
+
+// areaVertices is one polygon under that line: the samples from first to
+// last, then the baseline back from the last sample to the first. No
+// sample in between returns to the baseline.
+func areaVertices(r ui.Rect, xs, ys []float32) [][2]float32 {
+	line := lineVertices(r, xs, ys)
+	if len(line) == 0 {
+		return nil
+	}
+	base := chart.Y(r, 0)
+	out := make([][2]float32, 0, len(line)+2)
+	out = append(out, line...)
+	out = append(out, [2]float32{line[len(line)-1][0], base})
+	out = append(out, [2]float32{line[0][0], base})
+	return out
+}
+
+func linePath(r ui.Rect, xs, ys []float32) *ui.Path {
+	pts := lineVertices(r, xs, ys)
+	path := &ui.Path{}
+	if len(pts) == 0 {
+		return path
+	}
+	path.MoveTo(pts[0][0], pts[0][1])
+	for _, pt := range pts[1:] {
+		path.LineTo(pt[0], pt[1])
+	}
+	return path
+}
+
+func areaPath(r ui.Rect, xs, ys []float32) *ui.Path {
+	pts := areaVertices(r, xs, ys)
+	path := &ui.Path{}
+	if len(pts) == 0 {
+		return path
+	}
+	path.MoveTo(pts[0][0], pts[0][1])
+	for _, pt := range pts[1:] {
+		path.LineTo(pt[0], pt[1])
+	}
+	path.Close()
+	return path
+}
+
+// xTicks labels a chart's horizontal axis. A long series keeps the first,
+// middle and last labels so two neighbours cannot collide. A shorter one
+// keeps at most five, and replaces the previous tick with the last point
+// when they would sit on adjacent samples.
 func xTicks(x chart.Band) []chart.Tick {
 	n := len(x.Labels)
+	if n == 0 {
+		return nil
+	}
 	if n <= 5 {
 		return x.Ticks()
 	}
+	if n > 12 {
+		at := []int{0, n / 2, n - 1}
+		out := make([]chart.Tick, len(at))
+		for i, idx := range at {
+			out[i] = chart.Tick{At: x.At(idx), Label: x.Labels[idx]}
+		}
+		return out
+	}
 	step := (n - 1) / 4
+	if step < 1 {
+		step = 1
+	}
 	out := make([]chart.Tick, 0, 5)
+	prev := 0
 	for i := 0; i < n; i += step {
 		out = append(out, chart.Tick{At: x.At(i), Label: x.Labels[i]})
+		prev = i
 	}
-	if last := n - 1; (n-1)%step != 0 {
-		out = append(out, chart.Tick{At: x.At(last), Label: x.Labels[last]})
+	last := n - 1
+	if prev == last {
+		return out
 	}
-	return out
+	tick := chart.Tick{At: x.At(last), Label: x.Labels[last]}
+	if last-prev < step {
+		out[len(out)-1] = tick
+		return out
+	}
+	return append(out, tick)
 }
