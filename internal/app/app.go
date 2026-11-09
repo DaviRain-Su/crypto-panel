@@ -24,6 +24,7 @@ import (
 	"github.com/davirain-su/crypto-panel/internal/intents"
 	"github.com/davirain-su/crypto-panel/internal/passkey"
 	"github.com/davirain-su/crypto-panel/internal/plugin"
+	"github.com/davirain-su/crypto-panel/internal/prices"
 	"github.com/davirain-su/crypto-panel/internal/wallet"
 )
 
@@ -35,6 +36,8 @@ const (
 	minWindowWidth  = 820
 	minWindowHeight = 560
 	sidebarWidth    = 232
+	// sidebarRailWidth is the collapsed sidebar: the icon rail.
+	sidebarRailWidth = 64
 )
 
 // route is what the sidebar has selected: one of the shell's pages, or a
@@ -110,6 +113,23 @@ type App struct {
 	authenticate func(string) error
 	authBusy     string
 
+	// The passkey wallet: the browser ceremony that creates and uses the
+	// credential, the form for sending from its NEAR account, and the state
+	// the card shows. The credential's private key never enters the app.
+	passkeyBusy       bool
+	passkeyErr        string
+	passkeyNotice     string
+	passkeyDeployHash string
+	passkeySendTo     string
+	passkeySendAmount string
+	passkeySendErr    string
+	passkeySendNotice string
+	passkeySendHash   string
+	passkeySendBusy   bool
+	passkeyEVMBusy    bool
+	newCeremony       func(func(string) error) (passkeyCeremony, error)
+	openExternal      func(string) error
+
 	systemLocale string
 	reader       chain.Reader
 
@@ -152,6 +172,9 @@ type App struct {
 
 	// startRefresh starts the network work. Tests replace it.
 	startRefresh func(gen int, reader chain.Reader, addrs []string)
+	// priceSource reads approximate USD prices. Nil turns fiat values off,
+	// as the tests do.
+	priceSource priceSource
 	// runOnMain runs work on the UI thread, and goAsync off it. Tests
 	// replace both with direct calls.
 	runOnMain func(func())
@@ -236,6 +259,7 @@ func New() (*App, error) {
 	a.keyring = wallet.NewKeyring(mygo.Secrets.Service("crypto-panel-wallet"), settings.Wallet)
 	a.nearKeyring = wallet.NewNearKeyring(mygo.Secrets.Service("crypto-panel-wallet"), settings.NearWallet)
 	a.intentsClient = intents.New()
+	a.priceSource = prices.New()
 	a.startRefresh = a.fetch
 	a.runOnMain = mygo.RunOnMain
 	a.goAsync = func(fn func()) { go fn() }
@@ -245,6 +269,10 @@ func New() (*App, error) {
 	a.approveIntents = a.askIntentsApproval
 	a.passkeyKind = passkey.Check()
 	a.authenticate = passkey.Authenticate
+	a.newCeremony = func(open func(string) error) (passkeyCeremony, error) {
+		return newCeremonyServer(open)
+	}
+	a.openExternal = mygo.Shell.OpenExternal
 	return a, nil
 }
 
@@ -287,6 +315,7 @@ func (a *App) Ready() {
 	mygo.Power.OnLockScreen(func() { mygo.RunOnMain(a.lockAll) })
 	go a.refreshLoop()
 	a.requestRefresh()
+	a.refreshPasskeyEVMAddress()
 }
 
 // createWindow opens the app's one window: a sidebar of pages beside the
@@ -348,6 +377,10 @@ func (a *App) Settings() Settings {
 	s.Accounts = append([]wallet.Address(nil), a.settings.Accounts...)
 	s.Wallet = append([]wallet.Account(nil), a.settings.Wallet...)
 	s.NearWallet = append([]wallet.NearAccount(nil), a.settings.NearWallet...)
+	if s.Passkey != nil {
+		p := *s.Passkey
+		s.Passkey = &p
+	}
 	return s
 }
 
@@ -454,6 +487,7 @@ func (a *App) setNetwork(id string) {
 	a.rpcDraft = ""
 	a.settings = a.settings.Validate()
 	a.newReader()
+	a.refreshPasskeyEVMAddress()
 	a.save()
 	a.touch()
 	a.requestRefresh()

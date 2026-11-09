@@ -65,16 +65,22 @@ func (a *App) walletUnlocked() int {
 	return n
 }
 
-// walletSummary heads the wallet page.
+// walletSummary heads the wallet page. The passkey counts as an account
+// that is always ready: its key is in the authenticator, not in memory.
 func (a *App) walletSummary() string {
 	n := len(a.settings.Wallet) + len(a.settings.NearWallet)
+	unlocked := a.walletUnlocked()
+	if a.settings.Passkey != nil {
+		n++
+		unlocked++
+	}
 	switch n {
 	case 0:
 		return a.t(i18n.WalletEmptySummary)
 	case 1:
-		return a.t(i18n.WalletSummaryOne, a.walletUnlocked())
+		return a.t(i18n.WalletSummaryOne, unlocked)
 	default:
-		return a.t(i18n.WalletSummary, n, a.walletUnlocked())
+		return a.t(i18n.WalletSummary, n, unlocked)
 	}
 }
 

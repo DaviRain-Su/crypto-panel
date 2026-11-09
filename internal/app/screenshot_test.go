@@ -151,6 +151,15 @@ func TestScreenshots(t *testing.T) {
 	a.agentToken = "Zk3n0Qe8Vt7bY2mR5cLx9WpA4sD6fGhJ1uKiO0aXeQw"
 	save(t, ui.NewTester(a.view, windowWidth, windowHeight), "new-settings-agent")
 
+	a = newTestApp(t)
+	a.passkeyKind = passkey.KindTouchID
+	a.authenticate = func(string) error { return nil }
+	a.settings.Passkey = softPasskey(t, newSoftAuthenticator(t))
+	a.route = routeSettings
+	tt = ui.NewTester(a.view, windowWidth, windowHeight)
+	tt.Scroll(windowWidth/2, windowHeight/2, 0, 900)
+	save(t, tt, "new-settings-passkey")
+
 	a = intentsTestApp(t)
 	a.route = routeIntents
 	save(t, ui.NewTester(a.view, windowWidth, windowHeight), "new-intents-light")
@@ -204,6 +213,24 @@ func TestScreenshots(t *testing.T) {
 	}
 	tt.Key(0, ui.KeyDown)
 	save(t, tt, "new-intents-picker")
+
+	// The passkey wallet: one credential with a NEAR account and an EVM smart
+	// account.
+	a = newTestApp(t)
+	auth := newSoftAuthenticator(t)
+	a.settings.Passkey = softPasskey(t, auth)
+	a.settings.Passkey.EVMAddress = "0x1111111111111111111111111111111111111111"
+	a.settings.NetworkID = chains.NearMainnet.ID
+	a.settings = a.settings.Validate()
+	a.route = routeWallet
+	a.lastUpdated = time.Now()
+	a.snap = &snapshot{at: a.lastUpdated, accounts: []accountSnapshot{
+		{addr: a.settings.Passkey.NEARAccount, native: new(big.Int).Mul(big.NewInt(125), new(big.Int).Exp(big.NewInt(10), big.NewInt(23), nil))},
+	}}
+	save(t, ui.NewTester(a.view, windowWidth, windowHeight), "new-wallet-passkey")
+	tt = ui.NewTester(a.view, windowWidth, windowHeight)
+	tt.SetDark(true)
+	save(t, tt, "new-wallet-passkey-dark")
 
 	a = newTestApp(t)
 	a.passkeyKind = passkey.KindTouchID

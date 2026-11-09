@@ -14,8 +14,10 @@ Design: [`docs/design.md`](docs/design.md). License: [MIT](LICENSE).
 JavaScript，页面是数据，钥匙留在系统钥匙串，每一次签名都由壳自己解码并弹窗确认。
 这次黑客松把 NEAR 接成第一条能真正签名、能连接网页应用的链：测试网 NEAR 钱包、
 原生 NEAR 批准窗、受限的 function-call access key、隔离 WebView 里的
-`window.nearWallet` 桥，以及只跑 `dry: true` 的 NEAR Intents 报价。Passkey
-尚未接线，README 末尾如实说明。
+`window.nearWallet` 桥、只跑 `dry: true` 的 NEAR Intents 报价，以及一个真正的
+WebAuthn Passkey 钱包：同一把 Passkey 控制一个 NEAR 主网 `0s…` 账户和一个在所有
+EVM 链上地址相同的 ERC-4337 智能账户。Passkey 的私钥留在认证器里，NEAR 交易由
+钱包自己的中继账户代付 gas。
 
 ## The hackathon slice
 
@@ -33,7 +35,9 @@ JavaScript，页面是数据，钥匙留在系统钥匙串，每一次签名都�
 What the slice deliberately does **not** do: no mnemonic/HD wallet, no Solana
 signing, no Phoenix/Hyperliquid, no Chain Signatures, no mainnet Intents
 without the user's explicit consent, no loosening of the plugin sandbox, and
-no auto-approval. The Touch ID prompt is a system check, **not** a Passkey.
+no auto-approval. The Touch ID prompt is a system check, **not** the Passkey
+wallet: that is a separate WebAuthn credential, and its EVM smart account is
+shown and watched but not yet used to send (that needs a bundler).
 
 ## What it is
 
@@ -58,6 +62,12 @@ no auto-approval. The Touch ID prompt is a system check, **not** a Passkey.
 - **The wallet is native.** EVM and NEAR accounts are created or imported on
   the Wallet page; their keys live in the OS keychain and never reach a plugin
   or a web page. Signing is only ever the shell's own decoded approval.
+- **A passkey wallet.** One WebAuthn passkey, created in the system browser,
+  controls a NEAR mainnet deterministic account (`0s…`, NEP-616) and an
+  ERC-4337 smart account at the same address on every EVM chain. The NEAR
+  account's transactions are relayed by the wallet's own unlocked NEAR
+  account; the passkey signs in the browser and its private key never enters
+  the app.
 - **A read-only local API** (opt-in): a loopback HTTP server with a bearer
   token, so a local agent can read the portfolio and the installed apps. It
   cannot sign, approve or install.
@@ -219,23 +229,34 @@ a deposit, a solver execution) is deliberately **not** implemented in this
 build; it would need the user's explicit consent, a separate funded
 development account, and a much smaller amount. NEAR Intents has no testnet.
 
-### Passkey: status, not a claim
+### Passkey wallet
 
 The Touch ID / Face ID prompt in the wallet is a **system presence check**
-(LocalAuthentication), not a WebAuthn Passkey. The signing key is still an
-ed25519 or secp256k1 key in the OS keychain. Calling that key a Passkey would
-be wrong, and this README does not.
+(LocalAuthentication), not a WebAuthn Passkey. The passkey wallet is a
+separate credential, created on the Wallet page:
 
-The repository contains the pieces for a real passkey account:
-`internal/webauthn` parses and verifies the WebAuthn ceremonies,
-`internal/smartaccount` builds the ERC-4337 account and the `WebAuthnAuth`
-signature, and [`web/passkey`](web/passkey/README.md) is the browser ceremony
-page. They are **not wired into the app**: that needs a stable relying-party
-domain, a bundler, and the account UI. Until then, the app does not claim
-Passkey support.
+- **Create**: the app serves a small page on `http://localhost:<random port>`,
+  opens it in the system browser, and the platform authenticator runs
+  `navigator.credentials.create`. The app checks the attestation's challenge,
+  origin and relying party (`localhost`) and stores only the credential id and
+  the P-256 public key.
+- **NEAR account**: the passkey's P-256 key owns a NEP-616 deterministic
+  account (`0s` + the StateInit hash) running the NEP-591
+  `p256-passkey-wallet-contract.trezu.near` global contract. The contract is
+  **mainnet only**; the card says so on every other network.
+- **Create the account / send NEAR**: the app shows its own decode first
+  (recipient, amount, the passkey's public key, the relayer). After approval,
+  the passkey signs the wallet contract's message in the browser, and the
+  wallet's own unlocked NEAR account relays
+  `[DeterministicStateInit, w_execute_signed]` and pays the fee. The relayer
+  cannot change the transfer: the passkey's signature covers the inner
+  message. A rejection broadcasts nothing.
+- **EVM account**: the same P-256 key owns a Coinbase Smart Wallet (ERC-4337
+  v0.7) at the same address on every EVM chain. The app reads the
+  counterfactual address from the factory and watches it. Sending from the EVM
+  account needs a bundler and is **not** wired in this build.
 
-If and when it is wired, the recovery rules are these, and they are not
-optional:
+The recovery rules are these, and they are not optional:
 
 - **A synced passkey** (iCloud Keychain / Apple Passwords, or Google Password
   Manager) follows the same account to another device signed in to the same
@@ -315,7 +336,19 @@ network access to the NEAR testnet RPC and 1Click.
    issues neither), the refund and recipient, and the intent sentence.
    Accept or reject; either way nothing is signed and no funds move.
 
-10. **Ask a plugin for a NEAR signature (optional).** Install a plugin whose
+10. **Create a passkey wallet (NEAR mainnet).** The wallet contract is
+    mainnet-only, so this step needs a funded NEAR mainnet account as the
+    relayer. Switch to NEAR mainnet, import and unlock that account, then
+    Wallet → **Create passkey**. The system browser opens a local page and the
+    platform authenticator creates the credential. The card shows the
+    deterministic `0s…` NEAR account and the EVM smart account address the
+    same key owns. **Create account** deploys the NEAR account through the
+    relayer; **Sign and send** approves a transfer, then asks the passkey to
+    sign it in the browser. The approval window shows the inner transfer, not
+    the relayer's envelope; the passkey's signature covers exactly that
+    transfer.
+
+11. **Ask a plugin for a NEAR signature (optional).** Install a plugin whose
     manifest grants `sign` and a NEAR chain; its `host.requestNearSign` opens
     the same approval window. The test fixtures in
     `internal/plugin/testdata/examples` show the host API. No NEAR plugin is
@@ -374,15 +407,15 @@ Other useful tests: `TestDappOrigin` (https / loopback only),
   quotes. No deposit address is issued and no funds move. A wet quote and a
   solver execution are deliberately not implemented; they would need the
   user's explicit consent, an independent funded account, and a tiny amount.
-- **Passkey is not wired.** The Touch ID prompt is a system check, not a
-  WebAuthn credential. The ceremony page and the account/smart-account code
-  exist, but need a relying-party domain, a bundler and the account UI.
-  Recovery depends on whether the passkey is synced and on having a second
-  key; a device-bound passkey can be lost, and a passkey cannot be exported.
+- **The passkey wallet is NEAR-mainnet-only for signing.** The NEAR wallet
+  contract is deployed on mainnet; testnet has no matching contract. The EVM
+  smart account address is derived and watched, but sending from it needs an
+  ERC-4337 bundler and is not wired. Recovery depends on whether the passkey
+  is synced and on having a second key; a device-bound passkey can be lost,
+  and a passkey cannot be exported.
 - **macOS-first.** The system check is macOS-only; the app builds elsewhere
   but the presence check is unavailable.
-- **No hardware wallet, menu bar panel or fiat prices.** Those are later
-  milestones.
+- **No hardware wallet or menu bar panel.** Those are later milestones.
 
 ## Security model
 
@@ -428,7 +461,8 @@ key is shown once, so save it.
 | **M3** | Native wallet: hot wallet in the OS keychain, decoded approvals, `host.requestSign` — **done** |
 | **Hackathon** | NEAR wallet and approvals, function-call key limits, DApp web view and bridge, plugin NEAR requests, Intents dry quote — **this slice** |
 | **M4 (part)** | Read-only local agent API: loopback HTTP, bearer token in the keychain, `/v0/portfolio`, `/v0/plugins`, `POST /v0/plugins/{id}/refresh` — **done** |
-| **Next** | Passkey account (WebAuthn + ERC-4337), hardware wallet, menu bar panel |
+| **Passkey** | WebAuthn passkey wallet: NEP-616 NEAR account, NEP-591 contract, relayed deploy and send; the same key's ERC-4337 address on EVM — **done** |
+| **Next** | EVM passkey sending through a bundler, hardware wallet, menu bar panel |
 
 ## License
 

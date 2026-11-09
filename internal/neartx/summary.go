@@ -47,6 +47,8 @@ type ActionSummary struct {
 	CodeSize int
 	// DeleteAccount.
 	BeneficiaryID string
+	// DeterministicStateInit.
+	StateInitSize int
 }
 
 // Summarize decodes tx for the approval window.
@@ -82,6 +84,8 @@ func Summarize(tx *Transaction) *Summary {
 			s.CodeSize = len(a.Code)
 		case ActionDeleteAccount:
 			s.BeneficiaryID = a.BeneficiaryID
+		case ActionDeterministicStateInit:
+			s.StateInitSize = len(a.StateInit)
 		}
 		out.Actions = append(out.Actions, s)
 	}

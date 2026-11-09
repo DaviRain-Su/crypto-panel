@@ -96,7 +96,7 @@
 - [x] 私钥不出现在插件、WebView、日志、仓库里（`TestNearWalletCreate` 断言 `settings.json` 不含 `ed25519:`；`.gitignore` 排除 `.env` 和 `*.key`）
 - [x] 隔离 WebView 能连接并完成一次测试网签名，页面不能自批（`TestDappSignNeedsAConnection`、`TestDappSignRejected`、`TestDappBridgeScript`）
 - [x] Intents：`dry: true` 询价在批准窗用结果语言展示（`TestQuoteAsksForADryQuote`、`TestIntentsQuoteShowsResultLanguage`）；没有主网成交
-- [ ] Passkey：未接线。Touch ID 是系统存在性检查，不是 WebAuthn Passkey；README 已如实写明，并说明同步恢复与第二把钥匙
+- [x] Passkey：真正的 WebAuthn Passkey 钱包（`TestCreatePasskeyStoresAndWatchesTheAccounts`、`TestSendPasskeyNearSignsAfterApproval`）。同一把 P-256 钥匙控制 NEAR 主网 `0s…` 账户（NEP-616 + NEP-591）和所有 EVM 链上同地址的 ERC-4337 智能账户；NEAR 部署/转账由钱包自己的中继账户代付 gas，拒绝后不广播。EVM 发送需要 bundler，未接线；Touch ID 仍是系统存在性检查，不是这把 Passkey；README 已写明恢复规则
 - [x] README 可按步骤复现；有 LICENSE；写明基线、限制，以及「无感不等于跳过批准」
 - [x] 有针对拒绝、限额、钥匙不落盘的测试
 - [x] 没有接入 Phoenix / Hyperliquid / Solana 签名，也没有接 Chain Signatures

@@ -58,3 +58,19 @@ func IsImplicit(s string) bool {
 	}
 	return true
 }
+
+// IsDeterministic reports whether s is a NEP-616 deterministic account id:
+// "0s" followed by 40 lowercase hex digits. The id is derived from the
+// account's StateInit, so a passkey wallet and its address are one thing.
+func IsDeterministic(s string) bool {
+	if len(s) != 42 || !strings.HasPrefix(s, "0s") {
+		return false
+	}
+	for _, c := range s[2:] {
+		if c >= '0' && c <= '9' || c >= 'a' && c <= 'f' {
+			continue
+		}
+		return false
+	}
+	return true
+}

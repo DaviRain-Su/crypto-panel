@@ -1,7 +1,9 @@
 package app
 
 import (
+	"fmt"
 	"hash/fnv"
+	"math/big"
 	"slices"
 	"sort"
 	"strings"
@@ -35,28 +37,36 @@ func (a *App) view(c *ui.Context) {
 
 func (a *App) sidebar(c *ui.Context) {
 	p := a.pal
+	collapsed := a.settings.SidebarCollapsed
 	// Clear the window controls where they sit over the sidebar.
 	top := float32(14)
 	if bar := c.TitleBar(); bar.Height > 0 {
 		top = bar.Height + 4
 	}
-	side := ui.Column(c).Width(sidebarWidth).FillHeight()
+	width, padX := float32(sidebarWidth), float32(14)
+	if collapsed {
+		width, padX = sidebarRailWidth, 10
+	}
+	side := ui.Column(c).Width(width).FillHeight()
 	if !c.Vibrancy() {
 		side.Background(p.sidebar)
 	}
-	side.Padding(top, 14, 12, 12).DragWindow().Children(func() {
-		// The app: its mark, its name, and what it may do.
-		ui.Row(c).Gap(11).Padding(8, 8, 16, 6).AlignItems(ui.Center).Children(func() {
-			ui.Box(c).Size(36, 36).Radius(11).
-				Gradient(ui.Hex("#2c342b"), ui.Hex("#151713"), 135).Center().Children(func() {
-				ui.Icon(c, iconPulse).Size(18, 18).TextColor(p.accent)
+	side.Padding(top, padX, padX, 12).DragWindow().Children(func() {
+		// The app: its mark, its name, and what it may do. Collapsed, the
+		// mark itself is the way back.
+		if collapsed {
+			a.sidebarMark(c, true)
+		} else {
+			ui.Row(c).Gap(11).Padding(8, 8, 8, 6).AlignItems(ui.Center).Children(func() {
+				a.sidebarMark(c, false)
+				ui.Column(c).Gap(1).Grow(1).Children(func() {
+					ui.Text(c, a.t(i18n.AppTitle)).FontSize(14).FontWeight(700).
+						LetterSpacing(-0.2).MaxLines(1)
+					ui.Text(c, a.t(i18n.WatchOnly)).FontSize(10.5).TextColor(p.muted).MaxLines(1)
+				})
+				a.sidebarToggle(c)
 			})
-			ui.Column(c).Gap(1).Grow(1).Children(func() {
-				ui.Text(c, a.t(i18n.AppTitle)).FontSize(14).FontWeight(700).
-					LetterSpacing(-0.2).MaxLines(1)
-				ui.Text(c, a.t(i18n.WatchOnly)).FontSize(10.5).TextColor(p.muted).MaxLines(1)
-			})
-		})
+		}
 		ui.Scroll(c.Key("nav")).Grow(1).Margin(0, -6).Padding(0, 6).Children(func() {
 			ui.Column(c).Gap(2).Children(func() {
 				a.navItem(c, a.t(i18n.NavPortfolio), iconChart, a.route == routePortfolio, func() {
@@ -74,16 +84,74 @@ func (a *App) sidebar(c *ui.Context) {
 				})
 			})
 		})
+		if collapsed {
+			a.sidebarToggle(c)
+		}
 		a.sidebarFooter(c)
 	})
 }
 
+// sidebarMark draws the app's mark. When it is the only thing left of the
+// sidebar, clicking it brings the sidebar back.
+func (a *App) sidebarMark(c *ui.Context, button bool) {
+	p := a.pal
+	mark := func() {
+		ui.Box(c).Size(36, 36).Radius(11).
+			Gradient(ui.Hex("#2c342b"), ui.Hex("#151713"), 135).Center().Children(func() {
+			ui.Icon(c, iconPulse).Size(18, 18).TextColor(p.accent)
+		})
+	}
+	if !button {
+		mark()
+		return
+	}
+	b := ui.ButtonBase(c).Size(44, 44).Radius(12).Center().FocusRing(false).
+		Label(a.t(i18n.SidebarExpand)).Tooltip(a.t(i18n.SidebarExpand))
+	b.Children(mark)
+	if b.Clicked() {
+		a.toggleSidebar()
+	}
+}
+
+// sidebarToggle folds the sidebar into its icon rail and back.
+func (a *App) sidebarToggle(c *ui.Context) {
+	p := a.pal
+	label := a.t(i18n.SidebarCollapse)
+	if a.settings.SidebarCollapsed {
+		label = a.t(i18n.SidebarExpand)
+	}
+	b := ui.ButtonBase(c).Size(32, 32).Radius(8).Center().FocusRing(false).
+		Label(label).Tooltip(label).AlignSelf(ui.Center)
+	bg := ui.Transparent
+	if b.Hovered() {
+		bg = p.hover
+	}
+	b.Background(b.AnimateColor("bg", bg, ui.Animation{Duration: 120 * time.Millisecond}))
+	b.Children(func() { ui.Icon(c, iconSidebar).Size(16, 16).TextColor(p.muted) })
+	if b.Clicked() {
+		a.toggleSidebar()
+	}
+}
+
+// toggleSidebar folds or unfolds the sidebar and remembers the choice.
+func (a *App) toggleSidebar() {
+	a.settings.SidebarCollapsed = !a.settings.SidebarCollapsed
+	a.save()
+}
+
 // navItem is one row of the sidebar: an icon and a label, marked under the
-// pointer and filled with the accent while it is the page shown.
+// pointer and filled with the accent while it is the page shown. Collapsed,
+// it is the icon alone, with the label as its tooltip.
 func (a *App) navItem(c *ui.Context, label string, icon *ui.SVG, selected bool, onClick func()) {
 	p := a.pal
-	b := ui.ButtonBase(c.Key("nav:" + label)).Height(36).PaddingX(11).Gap(10).Radius(9).
-		AlignItems(ui.Center).Justify(ui.Start).FocusRing(false)
+	collapsed := a.settings.SidebarCollapsed
+	b := ui.ButtonBase(c.Key("nav:" + label)).Height(36).Radius(9).
+		AlignItems(ui.Center).FocusRing(false).Label(label)
+	if collapsed {
+		b.PaddingX(0).Justify(ui.Center).Tooltip(label)
+	} else {
+		b.PaddingX(11).Gap(10).Justify(ui.Start)
+	}
 	bg := ui.Transparent
 	switch {
 	case selected:
@@ -98,7 +166,9 @@ func (a *App) navItem(c *ui.Context, label string, icon *ui.SVG, selected bool, 
 	}
 	b.Children(func() {
 		ui.Icon(c, icon).Size(17, 17).TextColor(iconColor)
-		ui.Text(c, label).FontSize(13).FontWeight(500).TextColor(color).MaxLines(1)
+		if !collapsed {
+			ui.Text(c, label).FontSize(13).FontWeight(500).TextColor(color).MaxLines(1)
+		}
 	})
 	if b.Clicked() {
 		onClick()
@@ -114,6 +184,14 @@ func (a *App) sidebarFooter(c *ui.Context) {
 		a.navItem(c, a.t(i18n.NavSettings), iconGear, a.route == routeSettings, func() {
 			a.goTo(routeSettings)
 		})
+		if a.settings.SidebarCollapsed {
+			ui.Box(c).Size(40, 40).Radius(10).Background(p.inset).
+				Border(1, p.hairline).Center().AlignSelf(ui.Center).
+				Tooltip(a.network().Name + " · " + text).Children(func() {
+				ui.Box(c).Size(7, 7).Radius(4).Background(dot)
+			})
+			return
+		}
 		ui.Column(c).Gap(5).Padding(10).Radius(10).Background(p.inset).
 			Border(1, p.hairline).Children(func() {
 			ui.Row(c).Gap(7).AlignItems(ui.Center).Children(func() {
@@ -388,7 +466,8 @@ func (a *App) heroCard(c *ui.Context) {
 	p := a.pal
 	network := a.network()
 	value := "—"
-	if total, ok := a.totalNative(); ok {
+	total, known := a.totalNative()
+	if known {
 		value = chain.FormatAmount(total, network.Decimals, 4)
 	}
 	ui.Column(c).Gap(10).Padding(22).Radius(16).Border(1, p.hairline).
@@ -407,6 +486,11 @@ func (a *App) heroCard(c *ui.Context) {
 			ui.Text(c, value).FontSize(44).FontWeight(700).LetterSpacing(-1.2)
 			ui.Text(c, network.Symbol).FontSize(18).FontWeight(600).TextColor(p.muted)
 		})
+		if known {
+			if fiat, ok := a.fiatText(total, network.Decimals, network.Symbol); ok {
+				ui.Text(c, a.t(i18n.FiatApprox, fiat)).FontSize(12).TextColor(p.muted).MaxLines(1)
+			}
+		}
 		ui.Text(c, a.headline()).FontSize(11.5).TextColor(p.muted).MaxLines(1)
 	})
 }
@@ -448,6 +532,11 @@ func (a *App) accountCard(c *ui.Context, acc wallet.Address) {
 			ui.Column(c).AlignItems(ui.End).Gap(1).Children(func() {
 				ui.Text(c, a.nativeText(snap)).FontSize(15).FontWeight(700)
 				ui.Text(c, a.network().Symbol).FontSize(10).TextColor(p.faint)
+				if snap != nil {
+					if fiat, ok := a.fiatText(snap.native, a.network().Decimals, a.network().Symbol); ok {
+						ui.Text(c, fiat).FontSize(10).TextColor(p.faint).MaxLines(1)
+					}
+				}
 			})
 			// A wallet account is removed on its own page, with its key.
 			if !a.settings.IsWalletAccount(acc.Addr) {
@@ -515,9 +604,62 @@ func (a *App) tokenRows(c *ui.Context, snap *accountSnapshot) {
 					TextColor(p.muted).MaxLines(1)
 				ui.Text(c, chain.FormatAmount(tb.Amount, tb.Token.Decimals, tb.Token.DisplayFrac())).
 					FontSize(10.5).FontWeight(600).MaxLines(1)
+				if fiat, ok := a.fiatText(tb.Amount, tb.Token.Decimals, tb.Token.Symbol); ok {
+					ui.Text(c, fiat).FontSize(10).TextColor(p.faint).MaxLines(1)
+				}
 			})
 		}
 	})
+}
+
+// fiatText returns the approximate USD value of amount in symbol, when the
+// last refresh priced it. A balance is always shown in its own asset first;
+// this is the hint beside it, never the number the user acts on.
+func (a *App) fiatText(amount *big.Int, decimals int, symbol string) (string, bool) {
+	if a.settings.HideFiat || a.snap == nil || amount == nil || len(a.snap.usd) == 0 {
+		return "", false
+	}
+	price, ok := a.snap.usd[symbol]
+	if !ok || price <= 0 {
+		return "", false
+	}
+	scale := new(big.Int).Exp(big.NewInt(10), big.NewInt(int64(decimals)), nil)
+	value := new(big.Float).SetInt(amount)
+	value.Quo(value, new(big.Float).SetInt(scale))
+	value.Mul(value, big.NewFloat(price))
+	f, _ := value.Float64()
+	return usdText(f), true
+}
+
+// usdText writes a dollar amount with a thousands separator, and enough
+// decimals to keep a small value from reading as zero.
+func usdText(v float64) string {
+	if v > 0 && v < 0.01 {
+		return fmt.Sprintf("$%.4f", v)
+	}
+	s := fmt.Sprintf("%.2f", v)
+	dot := strings.IndexByte(s, '.')
+	if dot < 0 {
+		return "$" + groupDigits(s)
+	}
+	return "$" + groupDigits(s[:dot]) + s[dot:]
+}
+
+func groupDigits(s string) string {
+	if len(s) <= 3 {
+		return s
+	}
+	first := len(s) % 3
+	if first == 0 {
+		first = 3
+	}
+	var b strings.Builder
+	b.WriteString(s[:first])
+	for i := first; i < len(s); i += 3 {
+		b.WriteByte(',')
+		b.WriteString(s[i : i+3])
+	}
+	return b.String()
 }
 
 func (a *App) nativeText(snap *accountSnapshot) string {
@@ -574,6 +716,8 @@ func (a *App) settingsView(c *ui.Context) {
 		a.settingsDivider(c)
 		a.settingsRow(c, a.t(i18n.Language), func() { a.languageSelect(c) })
 		a.settingsDivider(c)
+		a.fiatRow(c)
+		a.settingsDivider(c)
 		a.storeRow(c)
 	})
 	a.settingsGroup(c, a.t(i18n.AgentSection), func() {
@@ -581,6 +725,8 @@ func (a *App) settingsView(c *ui.Context) {
 	})
 	a.settingsGroup(c, a.t(i18n.SecuritySection), func() {
 		a.presenceRow(c)
+		a.settingsDivider(c)
+		a.passkeyRow(c)
 	})
 	a.settingsGroup(c, a.t(i18n.About), func() {
 		ui.Row(c).Padding(14, 16).AlignItems(ui.Center).Gap(12).Children(func() {
@@ -774,6 +920,26 @@ func (a *App) languageSelect(c *ui.Context) {
 			}
 		}
 	}
+}
+
+// fiatRow turns the approximate USD values beside balances on or off.
+func (a *App) fiatRow(c *ui.Context) {
+	p := a.pal
+	ui.Row(c).Padding(13, 16).AlignItems(ui.Center).Gap(14).Children(func() {
+		ui.Box(c).Size(32, 32).Radius(9).Background(p.accentSoft).Center().Children(func() {
+			ui.Icon(c, iconChart).Size(17, 17).TextColor(p.accent)
+		})
+		ui.Column(c).Grow(1).Gap(2).Children(func() {
+			ui.Text(c, a.t(i18n.FiatTitle)).FontSize(12.5).FontWeight(600).MaxLines(1)
+			ui.Text(c, a.t(i18n.FiatBody)).FontSize(11).TextColor(p.muted).MaxLines(3)
+		})
+		on := !a.settings.HideFiat
+		if ui.Switch(c, &on).Changed() {
+			a.settings.HideFiat = !on
+			a.save()
+			a.invalidate()
+		}
+	})
 }
 
 // presenceRow turns the system's confirmation on or off, and says what it

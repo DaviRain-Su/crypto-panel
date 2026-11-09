@@ -25,6 +25,15 @@ type snapshot struct {
 	accounts []accountSnapshot
 	block    uint64
 	at       time.Time
+	// usd prices the symbols the snapshot holds, for the approximate fiat
+	// values beside balances. fiatErr says why it is empty.
+	usd     map[string]float64
+	fiatErr string
+}
+
+// priceSource prices assets in USD. *prices.Client implements it.
+type priceSource interface {
+	Prices(ctx context.Context, symbols []string) (map[string]float64, error)
 }
 
 // requestRefresh starts a refresh unless one is running. It runs on the
@@ -64,6 +73,10 @@ func (a *App) requestRefresh() {
 // fetch reads every address in the background and hands the snapshot back
 // to the main thread.
 func (a *App) fetch(gen int, reader chain.Reader, addrs []string) {
+	// Read the main-thread state before the goroutine starts.
+	symbol := a.network().Symbol
+	source := a.priceSource
+	hideFiat := a.settings.HideFiat
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 		defer cancel()
@@ -88,6 +101,23 @@ func (a *App) fetch(gen int, reader chain.Reader, addrs []string) {
 		}
 		if block, err := reader.Block(ctx); err == nil {
 			snap.block = block
+		}
+		if source != nil && !hideFiat {
+			symbols := []string{symbol}
+			seen := map[string]bool{symbol: true}
+			for _, s := range snap.accounts {
+				for _, tb := range s.tokens {
+					if !seen[tb.Token.Symbol] {
+						seen[tb.Token.Symbol] = true
+						symbols = append(symbols, tb.Token.Symbol)
+					}
+				}
+			}
+			if usd, err := source.Prices(ctx, symbols); err == nil {
+				snap.usd = usd
+			} else {
+				snap.fiatErr = err.Error()
+			}
 		}
 		mygo.RunOnMain(func() {
 			a.loading = false

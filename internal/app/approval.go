@@ -2,6 +2,7 @@ package app
 
 import (
 	"errors"
+	"fmt"
 	"math/big"
 	"strconv"
 	"strings"
@@ -288,6 +289,11 @@ func (ap *approval) nearRows() []approvalRow {
 			rows = append(rows,
 				approvalRow{ap.t(i18n.ApproveAction), ap.t(i18n.ApproveActionDeleteKey)},
 				approvalRow{ap.t(i18n.ApproveKey), action.PublicKey},
+			)
+		case neartx.ActionDeterministicStateInit:
+			rows = append(rows,
+				approvalRow{ap.t(i18n.ApproveAction), ap.t(i18n.ApproveActionStateInit)},
+				approvalRow{ap.t(i18n.ApproveStateInitSize), fmt.Sprintf("%d bytes", action.StateInitSize)},
 			)
 		default:
 			rows = append(rows, approvalRow{ap.t(i18n.ApproveAction), action.Kind.String()})

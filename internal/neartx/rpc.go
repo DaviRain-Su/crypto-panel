@@ -165,6 +165,16 @@ func prepareAction(a *Action) error {
 			return fmt.Errorf("the beneficiary: %w", err)
 		}
 		a.BeneficiaryID = beneficiary
+	case ActionDeterministicStateInit:
+		if len(a.StateInit) == 0 {
+			return errors.New("a deterministic state init needs a StateInit")
+		}
+		if a.Deposit == nil {
+			a.Deposit = new(big.Int)
+		}
+		if a.Deposit.Sign() < 0 || a.Deposit.BitLen() > 128 {
+			return errors.New("the deposit is not a u128 amount")
+		}
 	default:
 		return fmt.Errorf("%s is not an action this wallet signs", a.Kind)
 	}

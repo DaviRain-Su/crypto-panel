@@ -115,6 +115,10 @@ func (w *writer) action(a Action) error {
 	case ActionDeleteAccount:
 		w.str(a.BeneficiaryID)
 		return nil
+	case ActionDeterministicStateInit:
+		// The StateInit struct is inline, not a length-prefixed byte vector.
+		w.buf = append(w.buf, a.StateInit...)
+		return w.u128(a.Deposit)
 	}
 	return fmt.Errorf("%w: unknown action %d", ErrInvalidTransaction, uint8(a.Kind))
 }

@@ -43,7 +43,7 @@ func KindOf(s string) (Kind, bool) {
 	if isEVMLike(s) {
 		return EVM, true
 	}
-	if nearid.IsImplicit(s) {
+	if nearid.IsImplicit(s) || nearid.IsDeterministic(s) {
 		return Near, true
 	}
 	if strings.Contains(s, ".") {

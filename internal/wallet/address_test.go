@@ -111,6 +111,7 @@ func TestKindOf(t *testing.T) {
 		{"0x5aaeb6053f3e94c9b9a09f33669435e7ef1beaed", EVM},
 		{"EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v", Solana},
 		{"11111111111111111111111111111111", Solana},
+		{"0s9dcb623ddaebc66fffc13ed50e61a3041ddae822", Near},
 	} {
 		got, ok := KindOf(tc.addr)
 		if !ok || got != tc.want {

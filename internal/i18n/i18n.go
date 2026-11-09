@@ -20,13 +20,15 @@ type Key string
 
 // The shell's messages.
 const (
-	AppTitle     Key = "appTitle"
-	WatchOnly    Key = "watchOnly"
-	NavPortfolio Key = "navPortfolio"
-	NavWallet    Key = "navWallet"
-	NavApps      Key = "navApps"
-	NavDapp      Key = "navDapp"
-	NavSettings  Key = "navSettings"
+	AppTitle        Key = "appTitle"
+	WatchOnly       Key = "watchOnly"
+	NavPortfolio    Key = "navPortfolio"
+	NavWallet       Key = "navWallet"
+	NavApps         Key = "navApps"
+	NavDapp         Key = "navDapp"
+	NavSettings     Key = "navSettings"
+	SidebarCollapse Key = "sidebarCollapse"
+	SidebarExpand   Key = "sidebarExpand"
 
 	AppsSubtitle       Key = "appsSubtitle"
 	DappURLLabel       Key = "dappURLLabel"
@@ -136,6 +138,36 @@ const (
 	WalletNearSendView           Key = "walletNearSendView"
 	ApproveWalletWarning         Key = "approveWalletWarning"
 
+	PasskeyTitle          Key = "passkeyTitle"
+	PasskeyBadge          Key = "passkeyBadge"
+	PasskeyBody           Key = "passkeyBody"
+	PasskeyCreate         Key = "passkeyCreate"
+	PasskeyWaiting        Key = "passkeyWaiting"
+	PasskeyFine           Key = "passkeyFine"
+	PasskeyCreated        Key = "passkeyCreated"
+	PasskeyFailed         Key = "passkeyFailed"
+	PasskeyUnavailable    Key = "passkeyUnavailable"
+	PasskeyNearAccount    Key = "passkeyNearAccount"
+	PasskeyEVMAccount     Key = "passkeyEVMAccount"
+	PasskeyDeriving       Key = "passkeyDeriving"
+	PasskeyMainnetOnly    Key = "passkeyMainnetOnly"
+	PasskeyDeploy         Key = "passkeyDeploy"
+	PasskeyDeployHint     Key = "passkeyDeployHint"
+	PasskeyDeployNote     Key = "passkeyDeployNote"
+	PasskeyDeployed       Key = "passkeyDeployed"
+	PasskeyAlreadyOnChain Key = "passkeyAlreadyOnChain"
+	PasskeySend           Key = "passkeySend"
+	PasskeySendNote       Key = "passkeySendNote"
+	PasskeyNoRelayer      Key = "passkeyNoRelayer"
+	PasskeyRelayerLocked  Key = "passkeyRelayerLocked"
+	PasskeyRejected       Key = "passkeyRejected"
+	PasskeyForget         Key = "passkeyForget"
+	PasskeyForgetTitle    Key = "passkeyForgetTitle"
+	PasskeyForgetBody     Key = "passkeyForgetBody"
+	PasskeySettingsTitle  Key = "passkeySettingsTitle"
+	PasskeySettingsBody   Key = "passkeySettingsBody"
+	PasskeySettingsHave   Key = "passkeySettingsHave"
+
 	AuthTouchID      Key = "authTouchID"
 	AuthFaceID       Key = "authFaceID"
 	AuthOpticID      Key = "authOpticID"
@@ -183,6 +215,8 @@ const (
 	ApproveActionCall         Key = "approveActionCall"
 	ApproveActionAddKey       Key = "approveActionAddKey"
 	ApproveActionDeleteKey    Key = "approveActionDeleteKey"
+	ApproveActionStateInit    Key = "approveActionStateInit"
+	ApproveStateInitSize      Key = "approveStateInitSize"
 	ApproveMethod             Key = "approveMethod"
 	ApproveArgs               Key = "approveArgs"
 	ApproveDeposit            Key = "approveDeposit"
@@ -270,6 +304,9 @@ const (
 	RefreshInterval Key = "refreshInterval"
 	Language        Key = "language"
 	SystemLanguage  Key = "systemLanguage"
+	FiatTitle       Key = "fiatTitle"
+	FiatBody        Key = "fiatBody"
+	FiatApprox      Key = "fiatApprox"
 	NetworkSection  Key = "networkSection"
 	AppSection      Key = "appSection"
 	About           Key = "about"
@@ -368,13 +405,15 @@ const (
 )
 
 var messages = map[Key]map[string]string{
-	AppTitle:     {English: "Crypto Panel", Chinese: "加密面板"},
-	WatchOnly:    {English: "Wallet & watch", Chinese: "钱包与只读"},
-	NavPortfolio: {English: "Portfolio", Chinese: "持仓"},
-	NavWallet:    {English: "Wallet", Chinese: "钱包"},
-	NavApps:      {English: "Apps", Chinese: "应用"},
-	NavDapp:      {English: "DApp", Chinese: "DApp"},
-	NavSettings:  {English: "Settings", Chinese: "设置"},
+	AppTitle:        {English: "Crypto Panel", Chinese: "加密面板"},
+	WatchOnly:       {English: "Wallet & watch", Chinese: "钱包与只读"},
+	NavPortfolio:    {English: "Portfolio", Chinese: "持仓"},
+	NavWallet:       {English: "Wallet", Chinese: "钱包"},
+	NavApps:         {English: "Apps", Chinese: "应用"},
+	NavDapp:         {English: "DApp", Chinese: "DApp"},
+	NavSettings:     {English: "Settings", Chinese: "设置"},
+	SidebarCollapse: {English: "Collapse sidebar", Chinese: "收起侧栏"},
+	SidebarExpand:   {English: "Expand sidebar", Chinese: "展开侧栏"},
 
 	AppsSubtitle:       {English: "Web apps, signed by the local wallet", Chinese: "由本地钱包签名的网页应用"},
 	DappURLLabel:       {English: "DApp URL", Chinese: "DApp 地址"},
@@ -484,6 +523,36 @@ var messages = map[Key]map[string]string{
 	WalletNearSendView:           {English: "View transaction", Chinese: "查看交易"},
 	ApproveWalletWarning:         {English: "This transfer comes from your own wallet. Check the recipient and the amount before you approve.", Chinese: "这笔转账来自你自己的钱包。批准前请核对收款账户和金额。"},
 
+	PasskeyTitle:          {English: "Passkey wallet", Chinese: "Passkey 钱包"},
+	PasskeyBadge:          {English: "NEAR + EVM", Chinese: "NEAR + EVM"},
+	PasskeyBody:           {English: "One passkey, held by your device or password manager, controls a NEAR account and an EVM smart account at the same address on every EVM chain.", Chinese: "一个由设备或密码管理器保管的 Passkey，控制一个 NEAR 账户，以及在所有 EVM 链上地址相同的 EVM 智能账户。"},
+	PasskeyCreate:         {English: "Create passkey", Chinese: "创建 Passkey"},
+	PasskeyWaiting:        {English: "Waiting for your passkey…", Chinese: "等待 Passkey 确认…"},
+	PasskeyFine:           {English: "The private key never leaves the authenticator. Crypto Panel stores only the public key.", Chinese: "私钥不会离开认证器。Crypto Panel 只保存公钥。"},
+	PasskeyCreated:        {English: "Passkey created. Its NEAR account is ready to be funded.", Chinese: "Passkey 已创建。其 NEAR 账户可以充值了。"},
+	PasskeyFailed:         {English: "The passkey ceremony failed:", Chinese: "Passkey 流程失败："},
+	PasskeyUnavailable:    {English: "Passkeys are unavailable in this build.", Chinese: "此版本无法使用 Passkey。"},
+	PasskeyNearAccount:    {English: "NEAR account", Chinese: "NEAR 账户"},
+	PasskeyEVMAccount:     {English: "EVM account", Chinese: "EVM 账户"},
+	PasskeyDeriving:       {English: "Reading from the factory…", Chinese: "正在从工厂合约读取…"},
+	PasskeyMainnetOnly:    {English: "The NEAR passkey wallet contract is on mainnet. Switch to NEAR mainnet to create or send.", Chinese: "NEAR Passkey 钱包合约部署在主网。请切换到 NEAR 主网后再创建或发送。"},
+	PasskeyDeploy:         {English: "Create account", Chinese: "创建账户"},
+	PasskeyDeployHint:     {English: "The relayer pays the storage and gas; the passkey authorizes the account.", Chinese: "中继账户支付存储和 gas，Passkey 授权该账户。"},
+	PasskeyDeployNote:     {English: "Create the passkey's NEAR account. %s relays the transaction and pays its fee; the passkey's key authorizes the account's StateInit.", Chinese: "创建 Passkey 的 NEAR 账户。%s 负责中继并支付手续费；Passkey 的密钥授权该账户的 StateInit。"},
+	PasskeyDeployed:       {English: "Account created. Transaction %s", Chinese: "账户已创建。交易 %s"},
+	PasskeyAlreadyOnChain: {English: "The account is already on chain.", Chinese: "该账户已经在链上了。"},
+	PasskeySend:           {English: "Sign and send", Chinese: "签名并发送"},
+	PasskeySendNote:       {English: "Send from the passkey account. %s relays the transaction and pays its fee; the passkey signs the transfer in your browser.", Chinese: "从 Passkey 账户发送。%s 负责中继并支付手续费；Passkey 会在浏览器中签署这笔转账。"},
+	PasskeyNoRelayer:      {English: "Add and unlock a NEAR account first; it relays the passkey's transactions.", Chinese: "请先添加并解锁一个 NEAR 账户，它负责中继 Passkey 的交易。"},
+	PasskeyRelayerLocked:  {English: "The relaying account was locked before it could sign.", Chinese: "中继账户在签名前被锁定了。"},
+	PasskeyRejected:       {English: "The transaction was rejected. Nothing was signed or sent.", Chinese: "交易已被拒绝。没有签名，也没有发送任何东西。"},
+	PasskeyForget:         {English: "Forget passkey", Chinese: "移除 Passkey"},
+	PasskeyForgetTitle:    {English: "Forget this passkey?", Chinese: "移除此 Passkey？"},
+	PasskeyForgetBody:     {English: "Crypto Panel will stop watching its accounts. The passkey itself stays in your device or password manager.", Chinese: "Crypto Panel 将不再监视它的账户。Passkey 本身仍保留在设备或密码管理器中。"},
+	PasskeySettingsTitle:  {English: "Passkey wallet", Chinese: "Passkey 钱包"},
+	PasskeySettingsBody:   {English: "Create a passkey that owns a NEAR account and an EVM smart account.", Chinese: "创建一个同时拥有 NEAR 账户和 EVM 智能账户的 Passkey。"},
+	PasskeySettingsHave:   {English: "Controlled by the passkey for %s.", Chinese: "由 %s 的 Passkey 控制。"},
+
 	AuthTouchID:      {English: "Touch ID", Chinese: "触控 ID"},
 	AuthFaceID:       {English: "Face ID", Chinese: "面容 ID"},
 	AuthOpticID:      {English: "Optic ID", Chinese: "光学 ID"},
@@ -531,6 +600,8 @@ var messages = map[Key]map[string]string{
 	ApproveActionCall:         {English: "Function call", Chinese: "合约调用"},
 	ApproveActionAddKey:       {English: "Add key", Chinese: "添加密钥"},
 	ApproveActionDeleteKey:    {English: "Delete key", Chinese: "删除密钥"},
+	ApproveActionStateInit:    {English: "Create deterministic account", Chinese: "创建确定性账户"},
+	ApproveStateInitSize:      {English: "State init", Chinese: "状态初始化"},
 	ApproveMethod:             {English: "Method", Chinese: "方法"},
 	ApproveArgs:               {English: "Args", Chinese: "参数"},
 	ApproveDeposit:            {English: "Deposit", Chinese: "附带押金"},
@@ -616,13 +687,17 @@ var messages = map[Key]map[string]string{
 	RPCSaved:       {English: "Endpoint saved.", Chinese: "节点已保存。"},
 
 	RefreshInterval: {English: "Refresh every", Chinese: "刷新间隔"},
-	Language:        {English: "Language", Chinese: "语言"},
-	SystemLanguage:  {English: "System", Chinese: "跟随系统"},
-	NetworkSection:  {English: "Network", Chinese: "网络"},
-	AppSection:      {English: "App", Chinese: "应用"},
-	About:           {English: "About", Chinese: "关于"},
-	AboutBody:       {English: "Self-custody. Keys stay in the system keychain and never reach a plugin.", Chinese: "自托管。密钥保存在系统钥匙串中，插件永远无法触及。"},
-	Version:         {English: "Version %s", Chinese: "版本 %s"},
+	FiatTitle:       {English: "Fiat values", Chinese: "法币估值"},
+	FiatBody: {English: "Show an approximate USD value from CoinGecko beside balances. Only asset ids are sent, never an address or a key.",
+		Chinese: "在余额旁显示 CoinGecko 的美元估值。只发送资产 ID，不发送地址或私钥。"},
+	FiatApprox:     {English: "≈ %s", Chinese: "约 %s"},
+	Language:       {English: "Language", Chinese: "语言"},
+	SystemLanguage: {English: "System", Chinese: "跟随系统"},
+	NetworkSection: {English: "Network", Chinese: "网络"},
+	AppSection:     {English: "App", Chinese: "应用"},
+	About:          {English: "About", Chinese: "关于"},
+	AboutBody:      {English: "Self-custody. Keys stay in the system keychain and never reach a plugin.", Chinese: "自托管。密钥保存在系统钥匙串中，插件永远无法触及。"},
+	Version:        {English: "Version %s", Chinese: "版本 %s"},
 
 	Seconds: {English: "%ds", Chinese: "%d 秒"},
 	Minutes: {English: "%dm", Chinese: "%d 分钟"},

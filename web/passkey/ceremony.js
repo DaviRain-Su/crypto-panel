@@ -35,14 +35,38 @@
     return btoa(bin).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
   }
 
-  function callback(result) {
+  // The app serves this page on loopback and waits for a POST. A page hosted
+  // elsewhere has no /result endpoint, so it falls back to the custom scheme.
+  async function deliver(result) {
+    if (location.protocol === "http:" || location.protocol === "https:") {
+      try {
+        const res = await fetch("/result", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(result),
+        });
+        if (!res.ok) {
+          throw new Error("Crypto Panel did not accept the result.");
+        }
+        status.classList.remove("error");
+        status.textContent = "Done. You can close this tab.";
+        continueButton.disabled = true;
+        cancelButton.disabled = true;
+      } catch (err) {
+        showError(err && err.message ? err.message : "Crypto Panel did not accept the result.");
+      }
+      return;
+    }
     const payload = encodeB64url(new TextEncoder().encode(JSON.stringify(result)));
     location.href = "cryptopanel://passkey?result=" + encodeURIComponent(payload);
   }
 
-  function fail(code, message) {
-    const query = new URLSearchParams({ error: code, message, state });
-    location.href = "cryptopanel://passkey?" + query.toString();
+  async function callback(result) {
+    await deliver(result);
+  }
+
+  async function fail(code, message) {
+    await deliver({ error: code, message, state });
   }
 
   function showError(message) {
@@ -127,7 +151,7 @@
           throw new Error("No credential was created.");
         }
         const response = credential.response;
-        callback({
+        await callback({
           kind: "create",
           state,
           credentialId: encodeB64url(credential.rawId),
@@ -152,7 +176,7 @@
           throw new Error("No assertion was returned.");
         }
         const response = assertion.response;
-        callback({
+        await callback({
           kind: "get",
           state,
           credentialId: encodeB64url(assertion.rawId),
@@ -162,7 +186,6 @@
           userHandle: response.userHandle ? encodeB64url(response.userHandle) : "",
         });
       }
-      status.textContent = "Done — returning to Crypto Panel…";
     } catch (err) {
       const message = err && err.message ? err.message : "The passkey operation failed.";
       showError(message);

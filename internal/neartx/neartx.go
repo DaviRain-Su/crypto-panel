@@ -21,11 +21,11 @@ import (
 const KeyTypeED25519 = 0
 
 // Gas limits. A function call defaults to 30 TGas, the amount a simple call
-// needs; the shell refuses more than 300 TGas, the protocol's per-transaction
-// ceiling.
+// needs; the shell refuses more than 1000 TGas, the per-transaction ceiling
+// since nearcore 2.12. The passkey wallet contract asks for 330 TGas.
 const (
 	DefaultGas = 30_000_000_000_000
-	MaxGas     = 300_000_000_000_000
+	MaxGas     = 1_000_000_000_000_000
 )
 
 // PublicKey is an ed25519 public key.
@@ -71,6 +71,8 @@ const (
 	ActionAddKey         ActionKind = 5
 	ActionDeleteKey      ActionKind = 6
 	ActionDeleteAccount  ActionKind = 7
+	// ActionDeterministicStateInit creates a NEP-616 account from a StateInit.
+	ActionDeterministicStateInit ActionKind = 11
 )
 
 // String names the action the way the approval window says it.
@@ -92,6 +94,8 @@ func (k ActionKind) String() string {
 		return "delete key"
 	case ActionDeleteAccount:
 		return "delete account"
+	case ActionDeterministicStateInit:
+		return "deterministic state init"
 	}
 	return fmt.Sprintf("action %d", uint8(k))
 }
@@ -114,6 +118,8 @@ type Action struct {
 	Code []byte
 	// DeleteAccount.
 	BeneficiaryID string
+	// DeterministicStateInit is the Borsh StateInit, carried inline.
+	StateInit []byte
 }
 
 // Transfer returns an action sending amount yoctoNEAR.
@@ -160,6 +166,12 @@ func AddFullAccessKey(publicKey PublicKey) Action {
 // DeleteKey returns an action deleting publicKey from the receiver account.
 func DeleteKey(publicKey PublicKey) Action {
 	return Action{Kind: ActionDeleteKey, PublicKey: publicKey}
+}
+
+// DeterministicStateInit returns a NEP-616 action that creates the account
+// named by stateInit. The action is a no-op when the account already exists.
+func DeterministicStateInit(stateInit []byte, deposit *big.Int) Action {
+	return Action{Kind: ActionDeterministicStateInit, StateInit: stateInit, Deposit: deposit}
 }
 
 // Transaction is a NEAR transaction before its signature.

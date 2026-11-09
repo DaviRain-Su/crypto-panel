@@ -23,6 +23,7 @@ func (a *App) walletView(c *ui.Context) {
 			Margin(0, 0, 10, 0).MaxLines(2)
 	}
 	a.walletSecurityCard(c)
+	a.passkeyCard(c)
 	if a.network().Family == chain.Solana {
 		ui.Text(c, a.t(i18n.WalletEVMOnly)).FontSize(11.5).TextColor(p.muted).
 			Margin(12, 0, 0, 0).MaxLines(2)
@@ -30,7 +31,11 @@ func (a *App) walletView(c *ui.Context) {
 	evm := a.walletAccounts()
 	near := a.nearAccounts()
 	if len(evm)+len(near) == 0 {
-		a.emptyWallet(c)
+		// The passkey card is its own wallet; it does not need the
+		// add-an-account prompt.
+		if a.settings.Passkey == nil {
+			a.emptyWallet(c)
+		}
 	} else {
 		if len(evm) > 0 {
 			a.sectionTitle(c, a.t(i18n.WalletEVMSection))

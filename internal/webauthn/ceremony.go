@@ -126,6 +126,7 @@ const (
 	maxAttestationObject = 64 << 10
 	maxSignature         = 1 << 10
 	maxUserHandle        = 64
+	maxResultJSON        = 128 << 10
 )
 
 // ParseCallback reads the cryptopanel://passkey callback the page navigates
@@ -162,6 +163,33 @@ func ParseCallback(raw string) (CeremonyResult, error) {
 	if err := json.Unmarshal(data, &wire); err != nil {
 		return CeremonyResult{}, fmt.Errorf("webauthn: callback result: %w", err)
 	}
+	return parseResult(wire)
+}
+
+// ParseResultJSON reads the ceremony page's POST body, which is the same
+// shape as the callback's result plus the page's error form.
+func ParseResultJSON(data []byte) (CeremonyResult, error) {
+	if len(data) > maxResultJSON {
+		return CeremonyResult{}, errors.New("webauthn: result is too large")
+	}
+	var wire ceremonyResultJSON
+	if err := json.Unmarshal(data, &wire); err != nil {
+		return CeremonyResult{}, fmt.Errorf("webauthn: result: %w", err)
+	}
+	if wire.Error != "" {
+		return CeremonyResult{}, &CeremonyError{
+			Code:    wire.Error,
+			Message: wire.Message,
+			State:   wire.State,
+		}
+	}
+	return parseResult(wire)
+}
+
+// parseResult validates one ceremony result, from either the callback URL or
+// the page's POST body.
+func parseResult(wire ceremonyResultJSON) (CeremonyResult, error) {
+	var err error
 	result := CeremonyResult{
 		Kind:       CeremonyMode(wire.Kind),
 		State:      wire.State,
@@ -212,6 +240,8 @@ func ParseCallback(raw string) (CeremonyResult, error) {
 type ceremonyResultJSON struct {
 	Kind              string   `json:"kind"`
 	State             string   `json:"state"`
+	Error             string   `json:"error,omitempty"`
+	Message           string   `json:"message,omitempty"`
 	CredentialID      string   `json:"credentialId"`
 	ClientDataJSON    string   `json:"clientDataJSON"`
 	AttestationObject string   `json:"attestationObject,omitempty"`

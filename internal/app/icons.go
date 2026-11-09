@@ -26,6 +26,7 @@ var (
 	iconCopy        = strokeIcon(`<rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V6a2 2 0 0 1 2-2h9"/>`)
 	iconLockOpen    = strokeIcon(`<rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 7.5-2"/>`)
 	iconChevron     = strokeIcon(`<path d="m9 6 6 6-6 6"/>`)
+	iconSidebar     = strokeIcon(`<rect x="3" y="4" width="18" height="16" rx="3"/><path d="M9 4v16"/>`)
 	iconGlobe       = strokeIcon(`<circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3c2.5 2.5 4 5.6 4 9s-1.5 6.5-4 9c-2.5-2.5-4-5.6-4-9s1.5-6.5 4-9z"/>`)
 	iconClose       = strokeIcon(`<path d="m6 6 12 12"/><path d="m18 6-12 12"/>`)
 	iconSwap        = strokeIcon(`<path d="M4 8h13"/><path d="m14 5 3 3-3 3"/><path d="M20 16H7"/><path d="m10 13-3 3 3 3"/>`)

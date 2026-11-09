@@ -39,14 +39,24 @@ type Settings struct {
 	// DisablePresence turns off the system's confirmation before unlocking,
 	// revealing a key or signing. The check is on by default where the
 	// platform offers one.
-	DisablePresence bool             `json:"disablePresence,omitempty"`
-	Accounts        []wallet.Address `json:"accounts"`
+	DisablePresence bool `json:"disablePresence,omitempty"`
+	// SidebarCollapsed keeps the sidebar as an icon rail.
+	SidebarCollapsed bool `json:"sidebarCollapsed,omitempty"`
+	// HideFiat turns off the approximate USD values beside balances. Fiat is
+	// on by default; the field is inverted so an old settings file, which has
+	// no field, keeps it on.
+	HideFiat bool             `json:"hideFiat,omitempty"`
+	Accounts []wallet.Address `json:"accounts"`
 	// Wallet is the native wallet's accounts: addresses and labels only. The
 	// keys are in the OS keychain, never in this file.
 	Wallet []wallet.Account `json:"wallet,omitempty"`
 	// NearWallet is the wallet's NEAR accounts. Their ed25519 keys are in the
 	// keychain under near:key:<accountId>, never in this file.
 	NearWallet []wallet.NearAccount `json:"nearWallet,omitempty"`
+	// Passkey is the public half of the passkey the shell created: its
+	// credential id, its P-256 public key, and the NEAR and EVM accounts the
+	// key controls. The private key stays in the authenticator.
+	Passkey *PasskeyAccount `json:"passkey,omitempty"`
 }
 
 const (
@@ -216,6 +226,7 @@ func (s Settings) Validate() Settings {
 	s.Accounts = kept
 	s.Wallet = walletAccounts
 	s.NearWallet = nearAccounts
+	s.Passkey = validatePasskey(s.Passkey)
 	return s
 }
 

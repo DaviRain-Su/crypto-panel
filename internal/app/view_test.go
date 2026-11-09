@@ -39,6 +39,7 @@ func newTestApp(t *testing.T) *App {
 	a.confirmConnect = func(string) bool { return true }
 	a.approve = func(approvalRequest) bool { return true }
 	a.dappConnected = map[string]bool{}
+	a.openExternal = func(string) error { return nil }
 	return a
 }
 
@@ -48,6 +49,70 @@ func TestViewEmptyState(t *testing.T) {
 	for _, want := range []string{"Crypto Panel", "Wallet & watch", "No addresses yet", "Add"} {
 		if !tt.HasText(want) {
 			t.Errorf("missing %q in %q", want, tt.Texts())
+		}
+	}
+}
+
+func TestViewSidebarCollapses(t *testing.T) {
+	a := newTestApp(t)
+	tt := ui.NewTester(a.view, windowWidth, windowHeight)
+	if !tt.HasText("Wallet & watch") {
+		t.Fatal("the expanded sidebar has no labels")
+	}
+	press := func(name string) {
+		t.Helper()
+		info, ok := tt.Access(name)
+		if !ok {
+			t.Fatalf("no %q control", name)
+		}
+		tt.ClickAt(info.Bounds.X+info.Bounds.W/2, info.Bounds.Y+info.Bounds.H/2)
+	}
+	press("Collapse sidebar")
+	if !a.settings.SidebarCollapsed {
+		t.Fatal("the sidebar did not collapse")
+	}
+	if tt.HasText("Wallet & watch") {
+		t.Error("the collapsed sidebar still shows its labels")
+	}
+	press("Expand sidebar")
+	if a.settings.SidebarCollapsed {
+		t.Fatal("the sidebar did not expand")
+	}
+	if !tt.HasText("Wallet & watch") {
+		t.Error("the expanded sidebar has no labels")
+	}
+}
+
+func TestViewShowsFiatValues(t *testing.T) {
+	a := newTestApp(t)
+	a.settings.Accounts = []wallet.Address{{Addr: viewAddr}}
+	a.snap = &snapshot{
+		accounts: []accountSnapshot{{addr: viewAddr, native: big.NewInt(2_000_000_000_000_000_000)}},
+		usd:      map[string]float64{"ETH": 3000},
+	}
+	tt := ui.NewTester(a.view, windowWidth, windowHeight)
+	if !tt.HasText("≈ $6,000.00") {
+		t.Fatalf("missing the fiat value in %q", tt.Texts())
+	}
+	a.settings.HideFiat = true
+	tt.Frame()
+	if tt.HasText("≈ $6,000.00") {
+		t.Error("the fiat value is still shown after it was turned off")
+	}
+}
+
+func TestUSDText(t *testing.T) {
+	cases := map[float64]string{
+		0:        "$0.00",
+		0.0042:   "$0.0042",
+		12.5:     "$12.50",
+		1234.5:   "$1,234.50",
+		1234567:  "$1,234,567.00",
+		99999999: "$99,999,999.00",
+	}
+	for in, want := range cases {
+		if got := usdText(in); got != want {
+			t.Errorf("usdText(%v) = %q, want %q", in, got, want)
 		}
 	}
 }
