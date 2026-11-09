@@ -38,3 +38,18 @@ func TestFIFOSentinelIsNotAbsent(t *testing.T) {
 		t.Fatal("管道哨兵被当成不存在后迁移了 install.json")
 	}
 }
+
+func TestFIFOSentinelKeepsTheAppConfirmable(t *testing.T) {
+	sec := &scriptedSecrets{m: map[string][]byte{}}
+	s := NewStore(filepath.Join(t.TempDir(), "plugins"), sec)
+	id := "local.personal.fifoconfirm"
+	plantLoose(t, s.Dir(), id)
+	path, err := s.migrationSentinelPath()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := syscall.Mkfifo(path, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	confirmListedApp(t, s, id)
+}

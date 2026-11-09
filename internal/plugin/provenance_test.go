@@ -823,6 +823,66 @@ func (s *notFoundSecrets) Delete(key string) error {
 	return nil
 }
 
+func confirmListedApp(t *testing.T, s *Store, id string) {
+	t.Helper()
+	locked, err := s.LockedLocalApps()
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, item := range locked {
+		if item.Manifest.ID == id {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("锁定列表没有 %s: %+v", id, locked)
+	}
+	view, err := s.SnapshotProvenance(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.ConfirmProvenance(view); err != nil {
+		t.Fatalf("应允许确认 %s: %v", id, err)
+	}
+	if _, ok, err := s.getProvenance(id); err != nil || !ok {
+		t.Fatalf("确认没有写下 %s 的记录: %v", id, err)
+	}
+}
+
+func TestStartedMarkerWithoutSentinelAllowsConfirm(t *testing.T) {
+	sec := &scriptedSecrets{m: map[string][]byte{}}
+	s := NewStore(filepath.Join(t.TempDir(), "plugins"), sec)
+	id := "local.personal.startedonly"
+	plantLoose(t, s.Dir(), id)
+	if err := sec.Set(provenanceMigrationStarted, []byte("1")); err != nil {
+		t.Fatal(err)
+	}
+	path, err := s.migrationSentinelPath()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Lstat(path); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("这个用例不能有哨兵: %v", err)
+	}
+	confirmListedApp(t, s, id)
+}
+
+func TestDirectorySentinelKeepsTheAppConfirmable(t *testing.T) {
+	sec := &scriptedSecrets{m: map[string][]byte{}}
+	s := NewStore(filepath.Join(t.TempDir(), "plugins"), sec)
+	id := "local.personal.dirconfirm"
+	plantLoose(t, s.Dir(), id)
+	path, err := s.migrationSentinelPath()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(path, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	confirmListedApp(t, s, id)
+}
+
 func stuckUnsigned(t *testing.T, id string) *Store {
 	t.Helper()
 	sec := &scriptedSecrets{m: map[string][]byte{}}

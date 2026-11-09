@@ -237,19 +237,16 @@ func fireProvenanceClose(t *testing.T, w *mygo.Window) {
 	if list.Len() == 0 {
 		t.Fatal("provenance window registered no close callback")
 	}
+	want := reflect.TypeOf((func(*mygo.CloseEvent))(nil))
 	for i := 0; i < list.Len(); i++ {
-		item := list.Index(i)
-		fn := item.FieldByName("fn")
-		if !fn.IsValid() || fn.Kind() != reflect.Func || fn.Type().NumIn() != 1 {
-			t.Fatalf("close listener %d has fn %v, want a one-argument function", i, item.Type())
+		fn := list.Index(i).FieldByName("fn")
+		got := "<missing>"
+		if fn.IsValid() {
+			got = fn.Type().String()
 		}
-		arg := fn.Type().In(0)
-		windowField, ok := arg.Elem().FieldByName("Window")
-		if arg.Kind() != reflect.Pointer || arg.Elem().Kind() != reflect.Struct || !ok || windowField.Type != window.Type() {
-			t.Fatalf("close listener argument is %v, want *CloseEvent with a Window field", arg)
+		if !fn.IsValid() || fn.Type() != want {
+			t.Fatalf("close listener %d fn type is %s, want %s", i, got, want)
 		}
-		// reflect.Call refuses a function read from an unexported field. The
-		// type checks above are what make this copy safe.
 		callback := *(*func(*mygo.CloseEvent))(unsafe.Pointer(fn.UnsafeAddr()))
 		callback(&mygo.CloseEvent{Window: w})
 	}
