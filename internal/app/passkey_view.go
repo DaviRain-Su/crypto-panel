@@ -26,7 +26,7 @@ func (a *App) passkeyPreparedCard(c *ui.Context) {
 		Margin(0, 0, 14, 0).Children(func() {
 		ui.Row(c).Gap(12).AlignItems(ui.Center).Children(func() {
 			ui.Box(c).Size(38, 38).Radius(11).Background(p.accentSoft).Center().Children(func() {
-				ui.Icon(c, iconFingerprint).Size(19, 19).TextColor(p.accent)
+				iconFingerprint.draw(c, 19, p.accent)
 			})
 			ui.Column(c).Grow(1).Gap(3).Children(func() {
 				ui.Text(c, a.t(i18n.PasskeyPreparedTitle)).FontSize(13.5).FontWeight(700).MaxLines(1)
@@ -84,7 +84,7 @@ func (a *App) passkeyChainCard(c *ui.Context) {
 		Margin(0, 0, 14, 0).Children(func() {
 		ui.Row(c).Gap(12).AlignItems(ui.Center).Children(func() {
 			ui.Box(c).Size(38, 38).Radius(11).Background(p.accentSoft).Center().Children(func() {
-				ui.Icon(c, iconFingerprint).Size(19, 19).TextColor(p.accent)
+				iconFingerprint.draw(c, 19, p.accent)
 			})
 			ui.Column(c).Grow(1).Gap(3).Children(func() {
 				ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
@@ -147,7 +147,7 @@ func (a *App) passkeyCard(c *ui.Context) {
 		Margin(0, 0, 14, 0).Children(func() {
 		ui.Row(c).Gap(12).AlignItems(ui.Center).Children(func() {
 			ui.Box(c).Size(38, 38).Radius(11).Background(p.accentSoft).Center().Children(func() {
-				ui.Icon(c, iconFingerprint).Size(19, 19).TextColor(p.accent)
+				iconFingerprint.draw(c, 19, p.accent)
 			})
 			ui.Column(c).Grow(1).Gap(3).Children(func() {
 				ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
@@ -285,7 +285,7 @@ func (a *App) passkeyRow(c *ui.Context) {
 	ui.Column(c).Children(func() {
 		ui.Row(c).Padding(13, 16).AlignItems(ui.Center).Gap(14).Children(func() {
 			ui.Box(c).Size(32, 32).Radius(9).Background(p.accentSoft).Center().Children(func() {
-				ui.Icon(c, iconFingerprint).Size(17, 17).TextColor(p.accent)
+				iconFingerprint.draw(c, 17, p.accent)
 			})
 			ui.Column(c).Grow(1).Gap(2).Children(func() {
 				ui.Text(c, a.t(i18n.PasskeySettingsTitle)).FontSize(12.5).FontWeight(600).MaxLines(1)

@@ -105,7 +105,7 @@ func (ap *approval) view(c *ui.Context) {
 	ui.Column(c).Fill().Padding(24).Gap(14).Children(func() {
 		ui.Row(c).Gap(10).AlignItems(ui.Center).Children(func() {
 			ui.Box(c).Size(34, 34).Radius(10).Background(p.accentSoft).Center().Children(func() {
-				ui.Icon(c, iconShield).Size(18, 18).TextColor(p.accent)
+				iconShield.draw(c, 18, p.accent)
 			})
 			ui.Column(c).Gap(2).Children(func() {
 				ui.Text(c, ap.kicker()).FontSize(10.5).FontWeight(700).
@@ -136,7 +136,7 @@ func (ap *approval) view(c *ui.Context) {
 			}
 			ui.Row(c).Gap(8).Padding(10, 12).Radius(9).
 				Background(p.dangerSoft).AlignItems(ui.Start).Children(func() {
-				ui.Icon(c, iconLock).Size(14, 14).TextColor(p.danger)
+				iconLock.draw(c, 14, p.danger)
 				ui.Text(c, ap.warning()).FontSize(11).TextColor(p.danger).
 					Grow(1).MaxLines(2)
 			})
@@ -162,7 +162,7 @@ func (ap *approval) view(c *ui.Context) {
 				})
 			default:
 				label := ap.t(i18n.ApproveSign)
-				var icon *ui.SVG
+				var icon *glyph
 				if ap.authRequired {
 					label = ap.t(i18n.AuthApprove, ap.authName)
 					icon = iconFingerprint
@@ -175,10 +175,10 @@ func (ap *approval) view(c *ui.Context) {
 
 // primaryButton is the window's one action: filled with the accent, with an
 // icon when the system check is part of it.
-func (ap *approval) primaryButton(c *ui.Context, _ palette, label string, icon *ui.SVG) {
+func (ap *approval) primaryButton(c *ui.Context, _ palette, label string, icon *glyph) {
 	ui.PrimaryButton(c, "").Height(34).Label(label).Children(func() {
 		if icon != nil {
-			ui.Icon(c, icon).Size(15, 15)
+			icon.draw(c, 15, c.Theme().AccentText)
 		}
 		ui.Text(c, label).SingleLine()
 	}).OnClick(ap.approve)

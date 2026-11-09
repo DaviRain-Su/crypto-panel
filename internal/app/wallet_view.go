@@ -74,7 +74,7 @@ func (a *App) walletKeyCard(c *ui.Context) {
 		ui.Column(c).Gap(10).Padding(16).Radius(14).Background(p.dangerSoft).
 			Border(1, p.hairline).Margin(0, 0, 14, 0).Children(func() {
 			ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
-				ui.Icon(c, iconKey).Size(15, 15).TextColor(p.danger)
+				iconKey.draw(c, 15, p.danger)
 				title := a.t(i18n.WalletNewTitle)
 				if len(a.shownKeys) > 1 {
 					title = a.t(i18n.WalletNewTitleMany)
@@ -107,7 +107,7 @@ func (a *App) walletKeyCard(c *ui.Context) {
 	ui.Column(c).Gap(10).Padding(16).Radius(14).Background(p.dangerSoft).
 		Border(1, p.hairline).Margin(0, 0, 14, 0).Children(func() {
 		ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
-			ui.Icon(c, iconKey).Size(15, 15).TextColor(p.danger)
+			iconKey.draw(c, 15, p.danger)
 			ui.Text(c, title).FontSize(13).FontWeight(700).MaxLines(1)
 		})
 		ui.Text(c, key).Font("monospace").FontSize(12).TextColor(p.text).MaxLines(3)
@@ -224,7 +224,7 @@ func (a *App) walletSecurityCard(c *ui.Context) {
 	ui.Row(c).Gap(14).Padding(16).Radius(14).Background(p.card).
 		Border(1, p.hairline).Shadow(0, 1, 2, 0, p.shadow).AlignItems(ui.Center).Children(func() {
 		ui.Box(c).Size(38, 38).Radius(11).Background(p.accentSoft).Center().Children(func() {
-			ui.Icon(c, iconShield).Size(19, 19).TextColor(p.accent)
+			iconShield.draw(c, 19, p.accent)
 		})
 		ui.Column(c).Grow(1).Gap(3).Children(func() {
 			ui.Text(c, title).FontSize(13).FontWeight(600).MaxLines(1)
@@ -244,7 +244,7 @@ func (a *App) emptyWallet(c *ui.Context) {
 	ui.Column(c).Gap(8).Padding(30).Center().Radius(14).
 		Background(p.card).Border(1, p.hairline).Margin(24, 0, 0, 0).Children(func() {
 		ui.Box(c).Size(46, 46).Radius(13).Background(p.accentSoft).Center().Children(func() {
-			ui.Icon(c, iconWallet).Size(22, 22).TextColor(p.accent)
+			iconWallet.draw(c, 22, p.accent)
 		})
 		ui.Text(c, a.t(i18n.WalletEmpty)).FontSize(15).FontWeight(700)
 		ui.Text(c, a.t(i18n.WalletEmptyWhy)).FontSize(12.5).TextColor(p.muted).

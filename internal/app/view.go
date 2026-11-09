@@ -42,15 +42,16 @@ func (a *App) sidebar(c *ui.Context) {
 	if bar := c.TitleBar(); bar.Height > 0 {
 		top = bar.Height + 4
 	}
-	width, padX := float32(sidebarWidth), float32(14)
+	width, padX, padL := float32(sidebarWidth), float32(14), float32(12)
 	if collapsed {
-		width, padX = sidebarRailWidth, 10
+		// Symmetric insets, so the rail's icons sit on the center line.
+		width, padX, padL = sidebarRailWidth, 8, 8
 	}
 	side := ui.Column(c).Width(width).FillHeight()
 	if !c.Vibrancy() {
 		side.Background(p.sidebar)
 	}
-	side.Padding(top, padX, padX, 12).DragWindow().Children(func() {
+	side.Padding(top, padX, padX, padL).DragWindow().Children(func() {
 		// The app: its mark, its name, and what it may do. Collapsed, the
 		// mark itself is the way back.
 		if collapsed {
@@ -66,32 +67,7 @@ func (a *App) sidebar(c *ui.Context) {
 				a.sidebarToggle(c)
 			})
 		}
-		selected := a.sidebarSelection()
-		nav := ui.Sidebar(c.Key("nav"), &selected, func() {
-			for _, item := range []struct {
-				id   string
-				text i18n.Key
-				icon *ui.SVG
-			}{
-				{"portfolio", i18n.NavPortfolio, iconChart},
-				{"wallet", i18n.NavWallet, iconWallet},
-				{"plugins", i18n.NavApps, iconGrid},
-				{"intents", i18n.NavIntents, iconSwap},
-				{"apps", i18n.NavDapp, iconGlobe},
-				{"settings", i18n.NavSettings, iconGear},
-			} {
-				label := a.t(item.text)
-				visible := label
-				if collapsed {
-					visible = ""
-				}
-				ui.SidebarItem(c, item.id, item.icon, visible).
-					Height(36).Label(label).Tooltip(label)
-			}
-		}).Grow(1).FillWidth().Background(ui.Transparent).Margin(0, -6)
-		if nav.Changed() {
-			a.selectSidebar(selected)
-		}
+		a.sidebarNav(c, collapsed)
 		if collapsed {
 			a.sidebarToggle(c)
 		}
@@ -106,14 +82,14 @@ func (a *App) sidebarMark(c *ui.Context, button bool) {
 	mark := func() {
 		ui.Box(c).Size(36, 36).Radius(11).
 			Gradient(ui.Hex("#2c342b"), ui.Hex("#151713"), 135).Center().Children(func() {
-			ui.Icon(c, iconPulse).Size(18, 18).TextColor(p.accent)
+			iconPulse.draw(c, 18, p.accent)
 		})
 	}
 	if !button {
 		mark()
 		return
 	}
-	b := ui.Button(c, "").Size(44, 44).Padding(4).Radius(12).Center().
+	b := ui.Button(c, "").Size(44, 44).Padding(4).Radius(12).Center().AlignSelf(ui.Center).
 		Label(a.t(i18n.SidebarExpand)).Tooltip(a.t(i18n.SidebarExpand))
 	b.Children(mark)
 	if b.Clicked() {
@@ -127,7 +103,113 @@ func (a *App) sidebarToggle(c *ui.Context) {
 	if a.settings.SidebarCollapsed {
 		label = a.t(i18n.SidebarExpand)
 	}
-	a.iconButton(c, iconSidebar, label, a.toggleSidebar)
+	b := a.iconButton(c, iconSidebar, label, a.toggleSidebar)
+	if a.settings.SidebarCollapsed {
+		b.AlignSelf(ui.Center)
+	}
+}
+
+// sidebarOrder is the sidebar's pages, top to bottom. Arrow keys move
+// through it; the ids are the ones selectSidebar understands.
+var sidebarOrder = []string{"portfolio", "wallet", "plugins", "intents", "apps", "settings"}
+
+// sidebarNav draws the page list. Rows are buttons rather than
+// ui.SidebarItem so each icon can be an SF Symbol (with the Lucide
+// fallback) at a size the rail can actually read, centered when the
+// labels are hidden.
+func (a *App) sidebarNav(c *ui.Context, collapsed bool) {
+	selected := a.sidebarSelection()
+	nav := ui.Scroll(c.Key("nav")).Grow(1).FillWidth().Gap(2).Margin(6, 0, 4, 0).
+		Focusable().FocusRing(false).Role(ui.RoleNavigation)
+	emphasized := nav.Focused() || nav.FocusWithin()
+	moved := false
+	switch {
+	case nav.Shortcut(0, ui.KeyDown):
+		a.stepSidebar(1)
+		moved = true
+	case nav.Shortcut(0, ui.KeyUp):
+		a.stepSidebar(-1)
+		moved = true
+	case nav.Shortcut(0, ui.KeyHome):
+		a.selectSidebar(sidebarOrder[0])
+		moved = true
+	case nav.Shortcut(0, ui.KeyEnd):
+		a.selectSidebar(sidebarOrder[len(sidebarOrder)-1])
+		moved = true
+	}
+	if moved {
+		selected = a.sidebarSelection()
+	}
+	items := []struct {
+		id   string
+		text i18n.Key
+		icon *glyph
+	}{
+		{"portfolio", i18n.NavPortfolio, iconChart},
+		{"wallet", i18n.NavWallet, iconWallet},
+		{"plugins", i18n.NavApps, iconGrid},
+		{"intents", i18n.NavIntents, iconSwap},
+		{"apps", i18n.NavDapp, iconGlobe},
+		{"settings", i18n.NavSettings, iconGear},
+	}
+	nav.Children(func() {
+		for _, item := range items {
+			a.navRow(c, item.id, a.t(item.text), item.icon, item.id == selected, collapsed, emphasized, moved)
+		}
+	})
+}
+
+// navRow is one sidebar destination. emphasized is the accent fill, used
+// while the list has the keyboard focus; otherwise the chosen row is the
+// quiet pressed color, as a source list without the focus.
+func (a *App) navRow(c *ui.Context, id, label string, g *glyph, selected, collapsed, emphasized, focus bool) {
+	p := a.pal
+	t := c.Theme()
+	row := ui.ButtonBase(c).Label(label).Tooltip(label).TabStop(false).Radius(t.Radius)
+	size := float32(18)
+	if collapsed {
+		size = 22
+		row.Size(44, 44).AlignSelf(ui.Center).Padding(0)
+	} else {
+		row.Height(36).FillWidth().Padding(0, 10).Gap(10).Justify(ui.Start)
+	}
+	iconColor := p.accent
+	switch {
+	case selected && emphasized:
+		row.Background(t.Accent).TextColor(t.AccentText)
+		iconColor = t.AccentText
+	case selected:
+		row.Background(t.SurfacePressed)
+	case row.Hovered():
+		row.Background(t.SurfaceHover)
+	}
+	if focus && selected {
+		row.Focus()
+	}
+	row.Children(func() {
+		g.drawNav(c, size, iconColor, collapsed)
+		if !collapsed {
+			ui.Text(c, label).Grow(1).MaxLines(1)
+		}
+	})
+	if row.Clicked() {
+		a.selectSidebar(id)
+	}
+}
+
+// stepSidebar moves the selection by delta pages, stopping at the ends.
+func (a *App) stepSidebar(delta int) {
+	i := slices.Index(sidebarOrder, a.sidebarSelection())
+	if i < 0 {
+		i = 0
+	}
+	i += delta
+	if i < 0 {
+		i = 0
+	} else if i >= len(sidebarOrder) {
+		i = len(sidebarOrder) - 1
+	}
+	a.selectSidebar(sidebarOrder[i])
 }
 
 // toggleSidebar folds or unfolds the sidebar and remembers the choice.
@@ -257,32 +339,32 @@ func (a *App) pageHeader(c *ui.Context) {
 }
 
 // iconButton 复用官方按钮的焦点、禁用、悬停和可访问性行为。
-func (a *App) iconButton(c *ui.Context, icon *ui.SVG, label string, onClick func()) {
-	ui.Button(c, "").Size(32, 32).Label(label).Tooltip(label).Children(func() {
-		ui.Icon(c, icon).Size(16, 16)
+func (a *App) iconButton(c *ui.Context, icon *glyph, label string, onClick func()) ui.Element {
+	return ui.Button(c, "").Size(32, 32).Padding(0).Label(label).Tooltip(label).Children(func() {
+		icon.draw(c, 16, c.Theme().Text)
 	}).OnClick(onClick)
 }
 
 func (a *App) backButton(c *ui.Context, label string, onClick func()) {
 	ui.Button(c, "").Height(30).Label(label).Children(func() {
-		ui.Icon(c, iconChevron).Size(14, 14).Rotate(180)
+		iconChevronLeft.draw(c, 14, c.Theme().Text)
 		ui.Text(c, label).SingleLine()
 	}).OnClick(onClick)
 }
 
-func (a *App) softButton(c *ui.Context, label string, icon *ui.SVG, color ui.Color, onClick func()) {
+func (a *App) softButton(c *ui.Context, label string, icon *glyph, color ui.Color, onClick func()) {
 	ui.Button(c, "").Height(30).Label(label).TextColor(color).Children(func() {
 		if icon != nil {
-			ui.Icon(c, icon).Size(14, 14)
+			icon.draw(c, 14, color)
 		}
 		ui.Text(c, label).SingleLine()
 	}).OnClick(onClick)
 }
 
-func (a *App) primaryButton(c *ui.Context, label string, icon *ui.SVG, disabled bool, onClick func()) {
+func (a *App) primaryButton(c *ui.Context, label string, icon *glyph, disabled bool, onClick func()) {
 	ui.PrimaryButton(c, "").Height(32).Label(label).Disabled(disabled).Children(func() {
 		if icon != nil {
-			ui.Icon(c, icon).Size(14, 14)
+			icon.draw(c, 14, c.Theme().AccentText)
 		}
 		ui.Text(c, label).SingleLine()
 	}).OnClick(onClick)
@@ -435,7 +517,7 @@ func (a *App) emptyPortfolio(c *ui.Context) {
 	ui.Column(c).Gap(8).Padding(30).Center().Radius(14).
 		Background(p.card).Border(1, p.hairline).Margin(24, 0, 0, 0).Children(func() {
 		ui.Box(c).Size(46, 46).Radius(13).Background(p.accentSoft).Center().Children(func() {
-			ui.Icon(c, iconWallet).Size(22, 22).TextColor(p.accent)
+			iconWallet.draw(c, 22, p.accent)
 		})
 		ui.Text(c, a.t(i18n.NoAccounts)).FontSize(15).FontWeight(700)
 		ui.Text(c, a.t(i18n.NoAccountsWhy)).FontSize(12.5).TextColor(p.muted).TextAlign(ui.Center)
@@ -865,7 +947,7 @@ func (a *App) fiatRow(c *ui.Context) {
 	p := a.pal
 	ui.Row(c).Padding(13, 16).AlignItems(ui.Center).Gap(14).Children(func() {
 		ui.Box(c).Size(32, 32).Radius(9).Background(p.accentSoft).Center().Children(func() {
-			ui.Icon(c, iconChart).Size(17, 17).TextColor(p.accent)
+			iconChart.draw(c, 17, p.accent)
 		})
 		ui.Column(c).Grow(1).Gap(2).Children(func() {
 			ui.Text(c, a.t(i18n.FiatTitle)).FontSize(12.5).FontWeight(600).MaxLines(1)
@@ -886,7 +968,7 @@ func (a *App) presenceRow(c *ui.Context) {
 	p := a.pal
 	ui.Row(c).Padding(13, 16).AlignItems(ui.Center).Gap(14).Children(func() {
 		ui.Box(c).Size(32, 32).Radius(9).Background(p.accentSoft).Center().Children(func() {
-			ui.Icon(c, iconFingerprint).Size(17, 17).TextColor(p.accent)
+			iconFingerprint.draw(c, 17, p.accent)
 		})
 		ui.Column(c).Grow(1).Gap(2).Children(func() {
 			ui.Text(c, a.t(i18n.AuthTitle, a.authName())).FontSize(12.5).FontWeight(600).MaxLines(1)

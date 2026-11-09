@@ -85,6 +85,13 @@ func TestScreenshots(t *testing.T) {
 	save(t, tt, "new-portfolio-dark")
 	a.settings.Language = i18n.Chinese
 	save(t, ui.NewTester(a.view, windowWidth, windowHeight), "new-portfolio-zh")
+	a.settings.Language = i18n.English
+	a.settings.SidebarCollapsed = true
+	save(t, ui.NewTester(a.view, windowWidth, windowHeight), "sidebar-rail-light")
+	tt = ui.NewTester(a.view, windowWidth, windowHeight)
+	tt.SetDark(true)
+	save(t, tt, "sidebar-rail-dark")
+	a.settings.SidebarCollapsed = false
 
 	walletPage := func(t *testing.T) *App {
 		a := newTestApp(t)
