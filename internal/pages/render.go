@@ -171,26 +171,13 @@ func renderChart(c *ui.Context, spec *Chart) {
 	ui.Column(c).Padding(14).Radius(10).Background(t.Surface).Border(1, t.Border).Children(func() {
 		chart.Plot(c, axes, func(area ui.Element) {
 			if spec.Kind == "line" {
+				xs, ys := lineFractions(x, y, values)
 				area.Draw(func(p *ui.Painter, r ui.Rect) {
-					if len(values) == 0 {
-						return
-					}
-					base := chart.Y(r, y.At(lo))
-					fill := &ui.Path{}
-					fill.MoveTo(chart.X(r, x.At(0)), base)
-					for i, v := range values {
-						fill.LineTo(chart.X(r, x.At(i)), chart.Y(r, y.At(v)))
-					}
-					fill.LineTo(chart.X(r, x.At(len(values)-1)), base)
-					fill.Close()
-					p.FillPath(fill, t.Accent.Alpha(0.16))
-					for i := 1; i < len(values); i++ {
-						p.Line(
-							chart.X(r, x.At(i-1)), chart.Y(r, y.At(values[i-1])),
-							chart.X(r, x.At(i)), chart.Y(r, y.At(values[i])),
-							2, t.Accent,
-						)
-					}
+					// StrokePath follows every sample. Painter.Line only
+					// paints the horizontal or vertical edge of a box, so
+					// a diagonal becomes a right angle.
+					p.FillPath(areaPath(r, xs, ys), t.Accent.Alpha(0.16))
+					p.StrokePath(linePath(r, xs, ys), 2, t.Accent)
 				})
 				return
 			}
@@ -199,6 +186,71 @@ func renderChart(c *ui.Context, spec *Chart) {
 			}
 		}).Height(220).Gap(6)
 	})
+}
+
+// lineFractions maps each sample onto the plot, in the series' order.
+// x grows from the first sample to the last and never steps backward.
+func lineFractions(x chart.Band, y chart.Linear, values []float64) (xs, ys []float32) {
+	xs = make([]float32, len(values))
+	ys = make([]float32, len(values))
+	for i, v := range values {
+		xs[i] = x.At(i)
+		ys[i] = y.At(v)
+	}
+	return xs, ys
+}
+
+// lineVertices is the line through every sample, in order.
+func lineVertices(r ui.Rect, xs, ys []float32) [][2]float32 {
+	n := min(len(xs), len(ys))
+	out := make([][2]float32, n)
+	for i := 0; i < n; i++ {
+		out[i] = [2]float32{chart.X(r, xs[i]), chart.Y(r, ys[i])}
+	}
+	return out
+}
+
+// areaVertices is one polygon under that line: the samples from first to
+// last, then the baseline back from the last sample to the first. No
+// sample in between returns to the baseline.
+func areaVertices(r ui.Rect, xs, ys []float32) [][2]float32 {
+	line := lineVertices(r, xs, ys)
+	if len(line) == 0 {
+		return nil
+	}
+	base := chart.Y(r, 0)
+	out := make([][2]float32, 0, len(line)+2)
+	out = append(out, line...)
+	out = append(out, [2]float32{line[len(line)-1][0], base})
+	out = append(out, [2]float32{line[0][0], base})
+	return out
+}
+
+func linePath(r ui.Rect, xs, ys []float32) *ui.Path {
+	pts := lineVertices(r, xs, ys)
+	path := &ui.Path{}
+	if len(pts) == 0 {
+		return path
+	}
+	path.MoveTo(pts[0][0], pts[0][1])
+	for _, pt := range pts[1:] {
+		path.LineTo(pt[0], pt[1])
+	}
+	return path
+}
+
+func areaPath(r ui.Rect, xs, ys []float32) *ui.Path {
+	pts := areaVertices(r, xs, ys)
+	path := &ui.Path{}
+	if len(pts) == 0 {
+		return path
+	}
+	path.MoveTo(pts[0][0], pts[0][1])
+	for _, pt := range pts[1:] {
+		path.LineTo(pt[0], pt[1])
+	}
+	path.Close()
+	return path
 }
 
 // xTicks labels a chart's horizontal axis. A long series keeps the first,

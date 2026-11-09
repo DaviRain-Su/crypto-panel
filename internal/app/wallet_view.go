@@ -198,7 +198,7 @@ func (a *App) walletPickers(c *ui.Context) {
 						}
 					}
 				}
-			}).FillWidth()
+			}).FillWidth().Justify(ui.SpaceBetween)
 		})
 	})
 }
@@ -230,7 +230,8 @@ func (a *App) walletSecurityCard(c *ui.Context) {
 		body = a.t(i18n.AuthBody, a.authName())
 	}
 	ui.Row(c).Gap(14).Padding(16).Radius(14).Background(p.card).
-		Border(1, p.hairline).Shadow(0, 1, 2, 0, p.shadow).AlignItems(ui.Center).Children(func() {
+		Border(1, p.hairline).Shadow(0, 1, 2, 0, p.shadow).AlignItems(ui.Center).
+		Margin(0, 0, 16, 0).Children(func() {
 		ui.Box(c).Size(38, 38).Radius(11).Background(p.accentSoft).Center().Children(func() {
 			iconShield.draw(c, 19, p.accent)
 		})
@@ -270,7 +271,8 @@ func (a *App) walletAccountCard(c *ui.Context, acc wallet.Account) {
 	}
 	busy := a.authBusy == "unlock:"+acc.Addr || a.authBusy == "reveal:"+acc.Addr
 	ui.Column(c).Key("wallet:"+acc.Addr).Gap(12).Padding(16).Radius(14).
-		Background(p.card).Border(1, p.hairline).Shadow(0, 1, 2, 0, p.shadow).Children(func() {
+		Background(p.card).Border(1, p.hairline).Shadow(0, 1, 2, 0, p.shadow).
+		Margin(0, 0, 16, 0).Children(func() {
 		ui.Row(c).AlignItems(ui.Center).Gap(12).Children(func() {
 			a.identicon(c, acc.Addr)
 			ui.Column(c).Grow(1).Gap(3).Children(func() {
@@ -332,8 +334,9 @@ func (a *App) walletImportForm(c *ui.Context) {
 	}
 	family := a.network().Family
 	a.sectionTitle(c, title)
-	ui.Column(c).Gap(10).Padding(16).Radius(14).MaxWidth(600).
-		Background(p.card).Border(1, p.hairline).Shadow(0, 1, 2, 0, p.shadow).Children(func() {
+	ui.Column(c).Gap(10).Padding(16).Radius(14).
+		Background(p.card).Border(1, p.hairline).Shadow(0, 1, 2, 0, p.shadow).
+		Margin(0, 0, 16, 0).Children(func() {
 		ui.Text(c, a.t(i18n.WalletImportChain, a.network().Name)).FontSize(12).
 			TextColor(p.muted).MaxLines(2)
 		if family == chain.Near {
@@ -409,7 +412,8 @@ func (a *App) nearAccountCard(c *ui.Context, acc wallet.NearAccount) {
 	}
 	busy := a.authBusy == "near-unlock:"+acc.AccountID || a.authBusy == "near-reveal:"+acc.AccountID
 	ui.Column(c).Key("near:"+acc.AccountID).Gap(12).Padding(16).Radius(14).
-		Background(p.card).Border(1, p.hairline).Shadow(0, 1, 2, 0, p.shadow).Children(func() {
+		Background(p.card).Border(1, p.hairline).Shadow(0, 1, 2, 0, p.shadow).
+		Margin(0, 0, 16, 0).Children(func() {
 		ui.Row(c).AlignItems(ui.Center).Gap(12).Children(func() {
 			a.identicon(c, acc.AccountID)
 			ui.Column(c).Grow(1).Gap(3).Children(func() {
@@ -479,9 +483,9 @@ func (a *App) nearSendForm(c *ui.Context) {
 	if a.nearSendFrom != w.Near.AccountID {
 		a.nearSendFrom = w.Near.AccountID
 	}
-	ui.Column(c).Gap(10).Padding(16).Radius(14).MaxWidth(600).
+	ui.Column(c).Gap(10).Padding(16).Radius(14).
 		Background(p.card).Border(1, p.hairline).Shadow(0, 1, 2, 0, p.shadow).
-		Margin(12, 0, 0, 0).Children(func() {
+		Margin(0, 0, 16, 0).Children(func() {
 		ui.Text(c, a.t(i18n.WalletNearSendTitle)).FontSize(13).FontWeight(700)
 		if a.network().Family != chain.Near {
 			ui.Text(c, a.t(i18n.WalletNearSendNoNetwork)).FontSize(11.5).
@@ -573,7 +577,8 @@ func (a *App) solanaAccountCard(c *ui.Context, acc wallet.SolanaAccount) {
 	}
 	busy := a.authBusy == "solana-unlock:"+acc.Address || a.authBusy == "solana-reveal:"+acc.Address
 	ui.Column(c).Key("solana:"+acc.Address).Gap(12).Padding(16).Radius(14).
-		Background(p.card).Border(1, p.hairline).Shadow(0, 1, 2, 0, p.shadow).Children(func() {
+		Background(p.card).Border(1, p.hairline).Shadow(0, 1, 2, 0, p.shadow).
+		Margin(0, 0, 16, 0).Children(func() {
 		ui.Row(c).AlignItems(ui.Center).Gap(12).Children(func() {
 			a.identicon(c, acc.Address)
 			ui.Column(c).Grow(1).Gap(3).Children(func() {

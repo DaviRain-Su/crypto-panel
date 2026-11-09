@@ -25,6 +25,51 @@ func TestXTicksKeepsTheEndsApart(t *testing.T) {
 	}
 }
 
+func TestLineAreaFollowsEveryPoint(t *testing.T) {
+	values := []float64{
+		29, 31, 28, 34, 38, 36, 41, 45, 43, 49,
+		52, 48, 55, 58, 54, 60, 64, 61, 66, 63,
+		59, 62, 68, 71, 67, 70, 74, 69, 66, 72,
+	}
+	labels := make([]string, len(values))
+	for i := range labels {
+		labels[i] = fmt.Sprintf("d%02d", i)
+	}
+	x := chart.NewBand(labels...).Padding(0.2, 0.1)
+	y := chart.NewLinear(0, 80).Nice(3)
+	xs, ys := lineFractions(x, y, values)
+	r := ui.Rect{X: 8, Y: 12, W: 640, H: 220}
+	line := lineVertices(r, xs, ys)
+	area := areaVertices(r, xs, ys)
+	if len(line) != len(values) {
+		t.Fatalf("line has %d points, want %d", len(line), len(values))
+	}
+	if len(area) != len(values)+2 {
+		t.Fatalf("area has %d points, want the samples plus the two baseline corners", len(area))
+	}
+	for i := range line {
+		if area[i] != line[i] {
+			t.Fatalf("area[%d] = %v, line point %v", i, area[i], line[i])
+		}
+		if ys[i] != y.At(values[i]) {
+			t.Fatalf("sample %d is not in series order", i)
+		}
+		if i > 0 && line[i][0] <= line[i-1][0] {
+			t.Fatalf("line x went backwards at %d: %v then %v", i, line[i-1], line[i])
+		}
+	}
+	baseY := chart.Y(r, 0)
+	last, first := area[len(values)], area[len(values)+1]
+	if last != [2]float32{line[len(line)-1][0], baseY} || first != [2]float32{line[0][0], baseY} {
+		t.Fatalf("baseline = %v %v, want the last sample back to the first", last, first)
+	}
+	for i := 0; i < len(values); i++ {
+		if area[i][1] == baseY {
+			t.Fatalf("sample %d dropped to the baseline", i)
+		}
+	}
+}
+
 func TestRender(t *testing.T) {
 	p, err := Decode([]byte(validPage))
 	if err != nil {
