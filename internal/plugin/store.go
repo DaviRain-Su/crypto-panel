@@ -57,6 +57,11 @@ type Store struct {
 	provenanceMu  sync.Mutex
 	provenanceMem map[string][]byte
 	provBackoff   time.Time
+	// seenHash is the package hash first observed while an app was locked.
+	// A later confirm uses it to refuse a tree that changed after that list
+	// was computed. Install and removal clear the entry so a reinstall in
+	// the same run can be confirmed.
+	seenHash map[string]string
 }
 
 // NewStore returns a store rooted at dir, which is created on first write.
@@ -256,6 +261,10 @@ func (s *Store) Remove(id string) error {
 	return s.remove(id)
 }
 
+// removePluginDir deletes an app directory. Tests replace it so a failed
+// uninstall can be injected without depending on directory permissions.
+var removePluginDir = os.RemoveAll
+
 func (s *Store) remove(id string) error {
 	dir := filepath.Join(s.dir, id)
 	kv := &KV{path: filepath.Join(dir, "kv.json")}
@@ -263,6 +272,7 @@ func (s *Store) remove(id string) error {
 	lock.Lock()
 	defer lock.Unlock()
 	if _, err := os.Lstat(dir); errors.Is(err, fs.ErrNotExist) {
+		s.forgetSeenHash(id)
 		return s.reportProvenanceDelete(id)
 	} else if err != nil {
 		return managementError("REMOVE_FAILED", "无法读取应用目录", 500)
@@ -280,9 +290,10 @@ func (s *Store) remove(id string) error {
 			}
 		}
 	}
-	if os.RemoveAll(dir) != nil {
+	if removePluginDir(dir) != nil {
 		return managementError("REMOVE_FAILED", "无法删除应用目录", 500)
 	}
+	s.forgetSeenHash(id)
 	return s.reportProvenanceDelete(id)
 }
 

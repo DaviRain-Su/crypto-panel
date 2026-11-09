@@ -67,7 +67,7 @@ func (a *App) askProvenanceConfirm(id, name string) {
 	a.pluginNotice = a.t(i18n.ProvenanceLockedBusy)
 	a.invalidate()
 	a.async(func() {
-		view, err := plugins.SnapshotProvenance(id)
+		view, err := takeProvenanceSnapshot(plugins, id)
 		a.main(func() {
 			if err != nil || view.Signed || view.PackageHash == "" || view.ID != id || a.plugins != plugins {
 				a.pluginNotice = a.t(i18n.ProvenanceLockedFailed)
@@ -81,14 +81,20 @@ func (a *App) askProvenanceConfirm(id, name string) {
 			}
 			ask(view, func(ok bool) {
 				if !ok || a.plugins != plugins {
+					a.clearProvenanceBusy()
 					return
 				}
 				a.pluginNotice = a.t(i18n.ProvenanceLockedBusy)
 				a.invalidate()
+				manager := a.pluginManager
 				a.async(func() {
 					err := plugins.ConfirmProvenance(view)
+					var mutateErr error
+					if err == nil && manager != nil {
+						mutateErr = manager.APIMayMutate(id)
+					}
 					a.main(func() {
-						if err != nil || a.pluginManager != nil && a.pluginManager.APIMayMutate(id) != nil {
+						if err != nil || mutateErr != nil {
 							a.pluginNotice = a.t(i18n.ProvenanceLockedFailed)
 							a.invalidate()
 							a.refreshProvenanceLocks()
@@ -103,6 +109,19 @@ func (a *App) askProvenanceConfirm(id, name string) {
 			})
 		})
 	})
+}
+
+// takeProvenanceSnapshot is SnapshotProvenance. Tests replace it to hand
+// the confirm flow a view the real snapshot would not return.
+var takeProvenanceSnapshot = func(plugins *plugin.Store, id string) (plugin.ProvenanceView, error) {
+	return plugins.SnapshotProvenance(id)
+}
+
+func (a *App) clearProvenanceBusy() {
+	if a.pluginNotice == a.t(i18n.ProvenanceLockedBusy) {
+		a.pluginNotice = ""
+	}
+	a.invalidate()
 }
 
 func (a *App) async(fn func()) {

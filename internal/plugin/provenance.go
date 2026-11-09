@@ -278,6 +278,9 @@ func (s *Store) reportProvenanceDelete(id string) error {
 // install.json must be the bytes the host marshaled; a swapped file is not
 // adopted.
 func (s *Store) rememberInstall(id string, info installInfo, dir string) error {
+	// The tree just installed is a new observation. Keeping the hash from
+	// before a delete would reject this reinstall until the process restarts.
+	s.forgetSeenHash(id)
 	_, raw, err := readInstallBytes(dir)
 	if err != nil {
 		return err
@@ -439,11 +442,18 @@ func (s *Store) migrationSentinelExists() (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	if info.Mode()&fs.ModeSymlink != 0 || !info.Mode().IsRegular() {
+	if info.Mode()&fs.ModeSymlink != 0 {
+		return false, errMigrationSentinelSymlink
+	}
+	if !info.Mode().IsRegular() {
 		return false, errors.New("migration sentinel is not a regular file")
 	}
 	return true, nil
 }
+
+// errMigrationSentinelSymlink is distinct from any other non-regular sentinel
+// so a symlink is not treated as "not there".
+var errMigrationSentinelSymlink = errors.New("migration sentinel is a symlink")
 
 // createMigrationSentinelFile writes the sentinel. Tests replace it to inject
 // a failure without changing directory permissions.
@@ -587,6 +597,10 @@ type ProvenanceView struct {
 	digest      string
 }
 
+// readInstallIdentity is installIdentity, swapped in tests that need a link
+// count the kernel will not produce.
+var readInstallIdentity = installIdentity
+
 // LockedLocalApps are local.* personal apps whose origin cannot be confirmed
 // while migration did not finish. The list does not call them unsigned:
 // install.json is not signature evidence. A package whose signature still
@@ -595,11 +609,6 @@ type ProvenanceView struct {
 // install.json a same-user process rewrites before the window opens, can
 // still appear here. The user's confirm click is the only gate. This does
 // not follow links.
-
-// readInstallIdentity is installIdentity, swapped in tests that need a link
-// count the kernel will not produce.
-var readInstallIdentity = installIdentity
-
 func (s *Store) LockedLocalApps() ([]Installed, error) {
 	stuck, err := s.migrationStuck()
 	if err != nil || !stuck {
@@ -627,15 +636,54 @@ func (s *Store) LockedLocalApps() ([]Installed, error) {
 		if signed || inst.Signed {
 			continue
 		}
+		if hash, err := normalizedPackageHash(inst.Dir); err == nil && hash != "" {
+			s.rememberSeenHash(name, hash)
+		}
 		out = append(out, inst)
 	}
 	return out, nil
 }
 
+func (s *Store) rememberSeenHash(id, hash string) {
+	if hash == "" {
+		return
+	}
+	s.provenanceMu.Lock()
+	defer s.provenanceMu.Unlock()
+	if s.seenHash == nil {
+		s.seenHash = map[string]string{}
+	}
+	if _, ok := s.seenHash[id]; !ok {
+		s.seenHash[id] = hash
+	}
+}
+
+func (s *Store) seenPackageHash(id string) (string, bool) {
+	s.provenanceMu.Lock()
+	defer s.provenanceMu.Unlock()
+	hash, ok := s.seenHash[id]
+	return hash, ok
+}
+
+func (s *Store) forgetSeenHash(id string) {
+	s.provenanceMu.Lock()
+	defer s.provenanceMu.Unlock()
+	delete(s.seenHash, id)
+}
+
 // SnapshotProvenance records what the confirm window is about to show.
 func (s *Store) SnapshotProvenance(id string) (ProvenanceView, error) {
 	view, _, err := s.inspectProvenance(id)
-	return view, err
+	if err != nil {
+		return ProvenanceView{}, err
+	}
+	if view.nlink == 0 || view.nlink > 1 {
+		return ProvenanceView{}, ErrProvenanceLinked
+	}
+	if seen, ok := s.seenPackageHash(id); ok && seen != view.PackageHash {
+		return ProvenanceView{}, ErrProvenanceChanged
+	}
+	return view, nil
 }
 
 // ConfirmProvenance writes a host record only when the app still matches the
@@ -662,10 +710,16 @@ func (s *Store) ConfirmProvenance(view ProvenanceView) error {
 	if err != nil {
 		return err
 	}
+	if current.nlink == 0 || current.nlink > 1 {
+		return ErrProvenanceLinked
+	}
+	if seen, ok := s.seenPackageHash(view.ID); ok && seen != current.PackageHash {
+		return ErrProvenanceChanged
+	}
 	if current.PackageHash == "" || view.PackageHash == "" {
 		return ErrProvenanceUnhashed
 	}
-	if view.ID != current.ID || view.Path != current.Path || view.PackageHash != current.PackageHash || view.digest != current.digest || view.Signed != current.Signed || view.dev != current.dev || view.ino != current.ino || view.nlink != current.nlink || view.nlink > 1 || current.nlink > 1 {
+	if view.ID != current.ID || view.Path != current.Path || view.PackageHash != current.PackageHash || view.digest != current.digest || view.Signed != current.Signed || view.dev != current.dev || view.ino != current.ino || view.nlink != current.nlink {
 		return ErrProvenanceChanged
 	}
 	if current.Signed {
@@ -702,7 +756,7 @@ func (s *Store) inspectProvenance(id string) (ProvenanceView, []byte, error) {
 		return ProvenanceView{}, nil, errInstallNotRegular
 	}
 	dev, ino, nlink, ok := readInstallIdentity(path, info)
-	if !ok || nlink == 0 || nlink > 1 {
+	if !ok {
 		return ProvenanceView{}, nil, ErrProvenanceLinked
 	}
 	_, raw, err := readInstallBytes(dir)

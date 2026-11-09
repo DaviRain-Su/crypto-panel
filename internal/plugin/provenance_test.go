@@ -868,16 +868,20 @@ func TestConfirmProvenancePinsTheOpenedSnapshot(t *testing.T) {
 	if err != nil || len(locked) != 1 {
 		t.Fatalf("失败后离开了锁定列表: %+v %v", locked, err)
 	}
-	view, err = s.SnapshotProvenance(id)
+	if _, err := s.SnapshotProvenance(id); !errors.Is(err, ErrProvenanceChanged) {
+		t.Fatalf("窗口打开前 index.js 已变仍给出快照: %v", err)
+	}
+	changed, _, err := s.inspectProvenance(id)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := s.ConfirmProvenance(view); err != nil {
-		t.Fatal(err)
+	if err := s.ConfirmProvenance(changed); err == nil {
+		t.Fatal("窗口打开前改过 index.js 仍被确认")
 	}
-	if err := m.APIMayMutate(id); err != nil {
-		t.Fatal(err)
+	if _, found, _ := s.getProvenance(id); found {
+		t.Fatal("窗口打开前的改动留下了记录")
 	}
+	requireCode(t, m.APIMayMutate(id), "API_MUTATION_FORBIDDEN")
 }
 
 func TestConfirmDoesNotDowngradeSignedApp(t *testing.T) {
@@ -1042,12 +1046,12 @@ func TestConfirmRejectsSnapshotFieldChanges(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	cases := []ProvenanceView{base, base, base, base}
+	cases := []ProvenanceView{base, base, base, base, base}
 	cases[0].dev++
 	cases[1].ino++
 	cases[2].digest += "x"
 	cases[3].Signed = true
-	cases[3].PackageHash = ""
+	cases[4].PackageHash = base.PackageHash + "ab"
 	for i, view := range cases {
 		if i == 3 {
 			view.PackageHash = base.PackageHash
@@ -1117,31 +1121,43 @@ func TestConfirmRejectsSignatureAddedAfterSnapshot(t *testing.T) {
 	}
 }
 
-func TestConfirmAfterIndexChangeUsesTheNewSnapshot(t *testing.T) {
+func TestConfirmRefusesIndexChangeBeforeTheWindow(t *testing.T) {
 	id := "local.personal.newhash"
 	s := stuckUnsigned(t, id)
-	if err := os.WriteFile(filepath.Join(s.Dir(), id, "index.js"), []byte(`export function page(){return {title:"Before"};}`), 0o644); err != nil {
+	if _, err := s.LockedLocalApps(); err != nil {
 		t.Fatal(err)
 	}
-	view, err := s.SnapshotProvenance(id)
+	record := filepath.Join(s.Dir(), id, "install.json")
+	before, err := os.ReadFile(record)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := s.ConfirmProvenance(view); err != nil {
+	if err := os.WriteFile(filepath.Join(s.Dir(), id, "index.js"), []byte(`export function page(){return {title:"Before"};}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	rec, found, gerr := s.getProvenance(id)
-	if gerr != nil || !found || rec.Signed || rec.PackageHash != view.PackageHash {
-		t.Fatalf("确认没有记下打开窗口时的摘要: %+v found=%v err=%v", rec, found, gerr)
+	after, err := os.ReadFile(record)
+	if err != nil || string(after) != string(before) {
+		t.Fatal("index.js 的变化不该改 install.json")
+	}
+	if _, err := s.SnapshotProvenance(id); !errors.Is(err, ErrProvenanceChanged) {
+		t.Fatalf("打开窗口前的 index.js 变化仍可快照: %v", err)
+	}
+	view, _, err := s.inspectProvenance(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.ConfirmProvenance(view); !errors.Is(err, ErrProvenanceChanged) {
+		t.Fatalf("打开窗口前的 index.js 变化被确认: %v", err)
+	}
+	if _, found, _ := s.getProvenance(id); found {
+		t.Fatal("打开窗口前的 index.js 变化留下了记录")
 	}
 	m, err := NewManager(s)
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { m.Close() })
-	if err := m.APIMayMutate(id); err != nil {
-		t.Fatal(err)
-	}
+	requireCode(t, m.APIMayMutate(id), "API_MUTATION_FORBIDDEN")
 }
 
 func TestConfirmRejectsZeroLinkCount(t *testing.T) {
@@ -1155,8 +1171,93 @@ func TestConfirmRejectsZeroLinkCount(t *testing.T) {
 	if _, err := s.SnapshotProvenance(id); !errors.Is(err, ErrProvenanceLinked) {
 		t.Fatalf("链接数为 0 被接受: %v", err)
 	}
+	view, _, err := s.inspectProvenance(id)
+	if err != nil || view.nlink != 0 {
+		t.Fatalf("检查链接数: %+v %v", view, err)
+	}
+	if err := s.ConfirmProvenance(view); !errors.Is(err, ErrProvenanceLinked) {
+		t.Fatalf("链接数为 0 的确认: %v", err)
+	}
 	if _, found, _ := s.getProvenance(id); found {
 		t.Fatal("链接数为 0 写下了记录")
+	}
+}
+
+func TestSymlinkSentinelBlocksEvenWhenCreateSucceeds(t *testing.T) {
+	prev := createMigrationSentinelFile
+	createMigrationSentinelFile = func(string) error { return nil }
+	t.Cleanup(func() { createMigrationSentinelFile = prev })
+	sec := &scriptedSecrets{m: map[string][]byte{}}
+	root := t.TempDir()
+	s := NewStore(filepath.Join(root, "plugins"), sec)
+	id := "local.personal.symsentinel"
+	plantLoose(t, s.Dir(), id)
+	path, err := s.migrationSentinelPath()
+	if err != nil {
+		t.Fatal(err)
+	}
+	target := filepath.Join(root, "other-sentinel")
+	if err := os.WriteFile(target, []byte("1\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(target, path); err != nil {
+		t.Fatal(err)
+	}
+	exists, serr := s.migrationSentinelExists()
+	if exists || !errors.Is(serr, errMigrationSentinelSymlink) {
+		t.Fatalf("符号链接哨兵应单独报错: exists=%v err=%v", exists, serr)
+	}
+	m, err := NewManager(s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { m.Close() })
+	requireCode(t, m.APIMayMutate(id), "API_MUTATION_FORBIDDEN")
+	if _, found, _ := s.getProvenance(id); found {
+		t.Fatal("哨兵是符号链接且创建被当成成功时，迁移相信了 install.json")
+	}
+	if _, err := sec.Get(provenanceMigrationStarted); err == nil {
+		t.Fatal("符号链接哨兵之后仍写下了开始标记")
+	}
+}
+
+func TestSentinelWriterReportsOpenFailure(t *testing.T) {
+	parent := filepath.Join(t.TempDir(), "not-a-directory")
+	if err := os.WriteFile(parent, []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeMigrationSentinelFile(filepath.Join(parent, ".plugins-migration-attempted")); err == nil {
+		t.Fatal("哨兵写到非目录时被当成成功")
+	}
+}
+
+func TestConfirmRejectsMatchingHardLink(t *testing.T) {
+	id := "local.personal.hardlinksame"
+	s := stuckUnsigned(t, id)
+	record := filepath.Join(s.Dir(), id, "install.json")
+	before, err := os.ReadFile(record)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Link(record, filepath.Join(s.Dir(), "same-install.json")); err != nil {
+		t.Fatal(err)
+	}
+	after, err := os.ReadFile(record)
+	if err != nil || string(after) != string(before) {
+		t.Fatal("硬链接改变了内容")
+	}
+	if _, err := s.SnapshotProvenance(id); !errors.Is(err, ErrProvenanceLinked) {
+		t.Fatalf("快照接受了硬链接: %v", err)
+	}
+	view, _, err := s.inspectProvenance(id)
+	if err != nil || view.nlink < 2 {
+		t.Fatalf("检查硬链接: %+v %v", view, err)
+	}
+	if err := s.ConfirmProvenance(view); !errors.Is(err, ErrProvenanceLinked) {
+		t.Fatalf("与快照一致的硬链接被确认: %v", err)
+	}
+	if _, found, _ := s.getProvenance(id); found {
+		t.Fatal("硬链接确认写下了记录")
 	}
 }
 
@@ -1179,5 +1280,349 @@ func TestConfirmHonorsTheAppLease(t *testing.T) {
 	}
 	if _, found, _ := s.getProvenance(id); found {
 		t.Fatal("占用中的确认写下了记录")
+	}
+}
+
+func TestConfirmRejectsSnapshotPathMismatch(t *testing.T) {
+	id := "local.personal.identity"
+	s := stuckUnsigned(t, id)
+	view, err := s.SnapshotProvenance(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	view.Path = view.Path + "-other"
+	if err := s.ConfirmProvenance(view); !errors.Is(err, ErrProvenanceChanged) {
+		t.Fatalf("路径被换掉仍确认: %v", err)
+	}
+	if _, found, _ := s.getProvenance(id); found {
+		t.Fatal("路径被换掉写下了记录")
+	}
+}
+
+func TestConfirmKeepsSignedFlagWhenSignatureDoesNotVerify(t *testing.T) {
+	id := "local.personal.partialsign"
+	s := stuckUnsigned(t, id)
+	dir := filepath.Join(s.Dir(), id)
+	if err := signInstall(t, dir); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "index.js"), []byte(`export function page(){return {title:"Tampered"};}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	view, err := s.SnapshotProvenance(id)
+	if err != nil || !view.Signed {
+		t.Fatalf("签名对不上时仍应保持已签名: %+v %v", view, err)
+	}
+	if err := s.ConfirmProvenance(view); !errors.Is(err, ErrProvenanceSigned) {
+		t.Fatalf("未验证的签名被确认: %v", err)
+	}
+	if _, found, _ := s.getProvenance(id); found {
+		t.Fatal("未验证的签名写成了记录")
+	}
+}
+
+func TestConfirmRejectsIndexChangeAfterSnapshot(t *testing.T) {
+	id := "local.personal.indexafter"
+	s := stuckUnsigned(t, id)
+	view, err := s.SnapshotProvenance(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	record := filepath.Join(s.Dir(), id, "install.json")
+	before, err := os.ReadFile(record)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(s.Dir(), id, "index.js"), []byte(`export function page(){return {title:"After"};}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	after, err := os.ReadFile(record)
+	if err != nil || string(after) != string(before) {
+		t.Fatal("index.js 变化不该改 install.json")
+	}
+	if err := s.ConfirmProvenance(view); !errors.Is(err, ErrProvenanceChanged) {
+		t.Fatalf("快照之后的 index.js 变化被确认: %v", err)
+	}
+	if _, found, _ := s.getProvenance(id); found {
+		t.Fatal("快照之后的 index.js 变化留下了记录")
+	}
+}
+
+func TestConfirmDoesNotWriteWhenAlreadySigned(t *testing.T) {
+	id := "local.personal.nosignedwrite"
+	s := stuckUnsigned(t, id)
+	if err := signInstall(t, filepath.Join(s.Dir(), id)); err != nil {
+		t.Fatal(err)
+	}
+	view, err := s.SnapshotProvenance(id)
+	if err != nil || !view.Signed {
+		t.Fatalf("快照: %+v %v", view, err)
+	}
+	if err := s.ConfirmProvenance(view); !errors.Is(err, ErrProvenanceSigned) {
+		t.Fatalf("已签名确认: %v", err)
+	}
+	if _, found, _ := s.getProvenance(id); found {
+		t.Fatal("已签名确认先写下了记录")
+	}
+}
+
+func TestConfirmRejectsDeviceMismatchOnly(t *testing.T) {
+	id := "local.personal.devonly"
+	s := stuckUnsigned(t, id)
+	view, err := s.SnapshotProvenance(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	view.dev++
+	if err := s.ConfirmProvenance(view); !errors.Is(err, ErrProvenanceChanged) {
+		t.Fatalf("设备号变化被确认: %v", err)
+	}
+	if _, found, _ := s.getProvenance(id); found {
+		t.Fatal("设备号变化写下了记录")
+	}
+}
+
+func TestReinstallClearsTheLockedHash(t *testing.T) {
+	sec := &scriptedSecrets{m: map[string][]byte{}}
+	root := t.TempDir()
+	s := NewStore(filepath.Join(root, "plugins"), sec)
+	id := "local.personal.reinstall"
+	plantLoose(t, s.Dir(), id)
+	sentinel, err := s.migrationSentinelPath()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(sentinel, []byte("1\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.LockedLocalApps(); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(s.Dir(), id, "index.js"), []byte(`export function page(){return {title:"Changed"};}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	stale, _, err := s.inspectProvenance(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.ConfirmProvenance(stale); !errors.Is(err, ErrProvenanceChanged) {
+		t.Fatalf("列表之后的改动应拒绝: %v", err)
+	}
+	if err := s.Remove(id); err != nil {
+		t.Fatal(err)
+	}
+	src := t.TempDir()
+	writeVersion(t, src, id, "1.0.0", `export function page(){return {title:"Reinstalled"};}`)
+	if _, err := s.Install(src); err != nil {
+		t.Fatal(err)
+	}
+	delete(sec.m, ProvenanceAccount(id))
+	if _, err := s.LockedLocalApps(); err != nil {
+		t.Fatal(err)
+	}
+	view, err := s.SnapshotProvenance(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.ConfirmProvenance(view); err != nil {
+		t.Fatalf("重装后仍用旧摘要拒绝: %v", err)
+	}
+	delete(sec.m, ProvenanceAccount(id))
+	if err := os.WriteFile(filepath.Join(s.Dir(), id, "index.js"), []byte(`export function page(){return {title:"Again"};}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.SnapshotProvenance(id); !errors.Is(err, ErrProvenanceChanged) {
+		t.Fatalf("重装后的列表仍应拒绝随后的 index.js 变化: %v", err)
+	}
+}
+
+func TestInstallClearsSeenHashWithoutRemove(t *testing.T) {
+	sec := &scriptedSecrets{m: map[string][]byte{}}
+	s := NewStore(filepath.Join(t.TempDir(), "plugins"), sec)
+	id := "local.personal.reinstallf1"
+	plantLoose(t, s.Dir(), id)
+	sentinel, err := s.migrationSentinelPath()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(sentinel, []byte("1\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.LockedLocalApps(); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.RemoveAll(filepath.Join(s.Dir(), id)); err != nil {
+		t.Fatal(err)
+	}
+	src := t.TempDir()
+	writeVersion(t, src, id, "1.0.0", `export function page(){return {title:"Fresh"};}`)
+	if _, err := s.Install(src); err != nil {
+		t.Fatal(err)
+	}
+	delete(sec.m, ProvenanceAccount(id))
+	view, _, err := s.inspectProvenance(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.ConfirmProvenance(view); err != nil {
+		t.Fatalf("重装没有清掉旧摘要: %v", err)
+	}
+}
+
+func TestRemoveClearsSeenHash(t *testing.T) {
+	sec := &scriptedSecrets{m: map[string][]byte{}}
+	s := NewStore(filepath.Join(t.TempDir(), "plugins"), sec)
+	id := "local.personal.reinstallf2"
+	plantLoose(t, s.Dir(), id)
+	sentinel, err := s.migrationSentinelPath()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(sentinel, []byte("1\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.LockedLocalApps(); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(s.Dir(), id, "index.js"), []byte(`export function page(){return {title:"Changed"};}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Remove(id); err != nil {
+		t.Fatal(err)
+	}
+	plantLoose(t, s.Dir(), id)
+	if err := os.WriteFile(filepath.Join(s.Dir(), id, "index.js"), []byte(`export function page(){return {title:"Changed"};}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	view, _, err := s.inspectProvenance(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.ConfirmProvenance(view); err != nil {
+		t.Fatalf("卸载没有清掉旧摘要: %v", err)
+	}
+}
+
+func TestFailedUninstallKeepsTheLockedHash(t *testing.T) {
+	t.Run("manifest", func(t *testing.T) {
+		s, id := lockedThenChanged(t)
+		if err := os.WriteFile(filepath.Join(s.Dir(), id, "plugin.json"), []byte("{"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		err := s.Remove(id)
+		var me *Error
+		if !errors.As(err, &me) || me.Code != "BROKEN_PLUGIN" {
+			t.Fatalf("损坏清单的卸载: %v", err)
+		}
+		manifest := strings.Replace(personalManifest, "local.personal.gas", id, 1)
+		if err := os.WriteFile(filepath.Join(s.Dir(), id, "plugin.json"), []byte(manifest), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		assertChangedTreeStaysUnconfirmed(t, s, id)
+	})
+	t.Run("credentials", func(t *testing.T) {
+		s, id := lockedThenChanged(t)
+		s.secrets = deleteFailSecrets{inner: s.secrets, err: errors.New("keychain locked")}
+		err := s.Remove(id)
+		var me *Error
+		if !errors.As(err, &me) || me.Code != "REMOVE_FAILED" {
+			t.Fatalf("凭据删除失败的卸载: %v", err)
+		}
+		assertChangedTreeStaysUnconfirmed(t, s, id)
+	})
+	t.Run("directory", func(t *testing.T) {
+		s, id := lockedThenChanged(t)
+		prev := removePluginDir
+		removePluginDir = func(string) error { return errors.New("directory busy") }
+		t.Cleanup(func() { removePluginDir = prev })
+		err := s.Remove(id)
+		var meErr *Error
+		if !errors.As(err, &meErr) || meErr.Code != "REMOVE_FAILED" {
+			t.Fatalf("目录删除失败的卸载: %v", err)
+		}
+		assertChangedTreeStaysUnconfirmed(t, s, id)
+	})
+}
+
+func lockedThenChanged(t *testing.T) (*Store, string) {
+	t.Helper()
+	sec := &scriptedSecrets{m: map[string][]byte{}}
+	s := NewStore(filepath.Join(t.TempDir(), "plugins"), sec)
+	id := "local.personal.failremove"
+	plantLoose(t, s.Dir(), id)
+	sentinel, err := s.migrationSentinelPath()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(sentinel, []byte("1\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.LockedLocalApps(); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(s.Dir(), id, "index.js"), []byte(`export function page(){return {title:"Changed"};}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return s, id
+}
+
+func assertChangedTreeStaysUnconfirmed(t *testing.T, s *Store, id string) {
+	t.Helper()
+	view, _, err := s.inspectProvenance(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.ConfirmProvenance(view); !errors.Is(err, ErrProvenanceChanged) {
+		t.Fatalf("失败的卸载之后确认了改过的树: %v", err)
+	}
+	if _, found, _ := s.getProvenance(id); found {
+		t.Fatal("失败的卸载之后写下了记录")
+	}
+}
+
+type deleteFailSecrets struct {
+	inner Secrets
+	err   error
+}
+
+func (d deleteFailSecrets) Get(key string) ([]byte, error) { return d.inner.Get(key) }
+func (d deleteFailSecrets) Set(key string, value []byte) error {
+	return d.inner.Set(key, value)
+}
+func (d deleteFailSecrets) Delete(key string) error {
+	if strings.Contains(key, "/token") {
+		return d.err
+	}
+	return d.inner.Delete(key)
+}
+
+func TestDirectorySentinelIsNotAbsent(t *testing.T) {
+	prev := createMigrationSentinelFile
+	createMigrationSentinelFile = func(string) error { return nil }
+	t.Cleanup(func() { createMigrationSentinelFile = prev })
+	sec := &scriptedSecrets{m: map[string][]byte{}}
+	root := t.TempDir()
+	s := NewStore(filepath.Join(root, "plugins"), sec)
+	id := "local.personal.dirsentinel"
+	plantLoose(t, s.Dir(), id)
+	path, err := s.migrationSentinelPath()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(path, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	exists, serr := s.migrationSentinelExists()
+	if exists || serr == nil || errors.Is(serr, errMigrationSentinelSymlink) {
+		t.Fatalf("目录哨兵应报非普通文件: exists=%v err=%v", exists, serr)
+	}
+	m, err := NewManager(s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { m.Close() })
+	requireCode(t, m.APIMayMutate(id), "API_MUTATION_FORBIDDEN")
+	if _, found, _ := s.getProvenance(id); found {
+		t.Fatal("目录哨兵被当成不存在后迁移了 install.json")
 	}
 }
