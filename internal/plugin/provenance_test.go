@@ -2,6 +2,7 @@ package plugin
 
 import (
 	"crypto/ed25519"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -269,6 +270,7 @@ type scriptedSecrets struct {
 	getDelay time.Duration
 	getWaits int
 	setErr   error
+	failSet  map[string]error
 	setDelay time.Duration
 	delErr   error
 	gets     int
@@ -302,6 +304,9 @@ func (s *scriptedSecrets) Set(key string, value []byte) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.order = append(s.order, key)
+	if err := s.failSet[key]; err != nil {
+		return err
+	}
 	if s.setErr != nil {
 		return s.setErr
 	}
@@ -554,5 +559,232 @@ func TestRemoveReportsProvenanceDeleteFailure(t *testing.T) {
 	}
 	if _, statErr := os.Stat(filepath.Join(s.Dir(), id)); !errors.Is(statErr, os.ErrNotExist) {
 		t.Fatal("报告删除失败时应用目录还在")
+	}
+}
+
+func TestSentinelBlocksRemigration(t *testing.T) {
+	for _, kind := range []string{"file", "symlink", "directory"} {
+		t.Run(kind, func(t *testing.T) {
+			sec := &scriptedSecrets{m: map[string][]byte{}}
+			root := t.TempDir()
+			s := NewStore(filepath.Join(root, "plugins"), sec)
+			id := "local.personal.sentinel" + kind
+			plantLoose(t, s.Dir(), id)
+			path, err := s.migrationSentinelPath()
+			if err != nil {
+				t.Fatal(err)
+			}
+			switch kind {
+			case "file":
+				if err := os.WriteFile(path, []byte("1\n"), 0o600); err != nil {
+					t.Fatal(err)
+				}
+			case "symlink":
+				target := filepath.Join(root, "other-sentinel")
+				if err := os.WriteFile(target, []byte("1\n"), 0o600); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.Symlink(target, path); err != nil {
+					t.Fatal(err)
+				}
+			case "directory":
+				if err := os.Mkdir(path, 0o700); err != nil {
+					t.Fatal(err)
+				}
+			}
+			m, err := NewManager(s)
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { m.Close() })
+			requireCode(t, m.APIMayMutate(id), "API_MUTATION_FORBIDDEN")
+			if _, found, _ := s.getProvenance(id); found {
+				t.Fatal("哨兵还在时迁移相信了 install.json")
+			}
+		})
+	}
+}
+
+func TestStartedMarkerBlocksRemigration(t *testing.T) {
+	sec := &scriptedSecrets{m: map[string][]byte{}}
+	root := t.TempDir()
+	s := NewStore(filepath.Join(root, "plugins"), sec)
+	id := "local.personal.started"
+	plantLoose(t, s.Dir(), id)
+	if err := sec.Set(provenanceMigrationStarted, []byte("1")); err != nil {
+		t.Fatal(err)
+	}
+	m, err := NewManager(s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { m.Close() })
+	requireCode(t, m.APIMayMutate(id), "API_MUTATION_FORBIDDEN")
+	if _, found, _ := s.getProvenance(id); found {
+		t.Fatal("已开始标记还在时迁移相信了 install.json")
+	}
+}
+
+func TestFailedSentinelCreateDoesNotMigrate(t *testing.T) {
+	sec := &scriptedSecrets{m: map[string][]byte{}}
+	root := t.TempDir()
+	plugins := filepath.Join(root, "plugins")
+	if err := os.MkdirAll(plugins, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	s := NewStore(plugins, sec)
+	id := "local.personal.nosentinel"
+	plantLoose(t, s.Dir(), id)
+	if err := os.Chmod(root, 0o555); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(root, 0o700) })
+	m, err := NewManager(s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { m.Close() })
+	requireCode(t, m.APIMayMutate(id), "API_MUTATION_FORBIDDEN")
+	if _, found, _ := s.getProvenance(id); found {
+		t.Fatal("哨兵创建失败后仍然迁移了 install.json")
+	}
+}
+
+func TestStartedWriteFailureDoesNotMigrate(t *testing.T) {
+	id := "local.personal.startfail"
+	sec := &scriptedSecrets{m: map[string][]byte{}, failSet: map[string]error{provenanceMigrationStarted: errors.New("cannot start")}}
+	root := t.TempDir()
+	s := NewStore(filepath.Join(root, "plugins"), sec)
+	plantLoose(t, s.Dir(), id)
+	m, err := NewManager(s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { m.Close() })
+	requireCode(t, m.APIMayMutate(id), "API_MUTATION_FORBIDDEN")
+	if _, found, _ := s.getProvenance(id); found {
+		t.Fatal("开始标记没写上却迁移了 install.json")
+	}
+}
+
+func TestDoneMarkerReadErrorDoesNotMigrate(t *testing.T) {
+	id := "local.personal.doneerr"
+	sec := &scriptedSecrets{m: map[string][]byte{}, getErr: map[string]error{provenanceMigrationAccount: errors.New("keychain read failed")}}
+	root := t.TempDir()
+	s := NewStore(filepath.Join(root, "plugins"), sec)
+	plantLoose(t, s.Dir(), id)
+	if err := os.WriteFile(filepath.Join(s.Dir(), id, "install.json"), []byte("{}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	m, err := NewManager(s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { m.Close() })
+	requireCode(t, m.APIMayMutate(id), "API_MUTATION_FORBIDDEN")
+	if _, found, err := s.getProvenance(id); err != nil || found {
+		t.Fatalf("完成标记读错误后仍迁移了伪造记录: found=%v err=%v", found, err)
+	}
+}
+
+func TestAppRecordReadErrorDoesNotOverwriteSigned(t *testing.T) {
+	id := "local.personal.keep"
+	sec := &scriptedSecrets{m: map[string][]byte{}}
+	root := t.TempDir()
+	s := NewStore(filepath.Join(root, "plugins"), sec)
+	plantLoose(t, s.Dir(), id)
+	signed, err := jsonMarshalProvenance(hostProvenance{ID: id, Signed: true, Via: "store", PackageHash: "sha256:" + strings.Repeat("ab", 32), InstallDigest: "sha256:" + strings.Repeat("cd", 32)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := sec.Set(ProvenanceAccount(id), signed); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(s.Dir(), id, "install.json"), []byte("{}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	sec.getErr = map[string]error{ProvenanceAccount(id): errors.New("keychain read failed")}
+	m, err := NewManager(s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { m.Close() })
+	requireCode(t, m.APIMayMutate(id), "API_MUTATION_FORBIDDEN")
+	rec, found, err := s.getProvenance(id)
+	if err != nil || !found || !rec.Signed {
+		t.Fatalf("应用记录读错误后被改成未签名: %+v found=%v err=%v", rec, found, err)
+	}
+}
+
+func TestUnconfirmedProvenanceDoesNotRollBackInstall(t *testing.T) {
+	sec := &scriptedSecrets{m: map[string][]byte{}, setErr: errors.New("keychain down")}
+	s, m := newTestManager(t, sec)
+	done, err := m.Decide(proposeTest(t, m, personalPackage(t, "local.personal.unconfirmed", "1.0.0"), "install", "").RequestID, true)
+	if err != nil || done.Status != "installed" {
+		t.Fatalf("凭据写失败不应撤回安装: %+v %v", done, err)
+	}
+	if _, err := os.Stat(filepath.Join(s.Dir(), done.PluginID, "plugin.json")); err != nil {
+		t.Fatal(err)
+	}
+	requireCode(t, m.APIMayMutate(done.PluginID), "API_MUTATION_FORBIDDEN")
+}
+
+func TestSwappedInstallRecordStillRollsBackCommit(t *testing.T) {
+	s, m := newTestManager(t, nil)
+	first := installTest(t, m, personalPackage(t, "local.personal.swapcommit", "1.0.0"))
+	pending := proposeTest(t, m, personalPackage(t, first.PluginID, "2.0.0"), "update", first.PackageHash)
+	dest := filepath.Join(s.Dir(), first.PluginID)
+	m.rename = func(from, to string) error {
+		if err := os.Rename(from, to); err != nil {
+			return err
+		}
+		if to == dest {
+			return os.WriteFile(filepath.Join(to, "install.json"), []byte("{}\n"), 0o600)
+		}
+		return nil
+	}
+	done, err := m.Decide(pending.RequestID, true)
+	if err == nil || done.Status == "installed" {
+		t.Fatalf("调包的 install.json 仍被提交: %+v %v", done, err)
+	}
+	requireCode(t, m.APIMayMutate(first.PluginID), "API_MUTATION_FORBIDDEN")
+}
+
+func TestRecoveryRejectsSignedInstallRecord(t *testing.T) {
+	s, m := newTestManager(t, nil)
+	first := installTest(t, m, personalPackage(t, "local.personal.recoverysigned", "1.0.0"))
+	hash, err := s.PackageHash(first.PluginID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := fmt.Sprintf("{\n  \"installedVia\": \"local-api\",\n  \"packageHash\": %q,\n  \"hash\": %q,\n  \"publisher\": \"ed25519:attacker\",\n  \"signature\": \"forged\"\n}\n", hash, "sha256:"+strings.Repeat("ab", 32))
+	if err := os.WriteFile(filepath.Join(s.Dir(), first.PluginID, "install.json"), []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	delete(s.provenanceMem, ProvenanceAccount(first.PluginID))
+	tx, err := os.MkdirTemp(m.transactionDir, "commit-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	record, err := json.Marshal(commitRecord{PluginID: first.PluginID, Operation: "update", PackageHash: hash, ExpectedHash: hash})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(tx, "record.json"), record, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.Close(); err != nil {
+		t.Fatal(err)
+	}
+	restarted, err := NewManager(s)
+	if restarted != nil {
+		t.Cleanup(func() { restarted.Close() })
+	}
+	rec, found, gerr := s.getProvenance(first.PluginID)
+	if gerr == nil && found && !rec.Signed {
+		t.Fatal("恢复把带签名的 install.json 记成了未签名")
+	}
+	if err == nil {
+		requireCode(t, restarted.APIMayMutate(first.PluginID), "API_MUTATION_FORBIDDEN")
 	}
 }

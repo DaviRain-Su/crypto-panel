@@ -84,7 +84,7 @@ Lintel 的个人应用仍是沙箱 JS 与原生页面数据。编码 agent 负�
 
 安装来源放在现有凭据服务里，只是比应用目录旁的索引文件更难被「只会改文件」的进程改掉。这不是同一用户的硬边界。Linux 和 Windows 上，能写 `crypto-panel-plugins` 的同一用户进程可以伪造 `provenance:<id>`，通常没有提示。macOS 登录钥匙串的默认 ACL 下，读取已有秘密数据可能会弹窗，列出或新建条目通常不会。编码代理没有操作系统沙箱，不能把它写成「改不了钥匙串」。
 
-若迁移没能把记录和完成标记都写进凭据服务，这些应用不会通过本机 API，需要原生界面重新安装。钥匙串写入失败但磁盘仍可写时，插件目录外的哨兵会让下一次启动不再相信当时的 `install.json`。若哨兵和凭据服务都没留下这次尝试，下一次启动无法把它和首次升级区分开，可能会按当时的 `install.json` 迁移；删掉哨兵和凭据服务里的迁移标记也会如此。
+若迁移没能确认记录，这些应用不会通过本机 API。Apps 页会说明原因，用户在原生确认窗里同意后才会重新写入来源；这不会自动再读 `install.json` 来决定信任。只删掉哨兵文件并不会重新迁移。要再次按当时的 `install.json` 迁移，需要同时删掉哨兵、两个迁移标记（`provenance:migration-started` 和 `provenance:migration`）以及该应用自己的 `provenance:<id>` 记录。只是哨兵文件没写成功，下一次启动也会变成和升级前伪造 `install.json` 相同的局面。
 
 refresh 支持 `?page=overview`，只执行 navigation 中声明的页，返回原来的直接 page JSON。摘要和执行时间头仍使用 `X-Crypto-Panel-Package-Hash` 与 `X-Crypto-Panel-Evaluated-At`，并同时发送 `X-Lintel-Package-Hash` 与 `X-Lintel-Evaluated-At`。旧名称保留。时间表示执行完成时间，不是行情数据时间。一个应用同时只允许一个执行，API 冲突返回 409 APP_BUSY，原生重复刷新合并。当前页按 Settings 刷新间隔刷新，离开后不执行后台页面监控；失败保留同版本上次成功内容并显示时间。
 

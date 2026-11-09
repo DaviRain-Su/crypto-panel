@@ -13,6 +13,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/egoist/mygo"
 )
 
 // provenanceIOTimeout bounds one credential-store read or write. A slow
@@ -228,15 +230,7 @@ func provenanceAbsent(err error) bool {
 	if err == nil {
 		return false
 	}
-	if errors.Is(err, os.ErrNotExist) || errors.Is(err, fs.ErrNotExist) {
-		return true
-	}
-	switch err.Error() {
-	case "mygo: secret not found", "no such secret":
-		return true
-	default:
-		return false
-	}
+	return errors.Is(err, os.ErrNotExist) || errors.Is(err, fs.ErrNotExist) || errors.Is(err, mygo.ErrSecretNotFound)
 }
 
 func (s *Store) getProvenance(id string) (hostProvenance, bool, error) {
@@ -346,10 +340,13 @@ func (s *Store) adoptPersonalRecord(id, dir, packageHash string) error {
 // from trusting install.json as it reads then. Apps left without a confirmed
 // record stay forbidden to the local API until a native reinstall.
 //
-// Residual risk: if both the sentinel file and the credential-store writes
-// fail, the next start cannot tell this attempt from a first upgrade and may
-// classify whatever install.json says at that moment. Deleting the sentinel
-// and the credential-store markers has the same effect.
+// Residual risk: a failed sentinel write alone is enough. The started and
+// done markers are only attempted after the sentinel is created, so if that
+// create fails the next start looks like a first upgrade and may classify
+// install.json as it is then. Re-migration also happens if the sentinel,
+// both migration markers, and the target app's provenance record are all
+// gone. That is the same surface as forging install.json before the first
+// upgrade. Deleting only the sentinel, or only the markers, is not enough.
 func (s *Store) migrateProvenance() {
 	done, found, err := s.readProv(provenanceMigrationAccount)
 	if err != nil || (found && len(done) > 0) {
@@ -537,4 +534,99 @@ func provenanceMatchesInstall(prov hostProvenance, dir string) error {
 		return errors.New("install record package hash changed")
 	}
 	return nil
+}
+
+// migrationStuck reports an unfinished provenance migration. A read error is
+// not treated as "finished".
+func (s *Store) migrationStuck() (bool, error) {
+	_, found, err := s.readProv(provenanceMigrationAccount)
+	if err != nil {
+		return false, err
+	}
+	if found {
+		return false, nil
+	}
+	_, started, err := s.readProv(provenanceMigrationStarted)
+	if err != nil {
+		return false, err
+	}
+	sentinel, serr := s.migrationSentinelExists()
+	if serr != nil {
+		return true, nil
+	}
+	return started || sentinel, nil
+}
+
+// LockedLocalApps are local.* apps with no confirmed provenance while
+// migration did not finish. The local API stays closed for them until the
+// user confirms in the native UI. This does not read install.json.
+func (s *Store) LockedLocalApps() ([]Installed, error) {
+	stuck, err := s.migrationStuck()
+	if err != nil || !stuck {
+		return nil, err
+	}
+	entries, err := os.ReadDir(s.dir)
+	if err != nil {
+		return nil, err
+	}
+	var out []Installed
+	for _, entry := range entries {
+		name := entry.Name()
+		if strings.HasPrefix(name, ".") || !entry.IsDir() || !strings.HasPrefix(name, "local.") || validatePluginID(name) != nil {
+			continue
+		}
+		_, found, err := s.getProvenance(name)
+		if err == nil && found {
+			continue
+		}
+		inst, err := s.Get(name)
+		if err != nil || inst.Manifest.ID != name {
+			continue
+		}
+		out = append(out, inst)
+	}
+	return out, nil
+}
+
+// ConfirmProvenance writes a host record for one locked local.* app after
+// the user approves it in the native UI. It pins the current tree and the
+// current regular install.json. A file that claims a publisher signature is
+// recorded as signed, so approval does not open the local API for it.
+// Automatic migration never calls this.
+func (s *Store) ConfirmProvenance(id string) error {
+	if !strings.HasPrefix(id, "local.") || validatePluginID(id) != nil {
+		return errors.New("only a local app can be confirmed")
+	}
+	stuck, err := s.migrationStuck()
+	if err != nil {
+		return err
+	}
+	if !stuck {
+		return errors.New("provenance migration is not waiting for confirmation")
+	}
+	_, found, err := s.getProvenance(id)
+	if err != nil {
+		return err
+	}
+	if found {
+		return nil
+	}
+	dir := filepath.Join(s.dir, id)
+	record, raw, err := readInstallBytes(dir)
+	if err != nil {
+		return err
+	}
+	hash, err := normalizedPackageHash(dir)
+	if err != nil || hash == "" {
+		return err
+	}
+	return s.putProvenance(hostProvenance{
+		ID:            id,
+		Signed:        record.Official || record.Hash != "" || record.Publisher != "" || record.Signature != "",
+		Official:      record.Official,
+		Via:           record.InstalledVia,
+		PackageHash:   hash,
+		Source:        record.Source,
+		InstallDigest: installDigest(raw),
+	})
 }

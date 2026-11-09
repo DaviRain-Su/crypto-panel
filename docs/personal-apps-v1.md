@@ -392,7 +392,7 @@ HTTP 错误保留原来的字符串 error 字段，补充稳定 code；需要时
 | 状态码 | 使用范围 |
 | --- | --- |
 | 400 | 请求 JSON、字段、类型或页名错误 |
-| 401 / 403 | token 无效 / 浏览器 Origin 被拒绝 / `API_MUTATION_FORBIDDEN`（卸载或改设置的不是已确认宿主记录与磁盘一致的未签名 `local.*`。记录在现有凭据服务 `crypto-panel-plugins` 的账户 `provenance:<id>`。缺失、读错误、写入未确认、无法解析、包摘要不一致、伪造普通文件、硬链接、符号链接、目录、管道都拒绝。凭据服务只提高了相对索引文件的门槛：同一用户在 Linux/Windows 上通常可以静默写入该服务；macOS 登录钥匙串读取秘密数据可能弹窗，列出或创建通常不会。升级迁移只在记录确认落盘后完成；未确认的应用保持 403，直到原生重新安装。若哨兵和凭据服务都没记下失败的迁移，下一次启动可能按当时的 install.json 迁移）/ `INSTALLATION_ORIGIN_FORBIDDEN`（取消 ACP 任务） |
+| 401 / 403 | token 无效 / 浏览器 Origin 被拒绝 / `API_MUTATION_FORBIDDEN`（卸载或改设置的不是已确认宿主记录与磁盘一致的未签名 `local.*`。记录在现有凭据服务 `crypto-panel-plugins` 的账户 `provenance:<id>`。缺失、读错误、写入未确认、无法解析、包摘要不一致、伪造普通文件、硬链接、符号链接、目录、管道都拒绝。凭据服务只提高了相对索引文件的门槛：同一用户在 Linux/Windows 上通常可以静默写入该服务；macOS 登录钥匙串读取秘密数据可能弹窗，列出或创建通常不会。升级迁移只在记录确认落盘后完成；未确认的应用保持 403，可在原生确认窗里重新确认，而不是自动再信 install.json。重新迁移需要同时删掉哨兵、`provenance:migration-started`、`provenance:migration` 和该应用的 `provenance:<id>`。只是哨兵没写成功，下一次启动就和升级前伪造 install.json 一样）/ `INSTALLATION_ORIGIN_FORBIDDEN`（取消 ACP 任务） |
 | 404 | 应用、模板、源路径或任务不存在 |
 | 409 | id 冲突、版本冲突、基线变化、已有不同候选、任务不可取消、应用禁用或正忙 |
 | 413 / 415 | 大小超限 / 不支持的请求媒体类型 |

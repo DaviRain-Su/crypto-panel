@@ -204,7 +204,8 @@ type App struct {
 	goAsync   func(func())
 	// confirmInstall shows the permission prompt and reports the answer.
 	// Tests replace it.
-	confirmInstall func(plugin.Manifest, installRequest, func(bool))
+	confirmInstall    func(plugin.Manifest, installRequest, func(bool))
+	confirmProvenance func(plugin.Manifest, func(bool))
 	// installOpen is set while the permission prompt is on screen.
 	installOpen bool
 	// confirmConnect asks the user to let a DApp see the NEAR accounts, and
@@ -295,6 +296,7 @@ func New() (*App, error) {
 	a.runOnMain = mygo.RunOnMain
 	a.goAsync = func(fn func()) { go fn() }
 	a.confirmInstall = a.askInstall
+	a.confirmProvenance = a.openProvenanceConfirm
 	a.initAuthoring()
 	a.confirmConnect = a.askConnect
 	// approve stays nil. Plugins, the wallet, and NEAR send go through

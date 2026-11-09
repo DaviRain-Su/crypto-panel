@@ -21,6 +21,7 @@ func (a *App) pluginsView(c *ui.Context) {
 		ui.Text(c, a.pluginNotice).FontSize(11).TextColor(p.muted).MaxLines(2).
 			Margin(0, 0, 12, 0)
 	}
+	a.provenanceLockNotice(c)
 	if a.coding.open {
 		a.creatorView(c)
 		return
@@ -38,6 +39,50 @@ func (a *App) pluginsView(c *ui.Context) {
 		return
 	}
 	a.appGrid(c)
+}
+
+func (a *App) provenanceLockNotice(c *ui.Context) {
+	locked, err := a.pluginsLocked()
+	if err != nil || len(locked) == 0 {
+		return
+	}
+	p := a.pal
+	ui.Column(c).Gap(8).Padding(14).Radius(12).Background(p.card).
+		Border(1, p.hairline).Margin(0, 0, 12, 0).Children(func() {
+		ui.Text(c, a.t(i18n.ProvenanceLockedNotice)).FontSize(12).TextColor(p.text).MaxLines(4)
+		for _, item := range locked {
+			id, name := item.Manifest.ID, item.Manifest.Name
+			a.softButton(c, a.t(i18n.ProvenanceLockedAction, name), nil, p.accent, func() {
+				a.askProvenanceConfirm(id, name)
+			})
+		}
+	})
+}
+
+func (a *App) pluginsLocked() ([]plugin.Installed, error) {
+	if a.plugins == nil {
+		return nil, nil
+	}
+	return a.plugins.LockedLocalApps()
+}
+
+func (a *App) askProvenanceConfirm(id, name string) {
+	manifest := plugin.Manifest{ID: id, Name: name}
+	ask := a.confirmProvenance
+	if ask == nil {
+		ask = a.openProvenanceConfirm
+	}
+	ask(manifest, func(ok bool) {
+		if !ok || a.plugins == nil {
+			return
+		}
+		if err := a.plugins.ConfirmProvenance(id); err != nil {
+			a.pluginNotice = err.Error()
+			return
+		}
+		a.pluginNotice = a.t(i18n.ProvenanceLockedDone, name)
+		a.refreshPlugins()
+	})
 }
 
 // pluginTabs switches the Apps page between the launcher and the store,

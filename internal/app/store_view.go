@@ -164,6 +164,57 @@ func (a *App) storeState(entry plugin.RegistryEntry) (*plugin.Installed, bool) {
 	return nil, false
 }
 
+// openProvenanceConfirm is the native approval for re-saving one personal
+// app's install provenance after a credential-store failure. It does not
+// read install.json; ConfirmProvenance runs only after the user agrees.
+func (a *App) openProvenanceConfirm(m plugin.Manifest, done func(bool)) {
+	if a.win == nil || a.installOpen {
+		done(false)
+		return
+	}
+	a.installOpen = true
+	var win *mygo.Window
+	finish := func(ok bool) {
+		a.installOpen = false
+		if win != nil {
+			win.Close()
+		}
+		done(ok)
+	}
+	var decided bool
+	decide := func(ok bool) {
+		if decided {
+			return
+		}
+		decided = true
+		finish(ok)
+	}
+	win = mygo.NewWindow(mygo.WindowOptions{
+		Title:           a.t(i18n.ProvenanceLockedTitle),
+		Width:           460,
+		Height:          360,
+		MinWidth:        400,
+		MinHeight:       300,
+		Parent:          a.win,
+		Modal:           true,
+		BackgroundColor: "light-dark(#f6f4ef, #141513)",
+		Content: ui.View(func(c *ui.Context) {
+			p := a.pal
+			c.Root().Background(p.bg)
+			ui.Column(c).Fill().Padding(20).Gap(12).Children(func() {
+				ui.Text(c, a.t(i18n.ProvenanceLockedTitle)).FontSize(20).FontWeight(700).MaxLines(2)
+				ui.Text(c, a.t(i18n.ProvenanceLockedBody, m.Name)).FontSize(13).MaxLines(5)
+				ui.Row(c).Gap(8).Children(func() {
+					a.primaryButton(c, a.t(i18n.ProvenanceLockedAction, m.Name), nil, false, func() { decide(true) })
+					a.softButton(c, a.t(i18n.Cancel), nil, p.muted, func() { decide(false) })
+				})
+			})
+		}),
+	})
+	win.OnClose(func(*mygo.CloseEvent) { decide(false) })
+	win.Focus()
+}
+
 // askInstall is the shell's permission prompt: what the plugin may do, in
 // the shell's words, and two buttons. It never blocks the main thread; the
 // answer arrives through done.
