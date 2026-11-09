@@ -189,6 +189,7 @@ func (a *App) openProvenanceConfirm(view plugin.ProvenanceView, done func(bool))
 		decided = true
 		finish(ok)
 	}
+	cancel := provenanceConfirmClosed(decide)
 	win = mygo.NewWindow(mygo.WindowOptions{
 		Title:           a.t(i18n.ProvenanceLockedTitle),
 		Width:           460,
@@ -209,14 +210,19 @@ func (a *App) openProvenanceConfirm(view plugin.ProvenanceView, done func(bool))
 				ui.Text(c, a.t(i18n.ProvenanceLockedUnsigned)).FontSize(12).MaxLines(1)
 				ui.Text(c, a.t(i18n.ProvenanceLockedWarn)).FontSize(13).MaxLines(6)
 				ui.Row(c).Gap(8).Children(func() {
-					a.primaryButton(c, a.t(i18n.Cancel), nil, false, func() { decide(false) })
+					a.primaryButton(c, a.t(i18n.Cancel), nil, false, func() { cancel(nil) })
 					a.softButton(c, a.t(i18n.ProvenanceLockedAction, view.Name), nil, p.muted, func() { decide(true) })
 				})
 			})
 		}),
 	})
-	win.OnClose(func(*mygo.CloseEvent) { decide(false) })
+	win.OnClose(cancel)
 	win.Focus()
+}
+
+// provenanceConfirmClosed is the window's close path. Closing must not confirm.
+func provenanceConfirmClosed(decide func(bool)) func(*mygo.CloseEvent) {
+	return func(*mygo.CloseEvent) { decide(false) }
 }
 
 // askInstall is the shell's permission prompt: what the plugin may do, in

@@ -58,8 +58,9 @@ type Store struct {
 	provenanceMem map[string][]byte
 	provBackoff   time.Time
 	// seenHash is the package hash first observed while an app was locked.
-	// A later confirm uses it to refuse a tree that changed before the window
-	// opened, instead of storing a record for that tree.
+	// A later confirm uses it to refuse a tree that changed after that list
+	// was computed. Install and removal clear the entry so a reinstall in
+	// the same run can be confirmed.
 	seenHash map[string]string
 }
 
@@ -261,6 +262,7 @@ func (s *Store) Remove(id string) error {
 }
 
 func (s *Store) remove(id string) error {
+	s.forgetSeenHash(id)
 	dir := filepath.Join(s.dir, id)
 	kv := &KV{path: filepath.Join(dir, "kv.json")}
 	lock := kv.fileLock()

@@ -116,6 +116,66 @@ func TestProvenanceLockNoticeAndConfirm(t *testing.T) {
 	}
 }
 
+func TestProvenanceWindowCloseDoesNotConfirm(t *testing.T) {
+	confirmed := false
+	provenanceConfirmClosed(func(ok bool) {
+		if ok {
+			confirmed = true
+		}
+	})(nil)
+	if confirmed {
+		t.Fatal("关闭窗口被当成了确认")
+	}
+}
+
+func TestConfirmRejectsSnapshotForADifferentID(t *testing.T) {
+	a := newTestApp(t)
+	sec := a.pluginSecrets.(memStore)
+	delete(sec, "provenance:migration")
+	id := "local.personal.locked"
+	appDir := filepath.Join(a.plugins.Dir(), id)
+	if err := os.MkdirAll(appDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	manifest := []byte(`{"id":"local.personal.locked","name":"Locked","version":"1.0.0","main":"index.js","permissions":{"storageKb":1},"navigation":[{"title":"Overview","page":"overview"}]}`)
+	if err := os.WriteFile(filepath.Join(appDir, "plugin.json"), manifest, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(appDir, "index.js"), []byte(`export function page(){return {title:"Locked"};}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(appDir, "install.json"), []byte("{\"installedVia\":\"folder\"}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	a.refreshPlugins()
+	a.refreshProvenanceLocks()
+	prev := takeProvenanceSnapshot
+	takeProvenanceSnapshot = func(plugins *plugin.Store, want string) (plugin.ProvenanceView, error) {
+		view, err := plugins.SnapshotProvenance(want)
+		if err != nil {
+			return view, err
+		}
+		view.ID = "local.personal.other"
+		return view, nil
+	}
+	t.Cleanup(func() { takeProvenanceSnapshot = prev })
+	asked := false
+	a.confirmProvenance = func(_ plugin.ProvenanceView, done func(bool)) {
+		asked = true
+		done(true)
+	}
+	a.askProvenanceConfirm(id, "Locked")
+	if asked {
+		t.Fatal("id 对不上仍打开了确认")
+	}
+	if _, ok := sec[plugin.ProvenanceAccount(id)]; ok {
+		t.Fatal("id 对不上仍写下了记录")
+	}
+	if strings.Contains(a.pluginNotice, "Confirmed") || strings.Contains(a.pluginNotice, "Checking") {
+		t.Fatalf("id 对不上的结果: %q", a.pluginNotice)
+	}
+}
+
 func TestAppsPageDoesNotReadProvenanceOnRender(t *testing.T) {
 	sec := &countingSecrets{inner: memStore{}}
 	a := &App{

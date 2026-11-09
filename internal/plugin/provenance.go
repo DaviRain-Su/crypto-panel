@@ -278,6 +278,9 @@ func (s *Store) reportProvenanceDelete(id string) error {
 // install.json must be the bytes the host marshaled; a swapped file is not
 // adopted.
 func (s *Store) rememberInstall(id string, info installInfo, dir string) error {
+	// The tree just installed is a new observation. Keeping the hash from
+	// before a delete would reject this reinstall until the process restarts.
+	s.forgetSeenHash(id)
 	_, raw, err := readInstallBytes(dir)
 	if err != nil {
 		return err
@@ -439,11 +442,18 @@ func (s *Store) migrationSentinelExists() (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	if info.Mode()&fs.ModeSymlink != 0 || !info.Mode().IsRegular() {
+	if info.Mode()&fs.ModeSymlink != 0 {
+		return false, errMigrationSentinelSymlink
+	}
+	if !info.Mode().IsRegular() {
 		return false, errors.New("migration sentinel is not a regular file")
 	}
 	return true, nil
 }
+
+// errMigrationSentinelSymlink is distinct from any other non-regular sentinel
+// so a symlink is not treated as "not there".
+var errMigrationSentinelSymlink = errors.New("migration sentinel is a symlink")
 
 // createMigrationSentinelFile writes the sentinel. Tests replace it to inject
 // a failure without changing directory permissions.
@@ -655,6 +665,12 @@ func (s *Store) seenPackageHash(id string) (string, bool) {
 	return hash, ok
 }
 
+func (s *Store) forgetSeenHash(id string) {
+	s.provenanceMu.Lock()
+	defer s.provenanceMu.Unlock()
+	delete(s.seenHash, id)
+}
+
 // SnapshotProvenance records what the confirm window is about to show.
 func (s *Store) SnapshotProvenance(id string) (ProvenanceView, error) {
 	view, _, err := s.inspectProvenance(id)
@@ -694,7 +710,7 @@ func (s *Store) ConfirmProvenance(view ProvenanceView) error {
 	if err != nil {
 		return err
 	}
-	if current.nlink == 0 || current.nlink > 1 || view.nlink == 0 || view.nlink > 1 {
+	if current.nlink == 0 || current.nlink > 1 {
 		return ErrProvenanceLinked
 	}
 	if seen, ok := s.seenPackageHash(view.ID); ok && seen != current.PackageHash {

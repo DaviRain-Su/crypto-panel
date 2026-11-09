@@ -89,12 +89,19 @@ func ParseRegistry(data []byte) (Registry, error) {
 	}
 	seen := make(map[string]bool, len(reg.Plugins))
 	kept := reg.Plugins[:0]
+	skippedLocal := 0
+	const maxLoggedSkips = 5
 	for i := range reg.Plugins {
 		entry := reg.Plugins[i]
 		if strings.HasPrefix(entry.ID, "local.") {
 			// One old local.* catalog row must not hide every other app.
 			// Signed install of that id is still rejected by Prepare.
-			log.Printf("lintel: skipping registry entry %s: a signed install cannot use a local.* id", entry.ID)
+			// The id is untrusted catalog text: quote it, keep it short, and
+			// don't let one file flood the log.
+			if skippedLocal < maxLoggedSkips {
+				log.Printf("lintel: skipping registry entry %q: a signed install cannot use a local.* id", truncateForLog(entry.ID, 64))
+			}
+			skippedLocal++
 			continue
 		}
 		if err := entry.Validate(); err != nil {
@@ -106,8 +113,19 @@ func ParseRegistry(data []byte) (Registry, error) {
 		seen[entry.ID] = true
 		kept = append(kept, entry)
 	}
+	if extra := skippedLocal - maxLoggedSkips; extra > 0 {
+		log.Printf("lintel: skipped %d more local.* registry entries", extra)
+	}
 	reg.Plugins = kept
 	return reg, nil
+}
+
+func truncateForLog(value string, max int) string {
+	r := []rune(value)
+	if len(r) <= max {
+		return value
+	}
+	return string(r[:max])
 }
 
 // Validate checks one entry's fields. The archive itself is checked when it
