@@ -13,6 +13,17 @@ import (
 	"github.com/davirain-su/lintel/internal/i18n"
 )
 
+// codingPermissionWindow 是编码许可提示。测试用替身触发关闭，生产路径打开原生窗口。
+type codingPermissionWindow interface {
+	OnClose(func(*mygo.CloseEvent)) func()
+	Focus()
+	Close()
+}
+
+var openCodingPermissionWindow = func(opts mygo.WindowOptions) codingPermissionWindow {
+	return mygo.NewWindow(opts)
+}
+
 func codingOption(request acp.PermissionRequest, id string) string {
 	for _, option := range request.Options {
 		if option.OptionID == id {
@@ -37,7 +48,7 @@ func (a *App) requestCodingPermission(ctx context.Context, request acp.Permissio
 			answer <- ""
 			return
 		}
-		var win *mygo.Window
+		var win codingPermissionWindow
 		decided := false
 		decide := func(id string) {
 			if decided {
@@ -56,7 +67,7 @@ func (a *App) requestCodingPermission(ctx context.Context, request acp.Permissio
 			raw = formatted.Bytes()
 		}
 		detail := safeAgentText(string(raw), 20<<10)
-		win = mygo.NewWindow(mygo.WindowOptions{
+		win = openCodingPermissionWindow(mygo.WindowOptions{
 			Title: a.t(i18n.CodingWindowTitle), Width: 620, Height: 620, MinWidth: 460, MinHeight: 500, Parent: a.win, Modal: true, BackgroundColor: "light-dark(#f6f4ef, #141513)",
 			Content: ui.View(func(c *ui.Context) {
 				t := c.Theme()

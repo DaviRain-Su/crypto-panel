@@ -279,3 +279,41 @@ func TestSettingsShowsTheAgentAPI(t *testing.T) {
 		}
 	}
 }
+
+func TestRefreshRefusesNearSigning(t *testing.T) {
+	a := newTestApp(t)
+	dir := filepath.Join(t.TempDir(), "app")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	manifest := `{
+  "id": "local.personal.near-sign",
+  "name": "Near sign",
+  "version": "1.0.0",
+  "main": "index.js",
+  "permissions": { "sign": true, "chains": ["near:testnet"] },
+  "navigation": [{ "title": "Overview", "page": "overview" }]
+}`
+	source := `export function page() {
+  try {
+    const res = host.requestNearSign({ chainId: "near:testnet", receiver: "bob.testnet", actions: [{ type: "transfer", amount: "1" }] });
+    return { title: "signed", sections: [{ text: String(res.hash) }] };
+  } catch (err) {
+    return { title: "refused", sections: [{ text: String(err.message || err) }] };
+  }
+}`
+	if err := os.WriteFile(filepath.Join(dir, "plugin.json"), []byte(manifest), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "index.js"), []byte(source), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := a.plugins.Install(dir); err != nil {
+		t.Fatal(err)
+	}
+	result, err := a.RefreshPage("local.personal.near-sign", "overview")
+	page, ok := result.Page.(pages.Page)
+	if err != nil || !ok || page.Title != "refused" || len(page.Sections) == 0 || !strings.Contains(page.Sections[0].Text, "signing is not available over the local API") {
+		t.Fatalf("refresh 没有拒绝 NEAR 签名: %+v %v", result.Page, err)
+	}
+}

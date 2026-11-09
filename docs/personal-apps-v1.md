@@ -201,7 +201,7 @@ HTTP、ACP 消息或模型输出都没有“批准安装”的状态变更接口
 
 ### 8.2 排队、取消与重启
 
-- 最多五个待处理任务，同一应用最多一个 pending / installing；完全相同操作、摘要及更新基线的重复提交返回已有任务，不重复弹卡。
+- 最多五个待处理任务，同一应用最多一个 pending / installing；同一入口上完全相同操作、摘要及更新基线的重复提交返回已有任务，不重复弹卡。另一个入口的相同候选返回冲突，不能附着到已有任务。
 - 同 id 的不同候选同时提议返回冲突；队列满返回 429。
 - 用户在 Apps 的“待确认”区域可以查看、允许、拒绝或取消。已有弹窗不能使新的 HTTP 请求被悄悄当作批准或无限阻塞。
 - API 的取消接口只作用于 pending；installing 时返回 409，不声称已撤销提交。
@@ -375,7 +375,7 @@ secret 条目永远没有 value，不用掩码泄露长度或前后缀。清除�
 
 API 上下文同时拒绝 `host.requestSign` 和 `host.requestNearSign`，在进入批准窗之前拒绝。壳内 ACP 的安装后验证也使用这个上下文。返回页面受同一积木 schema 和 256 KiB 限制。
 
-响应头增加 `X-Crypto-Panel-Package-Hash` 和 `X-Crypto-Panel-Evaluated-At`。后者是本次脚本执行完成时间，不保证 RPC 缓存或上游数据的时间。API 刷新不负责导航主窗口，也不声称已把返回值同步为当前 UI 页面。
+响应头增加 `X-Crypto-Panel-Package-Hash` 和 `X-Crypto-Panel-Evaluated-At`，并同时发送同值的 `X-Lintel-Package-Hash` 和 `X-Lintel-Evaluated-At`。后者是本次脚本执行完成时间，不保证 RPC 缓存或上游数据的时间。API 刷新不负责导航主窗口，也不声称已把返回值同步为当前 UI 页面。
 
 `DELETE /v0/plugins/{id}` 幂等卸载，应用已不存在也返回 204；停止对应 runner，协调存储写入、删除声明凭据并使相关待确认任务失效。仍在 committing 的操作须串行化，不能出现删除后被旧任务重新安装。
 

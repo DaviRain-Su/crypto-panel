@@ -159,6 +159,7 @@ func createWorkspace(ctx context.Context, parent string) (string, error) {
 	if err != nil || !os.SameFile(info, opened) {
 		return "", ErrWorkspace
 	}
+	_ = SweepStaleWorkspaces(parent)
 	for range 10 {
 		if err := ctx.Err(); err != nil {
 			return "", err
@@ -259,6 +260,46 @@ func writeContext(ctx context.Context, workspace string, req Request) error {
 }
 
 func fmtExampleName(i int) string { return "example-" + strconv.Itoa(i) + ".cryptoapp.json" }
+
+// SweepStaleWorkspaces 删除 parent 下上次进程留下的 lintel-authoring-* 目录。
+// 普通文件和其他目录保留。context 目录是只读的，删除前先恢复写权限。
+func SweepStaleWorkspaces(parent string) error {
+	if strings.TrimSpace(parent) == "" {
+		parent = filepath.Clean(os.TempDir())
+	}
+	entries, err := os.ReadDir(parent)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	for _, entry := range entries {
+		name := entry.Name()
+		if !strings.HasPrefix(name, "lintel-authoring-") || strings.Contains(name, "..") {
+			continue
+		}
+		info, err := os.Lstat(filepath.Join(parent, name))
+		if err != nil || !info.IsDir() || info.Mode()&fs.ModeSymlink != 0 {
+			continue
+		}
+		removeWorkspace(filepath.Join(parent, name))
+	}
+	return nil
+}
+
+func removeWorkspace(dir string) {
+	if dir == "" {
+		return
+	}
+	_ = filepath.WalkDir(dir, func(name string, d fs.DirEntry, err error) error {
+		if err == nil && d.IsDir() {
+			_ = os.Chmod(name, 0700)
+		}
+		return nil
+	})
+	_ = os.RemoveAll(dir)
+}
 
 // copyExisting 只复制普通代码 / 资源；排除项先检查类型，但绝不打开其内容。
 func copyExisting(ctx context.Context, source, destination string) error {

@@ -61,7 +61,8 @@ type Request struct {
 	RequestPermission                                          func(context.Context, acp.PermissionRequest) (string, error)
 }
 
-// Result 即使失败也保留已创建的工作目录，供调用方展示和后续清理。
+// Result 在目录创建后带有 Workspace 路径。任务结束、取消或完成交接时目录会被删除；
+// 崩溃留下的 lintel-authoring-* 由启动清扫移除。冻结候选在 Manager 自己的快照里。
 type Result struct {
 	Installation   plugin.Installation
 	Workspace      string

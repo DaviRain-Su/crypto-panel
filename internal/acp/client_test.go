@@ -387,7 +387,11 @@ func runPeer(mode string) error {
 					if mode == "bad-permission" {
 						options = append(options, options[0])
 					}
-					if err := peerWrite(mode, map[string]any{"jsonrpc": "2.0", "id": id, "method": "session/request_permission", "params": map[string]any{"sessionId": activeSession, "toolCall": map[string]any{"toolCallId": "tool-1", "title": "Write app", "kind": "edit"}, "options": options}}); err != nil {
+					sessionID := activeSession
+					if mode == "permission-foreign" {
+						sessionID = "other-session"
+					}
+					if err := peerWrite(mode, map[string]any{"jsonrpc": "2.0", "id": id, "method": "session/request_permission", "params": map[string]any{"sessionId": sessionID, "toolCall": map[string]any{"toolCallId": "tool-1", "title": "Write app", "kind": "edit"}, "options": options}}); err != nil {
 						return err
 					}
 				}
@@ -680,6 +684,54 @@ func TestPermissionDefaultsAndExactOptions(t *testing.T) {
 				t.Fatalf("permission result: %s, want %s", got, tc.want)
 			}
 		})
+	}
+}
+
+func TestCancelledTurnDoesNotSelectPermission(t *testing.T) {
+	updates := make(chan Update, 4)
+	c, s := readyFake(t, "permission", func(cfg *Config) {
+		cfg.OnUpdate = func(u Update) { updates <- u }
+		cfg.RequestPermission = func(context.Context, PermissionRequest) (string, error) {
+			return "permit", nil
+		}
+	})
+	permissionBeforeAccept = func(c *Client) {
+		c.mu.Lock()
+		turn := c.active
+		c.mu.Unlock()
+		if turn != nil {
+			turn.permissionCancel()
+		}
+	}
+	t.Cleanup(func() { permissionBeforeAccept = nil })
+	if _, err := c.Prompt(context.Background(), s.ID, "permission"); err != nil {
+		t.Fatal(err)
+	}
+	if got := receiveUpdate(t, updates).Text; got != "cancelled" {
+		t.Fatalf("cancelled turn returned %s", got)
+	}
+}
+
+func TestPermissionFromInactiveTurnIsRejected(t *testing.T) {
+	updates := make(chan Update, 4)
+	called := make(chan struct{}, 1)
+	c, s := readyFake(t, "permission-foreign", func(cfg *Config) {
+		cfg.OnUpdate = func(u Update) { updates <- u }
+		cfg.RequestPermission = func(context.Context, PermissionRequest) (string, error) {
+			called <- struct{}{}
+			return "permit", nil
+		}
+	})
+	if _, err := c.Prompt(context.Background(), s.ID, "permission"); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-called:
+		t.Fatal("permission prompt from a non-active turn was offered")
+	default:
+	}
+	if got := receiveUpdate(t, updates).Text; got != "cancelled" {
+		t.Fatalf("non-active turn returned %s", got)
 	}
 }
 

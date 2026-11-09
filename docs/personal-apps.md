@@ -15,7 +15,7 @@ Lintel 的个人应用仍是沙箱 JS 与原生页面数据。编码 agent 负�
 
 预设执行本机 `claude-code-acp` 和 `codex-acp`，不会自动下载或执行 npx / uvx 安装。Claude 适配器的当前上游已迁至 [agentclientprotocol/claude-agent-acp](https://github.com/agentclientprotocol/claude-agent-acp)，新版命令为 `claude-agent-acp`；若使用新版，在 executable 中改为该命令。Codex 的普通 CLI / app-server 不是 ACP server，使用 [zed-industries/codex-acp](https://github.com/zed-industries/codex-acp) 或其他兼容适配器。
 
-取消生成会取消 ACP prompt 并回收拥有的进程；取消、拒绝、连接断开、超时以及非成功 stopReason 都不会当成完成。生成文件位于数据目录的独立 agent-workspaces 中，不把 Local API token 交给 agent，不把应用设置、KV 或凭据复制到修改工作目录。
+取消生成会取消 ACP prompt 并回收拥有的进程；取消、拒绝、连接断开、超时以及非成功 stopReason 都不会当成完成。生成文件位于数据目录的独立 agent-workspaces 中，任务结束、取消或完成交接后删除，启动时清扫上次留下的目录。不把 Local API token 交给 agent，不把应用设置、KV 或凭据复制到修改工作目录。
 
 应用详情中的修改应用只对 Unsigned `local.*` 应用开放。修改保持 id，严格提高版本，以开始修改时的旧摘要为基线；提交仍需要重新确认。官方示例和签名商店应用不能被这条路径覆盖。
 
@@ -82,6 +82,6 @@ Lintel 的个人应用仍是沙箱 JS 与原生页面数据。编码 agent 负�
 
 设置正文为 `{"values":{"label":"My pool"}}`。缺省键不变；普通空串设空，secret 空串清除。秘密只返回 configured，不返回 value 或掩码长度。系统凭据服务失败不会回退明文；部分写失败返回 appliedKeys / failedKeys。
 
-refresh 支持 `?page=overview`，只执行 navigation 中声明的页，返回原来的直接 page JSON。摘要和执行时间头仍使用 `X-Crypto-Panel-Package-Hash` 与 `X-Crypto-Panel-Evaluated-At` 以保持冻结契约。时间表示执行完成时间，不是行情数据时间。一个应用同时只允许一个执行，API 冲突返回 409 APP_BUSY，原生重复刷新合并。当前页按 Settings 刷新间隔刷新，离开后不执行后台页面监控；失败保留同版本上次成功内容并显示时间。
+refresh 支持 `?page=overview`，只执行 navigation 中声明的页，返回原来的直接 page JSON。摘要和执行时间头仍使用 `X-Crypto-Panel-Package-Hash` 与 `X-Crypto-Panel-Evaluated-At`，并同时发送 `X-Lintel-Package-Hash` 与 `X-Lintel-Evaluated-At`。旧名称保留。时间表示执行完成时间，不是行情数据时间。一个应用同时只允许一个执行，API 冲突返回 409 APP_BUSY，原生重复刷新合并。当前页按 Settings 刷新间隔刷新，离开后不执行后台页面监控；失败保留同版本上次成功内容并显示时间。
 
 实现与验收范围见 [V1 产品规格](personal-apps-v1.md)、[宿主 / HTTP 技术契约](v1-integration-technical.md)、[插件技术契约](v1-plugin-technical.md)、[ACP 技术契约](v1-acp-technical.md) 和 [生成任务契约](v1-authoring-technical.md)。真实 agent 验收结果与环境限制见[验收记录](v1-acceptance.md)，单元测试通过不等于两种 agent 的完整产品流程已通过。

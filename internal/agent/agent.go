@@ -193,16 +193,14 @@ func (s *Server) handler() http.Handler {
 	return mux
 }
 
-// guard is the whole access rule: a bearer token, no browser origins, and
-// an answer that is never cached.
+// guard is the whole access rule: a loopback host, no browser origins, a
+// bearer token, and an answer that is never cached.
 func (s *Server) guard(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
-		// A page in a browser cannot read the token, but refusing an
-		// Origin outright keeps a stray page from probing the API at all.
-		if r.Header.Get("Origin") != "" {
-			writeError(w, http.StatusForbidden, "the local API does not answer browser pages")
+		if reason := s.forbiddenRequest(r); reason != "" {
+			writeError(w, http.StatusForbidden, reason)
 			return
 		}
 		token, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
@@ -213,6 +211,40 @@ func (s *Server) guard(next http.HandlerFunc) http.HandlerFunc {
 		}
 		next(w, r)
 	}
+}
+
+// forbiddenRequest rejects browser pages and any request that is not aimed at
+// this loopback listener. A single empty Origin is ignored; any real Origin,
+// more than one Origin, and a cross-site fetch are refused.
+func (s *Server) forbiddenRequest(r *http.Request) string {
+	origins := r.Header.Values("Origin")
+	if len(origins) > 1 || (len(origins) == 1 && origins[0] != "") {
+		return "the local API does not answer browser pages"
+	}
+	for _, site := range r.Header.Values("Sec-Fetch-Site") {
+		if strings.EqualFold(strings.TrimSpace(site), "cross-site") {
+			return "the local API does not answer cross-site requests"
+		}
+	}
+	if !s.loopbackHost(r.Host) {
+		return "the local API only answers 127.0.0.1 or localhost"
+	}
+	return ""
+}
+
+func (s *Server) loopbackHost(host string) bool {
+	name, port, err := net.SplitHostPort(host)
+	if err != nil || port == "" {
+		return false
+	}
+	if name != "127.0.0.1" && !strings.EqualFold(name, "localhost") {
+		return false
+	}
+	if s.ln == nil {
+		return true
+	}
+	_, bound, err := net.SplitHostPort(s.ln.Addr().String())
+	return err == nil && port == bound
 }
 
 func (s *Server) portfolio(w http.ResponseWriter, _ *http.Request) {
@@ -240,12 +272,7 @@ func (s *Server) refresh(w http.ResponseWriter, r *http.Request) {
 			writeManagementError(w, err)
 			return
 		}
-		if result.PackageHash != "" {
-			w.Header().Set("X-Crypto-Panel-Package-Hash", result.PackageHash)
-		}
-		if !result.EvaluatedAt.IsZero() {
-			w.Header().Set("X-Crypto-Panel-Evaluated-At", result.EvaluatedAt.UTC().Format(time.RFC3339Nano))
-		}
+		setRefreshMeta(w, result)
 		writeJSON(w, http.StatusOK, result.Page)
 		return
 	}
@@ -255,6 +282,20 @@ func (s *Server) refresh(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, page)
+}
+
+// setRefreshMeta keeps the original header names and also sends the Lintel
+// names, so older clients and newer ones both see the hash and the time.
+func setRefreshMeta(w http.ResponseWriter, result PageResult) {
+	if result.PackageHash != "" {
+		w.Header().Set("X-Crypto-Panel-Package-Hash", result.PackageHash)
+		w.Header().Set("X-Lintel-Package-Hash", result.PackageHash)
+	}
+	if !result.EvaluatedAt.IsZero() {
+		formatted := result.EvaluatedAt.UTC().Format(time.RFC3339Nano)
+		w.Header().Set("X-Crypto-Panel-Evaluated-At", formatted)
+		w.Header().Set("X-Lintel-Evaluated-At", formatted)
+	}
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {

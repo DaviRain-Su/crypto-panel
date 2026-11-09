@@ -59,9 +59,19 @@ func newTestServer(t *testing.T) (*Server, *fakeData) {
 	return New(data, "test-token"), data
 }
 
+func withLocalHost(s *Server, req *http.Request) *http.Request {
+	req.Host = "127.0.0.1:9"
+	if s != nil && s.ln != nil {
+		if host := s.ln.Addr().String(); host != "" {
+			req.Host = host
+		}
+	}
+	return req
+}
+
 func do(t *testing.T, s *Server, method, path, token string) *httptest.ResponseRecorder {
 	t.Helper()
-	req := httptest.NewRequest(method, path, nil)
+	req := withLocalHost(s, httptest.NewRequest(method, path, nil))
 	if token != "" {
 		req.Header.Set("Authorization", "Bearer "+token)
 	}
@@ -85,13 +95,71 @@ func TestRefusesWithoutTheToken(t *testing.T) {
 
 func TestRefusesBrowserOrigins(t *testing.T) {
 	s, _ := newTestServer(t)
-	req := httptest.NewRequest(http.MethodGet, "/v0/portfolio", nil)
+	req := withLocalHost(s, httptest.NewRequest(http.MethodGet, "/v0/portfolio", nil))
 	req.Header.Set("Authorization", "Bearer test-token")
 	req.Header.Set("Origin", "https://evil.example")
 	rec := httptest.NewRecorder()
 	s.handler().ServeHTTP(rec, req)
 	if rec.Code != http.StatusForbidden {
 		t.Fatalf("status %d", rec.Code)
+	}
+}
+
+func TestRejectsMultipleOriginsCrossSiteAndForeignHost(t *testing.T) {
+	s, _ := newTestServer(t)
+	forbid := func(t *testing.T, mutate func(*http.Request)) {
+		t.Helper()
+		req := withLocalHost(s, httptest.NewRequest(http.MethodGet, "/v0/portfolio", nil))
+		req.Header.Set("Authorization", "Bearer test-token")
+		mutate(req)
+		rec := httptest.NewRecorder()
+		s.handler().ServeHTTP(rec, req)
+		if rec.Code != http.StatusForbidden {
+			t.Fatalf("status %d, body %s", rec.Code, rec.Body.Bytes())
+		}
+	}
+	t.Run("multiple origins", func(t *testing.T) {
+		forbid(t, func(req *http.Request) {
+			req.Header.Add("Origin", "https://a.example")
+			req.Header.Add("Origin", "https://b.example")
+		})
+	})
+	t.Run("cross-site", func(t *testing.T) {
+		forbid(t, func(req *http.Request) {
+			req.Header.Set("Sec-Fetch-Site", "cross-site")
+		})
+	})
+	t.Run("foreign host", func(t *testing.T) {
+		forbid(t, func(req *http.Request) { req.Host = "evil.example" })
+	})
+	t.Run("host without port", func(t *testing.T) {
+		forbid(t, func(req *http.Request) { req.Host = "127.0.0.1" })
+	})
+	for _, site := range []string{"none", "same-origin", "same-site"} {
+		t.Run(site, func(t *testing.T) {
+			req := withLocalHost(s, httptest.NewRequest(http.MethodGet, "/v0/portfolio", nil))
+			req.Header.Set("Authorization", "Bearer test-token")
+			req.Header.Set("Sec-Fetch-Site", site)
+			rec := httptest.NewRecorder()
+			s.handler().ServeHTTP(rec, req)
+			if rec.Code != http.StatusOK {
+				t.Fatalf("%s status %d", site, rec.Code)
+			}
+		})
+	}
+	if err := s.Start(0); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { s.Close() })
+	forbid(t, func(req *http.Request) { req.Host = "127.0.0.1:1" })
+	forbid(t, func(req *http.Request) { req.Host = "localhost:1" })
+	req := withLocalHost(s, httptest.NewRequest(http.MethodGet, "/v0/portfolio", nil))
+	req.Header.Set("Authorization", "Bearer test-token")
+	req.Host = "localhost" + s.Addr()[strings.LastIndex(s.Addr(), ":"):]
+	rec := httptest.NewRecorder()
+	s.handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("localhost status %d", rec.Code)
 	}
 }
 

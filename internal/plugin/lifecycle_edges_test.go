@@ -15,9 +15,10 @@ func TestLifecycleDedupAcrossEntrypointsAndHistoryBounds(t *testing.T) {
 	_, m := newTestManager(t, nil)
 	pkg := personalPackage(t, "local.personal.dedup", "1.0.0")
 	first := proposeTest(t, m, pkg, "install", "")
-	second, err := m.Propose(Source{Kind: "inline", Package: &pkg}, "install", "", "", "acp")
-	if err != nil || second.RequestID != first.RequestID {
-		t.Fatalf("跨入口同候选未去重: %+v %v", second, err)
+	_, err := m.Propose(Source{Kind: "inline", Package: &pkg}, "install", "", "", "acp")
+	requireCode(t, err, "CANDIDATE_CONFLICT")
+	if got, getErr := m.GetInstallation(first.RequestID); getErr != nil || got.Via != "local-api" || got.Status != "pending" {
+		t.Fatalf("ACP 附着到了 API 任务: %+v %v", got, getErr)
 	}
 	_, _ = m.Cancel(first.RequestID)
 	for range MaxInstallationHistory + 2 {

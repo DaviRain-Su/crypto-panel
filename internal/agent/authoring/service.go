@@ -85,6 +85,7 @@ func (s *Service) Run(ctx context.Context, req Request) (out Result, err error) 
 	if err != nil {
 		return out, err
 	}
+	defer removeWorkspace(out.Workspace)
 	app := filepath.Join(out.Workspace, "app")
 	if err = os.Mkdir(app, 0700); err != nil {
 		return out, ErrWorkspace
@@ -234,7 +235,7 @@ func (s *Service) inspect(ctx context.Context, profile Profile, root string, ses
 	if err != nil {
 		return init, discovered, err
 	}
-	defer os.RemoveAll(dir)
+	defer removeWorkspace(dir)
 	client, err := s.start(job.ctx, processConfig(job.ctx, profile, dir, Request{}))
 	if err != nil {
 		return init, discovered, err

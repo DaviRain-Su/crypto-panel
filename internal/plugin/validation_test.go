@@ -185,3 +185,93 @@ func TestOfficialPackageUsesEmbeddedSource(t *testing.T) {
 		t.Fatal("任意应用被当成模板")
 	}
 }
+
+func TestPackageHashMatchesCanonicalDigestWithoutCopying(t *testing.T) {
+	hashTmp := t.TempDir()
+	t.Setenv("TMPDIR", hashTmp)
+	root := t.TempDir()
+	store := NewStore(filepath.Join(root, "plugins"), nil)
+	src := filepath.Join(root, "src")
+	writePlugin(t, src, personalManifest, personalSource)
+	if err := os.MkdirAll(filepath.Join(src, "lib"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(src, "lib", "helper.js"), []byte("export const n = 1;\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Install(src); err != nil {
+		t.Fatal(err)
+	}
+	installed := filepath.Join(store.Dir(), "local.personal.gas")
+	manifest, err := LoadManifest(installed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pretty, err := json.MarshalIndent(manifest, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	pretty = append(pretty, '\n')
+	if err := os.WriteFile(filepath.Join(installed, "plugin.json"), pretty, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(installed, ".DS_Store"), []byte("junk"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(installed, "state.json"), []byte(`{"enabled":true,"settings":{"plain":"secret-looking"}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	got, err := store.PackageHash(manifest.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	after, err := os.ReadFile(filepath.Join(installed, "plugin.json"))
+	if err != nil || string(after) != string(pretty) {
+		t.Fatal("摘要计算改写了应用文件")
+	}
+	oracle := filepath.Join(root, "oracle")
+	if err := filepath.WalkDir(installed, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		rel, err := filepath.Rel(installed, path)
+		if err != nil {
+			return err
+		}
+		target := filepath.Join(oracle, rel)
+		if d.IsDir() {
+			return os.MkdirAll(target, 0o755)
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		return os.WriteFile(target, data, 0o644)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	canonical, err := json.Marshal(manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(oracle, "plugin.json"), append(canonical, '\n'), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	want, err := DigestDir(oracle)
+	if err != nil || got != want {
+		t.Fatalf("摘要 %s，规范化结果 %s (%v)", got, want, err)
+	}
+	again, err := store.PackageHash(manifest.ID)
+	if err != nil || again != got {
+		t.Fatalf("重复摘要 %s %v", again, err)
+	}
+	entries, err := os.ReadDir(hashTmp)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, entry := range entries {
+		if strings.HasPrefix(entry.Name(), "lintel-hash-") {
+			t.Fatal("计算摘要时复制了整棵应用树")
+		}
+	}
+}

@@ -152,6 +152,65 @@ func TestUpdateCopiesCompleteCodeWithoutStateOrSecrets(t *testing.T) {
 	}
 }
 
+func TestWorkspaceSourceOverlapGuard(t *testing.T) {
+	src := t.TempDir()
+	nested := filepath.Join(src, "lintel-authoring-child")
+	if err := checkWorkspaceOverlap(nested, src); !errors.Is(err, ErrSource) {
+		t.Fatalf("工作目录位于来源内部时被接受: %v", err)
+	}
+	if err := checkWorkspaceOverlap(src, src); !errors.Is(err, ErrSource) {
+		t.Fatalf("工作目录与来源相同时被接受: %v", err)
+	}
+	other := t.TempDir()
+	if err := checkWorkspaceOverlap(other, src); err != nil {
+		t.Fatalf("互不包含的路径被拒绝: %v", err)
+	}
+}
+
+func TestSweepStaleWorkspacesKeepsUnrelatedEntries(t *testing.T) {
+	root := t.TempDir()
+	stale := filepath.Join(root, "lintel-authoring-stale")
+	contextDir := filepath.Join(stale, "context")
+	if err := os.MkdirAll(contextDir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(contextDir, "catalog.json"), []byte("{}"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(filepath.Join(contextDir, "catalog.json"), 0400); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(contextDir, 0500); err != nil {
+		t.Fatal(err)
+	}
+	keep := filepath.Join(root, "notes")
+	if err := os.Mkdir(keep, 0700); err != nil {
+		t.Fatal(err)
+	}
+	note := filepath.Join(root, "lintel-authoring-note.txt")
+	if err := os.WriteFile(note, []byte("keep"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(root, "lintel-authoring-link")
+	if err := os.Symlink(keep, link); err != nil {
+		t.Fatal(err)
+	}
+	if err := SweepStaleWorkspaces(root); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(stale); !errors.Is(err, os.ErrNotExist) {
+		t.Fatal("过期生成目录还在")
+	}
+	for _, path := range []string{keep, note, link} {
+		if _, err := os.Lstat(path); err != nil {
+			t.Fatalf("清扫删除了 %s: %v", path, err)
+		}
+	}
+	if err := SweepStaleWorkspaces(filepath.Join(root, "missing")); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestCopyRejectsLinksUnsafePathsAndOverlap(t *testing.T) {
 	for _, kind := range []string{"root symlink", "file symlink", "excluded symlink", "path escape", "overlap"} {
 		t.Run(kind, func(t *testing.T) {

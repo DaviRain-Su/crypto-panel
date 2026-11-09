@@ -79,7 +79,7 @@ source 只能选一种：
 
 原生确认安装后，壳会对无设置应用自动检查首页；有设置时先等待保存，也可由用户在壳中点击验证。完整保存设置且没有清除秘密时会自动验证；清除秘密后旧结果失效并等待重新配置或用户手动验证，部分保存失败不会执行。读取 `GET /v0/plugins` 的可选 verification 元数据，核对 requestId 和 packageHash 与本次已批准任务一致。waiting_settings 提示填写 / 保存设置；running 等待检查结束；failed 说明已安装但运行检查未通过；passed 只证明首页执行和页面结构通过，不证明数据业务正确。不要把 installed 当成运行成功，不要为查询状态重复写设置或并发刷新。验证记录只在当前进程有效，字段缺失不表示通过。
 
-用户同意执行后可 `POST /v0/plugins/{id}/refresh?page=overview` 检查实际页面内容；page 只允许 manifest.navigation 声明的页。响应仍是直接 page JSON，摘要与执行时间在 `X-Crypto-Panel-Package-Hash` / `X-Crypto-Panel-Evaluated-At` 头。它们不是行情时间。409 APP_BUSY 时等当前执行结束，不并发制造 runner。必要时引导用户从 Apps 打开原生应用。
+用户同意执行后可 `POST /v0/plugins/{id}/refresh?page=overview` 检查实际页面内容；page 只允许 manifest.navigation 声明的页。响应仍是直接 page JSON，摘要与执行时间同时在 `X-Crypto-Panel-Package-Hash` / `X-Crypto-Panel-Evaluated-At` 和 `X-Lintel-Package-Hash` / `X-Lintel-Evaluated-At` 头。旧名称保留。它们不是行情时间。409 APP_BUSY 时等当前执行结束，不并发制造 runner。必要时引导用户从 Apps 打开原生应用。
 
 ## 修改已有应用
 
