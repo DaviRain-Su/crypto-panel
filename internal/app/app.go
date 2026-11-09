@@ -229,6 +229,9 @@ type App struct {
 	dappBridge    *dappBridgeState
 
 	// 本机 API 的监听器、系统凭据服务、Settings 显示值与端口输入。
+	// pluginSecrets 非空时代替 crypto-panel-plugins。测试必须设置它；
+	// 生产路径留空，由 initPlugins 使用真实凭据服务。
+	pluginSecrets  plugin.Secrets
 	agentSecrets   wallet.SecretStore
 	agentSrv       *agent.Server
 	agentErr       string

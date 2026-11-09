@@ -213,7 +213,7 @@ func (ar *Archive) Install() (Manifest, error) {
 	} else if err := os.Rename(ar.dir, dest); err != nil {
 		return Manifest{}, err
 	}
-	if err := ar.store.rememberInstall(ar.Manifest.ID, info, dest); err != nil {
+	if err := ar.store.rememberInstall(ar.Manifest.ID, info, dest); err != nil && !errors.Is(err, errProvenanceUnconfirmed) {
 		return Manifest{}, err
 	}
 	ar.done = true

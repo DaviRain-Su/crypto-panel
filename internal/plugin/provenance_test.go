@@ -2,12 +2,14 @@ package plugin
 
 import (
 	"crypto/ed25519"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
+	"time"
 )
 
 func TestSignedAppUpdateRejectsTamperedInstallRecord(t *testing.T) {
@@ -254,5 +256,303 @@ func TestBadProvenanceFileDoesNotAuthorizeOrStopManager(t *testing.T) {
 }
 
 func jsonMarshalProvenance(rec hostProvenance) ([]byte, error) {
-	return []byte(fmt.Sprintf(`{"id":%q,"via":%q,"packageHash":%q,"installDigest":%q}`, rec.ID, rec.Via, rec.PackageHash, rec.InstallDigest)), nil
+	return []byte(fmt.Sprintf(`{"id":%q,"signed":%t,"official":%t,"via":%q,"packageHash":%q,"installDigest":%q}`, rec.ID, rec.Signed, rec.Official, rec.Via, rec.PackageHash, rec.InstallDigest)), nil
+}
+
+// scriptedSecrets is a credential store whose reads and writes can fail,
+// hang, or be recorded. Missing keys are not-found, not a read error.
+type scriptedSecrets struct {
+	mu       sync.Mutex
+	m        map[string][]byte
+	order    []string
+	getErr   map[string]error
+	getDelay time.Duration
+	getWaits int
+	setErr   error
+	setDelay time.Duration
+	delErr   error
+	gets     int
+}
+
+func (s *scriptedSecrets) Get(key string) ([]byte, error) {
+	s.mu.Lock()
+	delay := s.getDelay
+	s.mu.Unlock()
+	if delay > 0 {
+		time.Sleep(delay)
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.gets++
+	if err := s.getErr[key]; err != nil {
+		delete(s.getErr, key)
+		return nil, err
+	}
+	v, ok := s.m[key]
+	if !ok {
+		return nil, os.ErrNotExist
+	}
+	return append([]byte(nil), v...), nil
+}
+
+func (s *scriptedSecrets) Set(key string, value []byte) error {
+	if s.setDelay > 0 {
+		time.Sleep(s.setDelay)
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.order = append(s.order, key)
+	if s.setErr != nil {
+		return s.setErr
+	}
+	if s.m == nil {
+		s.m = map[string][]byte{}
+	}
+	s.m[key] = append([]byte(nil), value...)
+	return nil
+}
+
+func (s *scriptedSecrets) Delete(key string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.delErr != nil && strings.HasPrefix(key, "provenance:") {
+		return s.delErr
+	}
+	delete(s.m, key)
+	return nil
+}
+
+func plantLoose(t *testing.T, root, id string) {
+	t.Helper()
+	app := filepath.Join(root, id)
+	manifest := strings.Replace(personalManifest, "local.personal.gas", id, 1)
+	writePlugin(t, app, manifest, personalSource)
+	if err := os.WriteFile(filepath.Join(app, "install.json"), []byte("{\"installedVia\":\"folder\"}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestInstallSucceedsWhenProvenanceCannotBeStored(t *testing.T) {
+	sec := &scriptedSecrets{setErr: errors.New("keychain unavailable")}
+	s := NewStore(t.TempDir(), sec)
+	if err := s.EnsureOfficial(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(s.Dir(), "com.example.gas", "plugin.json")); err != nil {
+		t.Fatal("官方示例因凭据服务不可用而没有装上")
+	}
+	id := "local.personal.nokey"
+	src := t.TempDir()
+	manifest := strings.Replace(personalManifest, "local.personal.gas", id, 1)
+	writePlugin(t, src, manifest, personalSource)
+	if _, err := s.Install(src); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(s.Dir(), id, "plugin.json")); err != nil {
+		t.Fatal(err)
+	}
+	m, err := NewManager(s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { m.Close() })
+	requireCode(t, m.APIMayMutate(id), "API_MUTATION_FORBIDDEN")
+}
+
+func TestReadErrorDoesNotMigrateForgedInstall(t *testing.T) {
+	sec := &scriptedSecrets{m: map[string][]byte{}}
+	root := t.TempDir()
+	s := NewStore(filepath.Join(root, "plugins"), sec)
+	id := "local.personal.signedread"
+	plantLoose(t, s.Dir(), id)
+	signed, err := jsonMarshalProvenance(hostProvenance{ID: id, Signed: true, Via: "store", PackageHash: "sha256:" + strings.Repeat("ab", 32), InstallDigest: "sha256:" + strings.Repeat("cd", 32)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := sec.Set(ProvenanceAccount(id), signed); err != nil {
+		t.Fatal(err)
+	}
+	if err := sec.Set(provenanceMigrationAccount, []byte("done")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(s.Dir(), id, "install.json"), []byte("{}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	sec.getErr = map[string]error{ProvenanceAccount(id): errors.New("keychain read failed")}
+	m, err := NewManager(s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { m.Close() })
+	requireCode(t, m.APIMayMutate(id), "API_MUTATION_FORBIDDEN")
+	rec, found, err := s.getProvenance(id)
+	if err != nil || !found || !rec.Signed {
+		t.Fatalf("读错误后记录被改写: found=%v signed=%v err=%v", found, rec.Signed, err)
+	}
+	requireCode(t, m.APIMayMutate(id), "API_MUTATION_FORBIDDEN")
+}
+
+func TestMigrationDoesNotOverwriteExistingRecord(t *testing.T) {
+	sec := &scriptedSecrets{m: map[string][]byte{}}
+	root := t.TempDir()
+	s := NewStore(filepath.Join(root, "plugins"), sec)
+	id := "local.personal.keepsigned"
+	plantLoose(t, s.Dir(), id)
+	signed, err := jsonMarshalProvenance(hostProvenance{ID: id, Signed: true, Via: "store", PackageHash: "sha256:" + strings.Repeat("11", 32), InstallDigest: "sha256:" + strings.Repeat("22", 32)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := sec.Set(ProvenanceAccount(id), signed); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(s.Dir(), id, "install.json"), []byte("{}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	s.migrateProvenance()
+	rec, found, err := s.getProvenance(id)
+	if err != nil || !found || !rec.Signed {
+		t.Fatalf("迁移覆盖了已有记录: %+v found=%v err=%v", rec, found, err)
+	}
+}
+
+func TestMigrationMarkerIsWrittenAfterRecords(t *testing.T) {
+	sec := &scriptedSecrets{m: map[string][]byte{}}
+	root := t.TempDir()
+	s := NewStore(filepath.Join(root, "plugins"), sec)
+	id := "local.personal.order"
+	plantLoose(t, s.Dir(), id)
+	s.migrateProvenance()
+	sec.mu.Lock()
+	order := append([]string(nil), sec.order...)
+	sec.mu.Unlock()
+	startedAt, recordAt, doneAt := -1, -1, -1
+	for i, key := range order {
+		switch key {
+		case provenanceMigrationStarted:
+			startedAt = i
+		case ProvenanceAccount(id):
+			recordAt = i
+		case provenanceMigrationAccount:
+			doneAt = i
+		}
+	}
+	if startedAt < 0 || recordAt < 0 || doneAt < 0 || !(startedAt < recordAt && recordAt < doneAt) {
+		t.Fatalf("迁移写入顺序错误: %v", order)
+	}
+}
+
+func TestMigrationDoesNotFinishWhenARecordWriteFails(t *testing.T) {
+	id := "local.personal.partial"
+	sec := &scriptedSecrets{m: map[string][]byte{}, setErr: errors.New("write failed")}
+	root := t.TempDir()
+	s := NewStore(filepath.Join(root, "plugins"), sec)
+	plantLoose(t, s.Dir(), id)
+	s.migrateProvenance()
+	if _, found, err := s.readProv(provenanceMigrationAccount); err != nil || found {
+		t.Fatalf("记录没写上却标记迁移完成 found=%v err=%v", found, err)
+	}
+	if err := os.WriteFile(filepath.Join(s.Dir(), id, "install.json"), []byte("{}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	sec.setErr = nil
+	s.migrateProvenance()
+	rec, found, err := s.getProvenance(id)
+	if err != nil || found || rec.ID != "" {
+		t.Fatalf("失败后的再次迁移相信了伪造的 install.json: %+v found=%v err=%v", rec, found, err)
+	}
+}
+
+func TestProvenanceWriteTimeoutDoesNotAuthorize(t *testing.T) {
+	id := "local.personal.timeout"
+	sec := &scriptedSecrets{m: map[string][]byte{}, setDelay: 1500 * time.Millisecond, setErr: errors.New("write failed")}
+	root := t.TempDir()
+	s := NewStore(filepath.Join(root, "plugins"), sec)
+	plantLoose(t, s.Dir(), id)
+	start := time.Now()
+	m, err := NewManager(s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { m.Close() })
+	if time.Since(start) > 1600*time.Millisecond {
+		t.Fatalf("凭据写入超时没有在时限内返回: %s", time.Since(start))
+	}
+	requireCode(t, m.APIMayMutate(id), "API_MUTATION_FORBIDDEN")
+	forged, err := jsonMarshalProvenance(hostProvenance{ID: id, Via: "folder"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.provenanceMem = map[string][]byte{ProvenanceAccount(id): forged}
+	if _, found, err := s.readProv(ProvenanceAccount(id)); found || err == nil {
+		t.Fatal("超时后的内存记录被当成已确认")
+	}
+	if err := os.WriteFile(filepath.Join(s.Dir(), id, "install.json"), []byte("{}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	nextSec := &scriptedSecrets{m: map[string][]byte{}}
+	next := NewStore(s.Dir(), nextSec)
+	nextMgr, err := NewManager(next)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { nextMgr.Close() })
+	requireCode(t, nextMgr.APIMayMutate(id), "API_MUTATION_FORBIDDEN")
+	if _, found, _ := next.getProvenance(id); found {
+		t.Fatal("下一次启动从伪造的 install.json 写出了未签名记录")
+	}
+}
+
+func TestProvenanceTimeoutIsPerStoreAndRetries(t *testing.T) {
+	old := provenanceBackoff
+	provenanceBackoff = 20 * time.Millisecond
+	t.Cleanup(func() { provenanceBackoff = old })
+	slow := &scriptedSecrets{getDelay: 3 * time.Second}
+	fast := &scriptedSecrets{m: map[string][]byte{}}
+	if err := fast.Set("provenance:ready", []byte("ok")); err != nil {
+		t.Fatal(err)
+	}
+	s1 := NewStore(t.TempDir(), slow)
+	s2 := NewStore(t.TempDir(), fast)
+	start := time.Now()
+	if _, _, err := s1.readProv("provenance:slow"); !errors.Is(err, errProvTimeout) || time.Since(start) > 1600*time.Millisecond {
+		t.Fatalf("慢读没有按时失败: %v %s", err, time.Since(start))
+	}
+	if b, found, err := s2.readProv("provenance:ready"); err != nil || !found || string(b) != "ok" {
+		t.Fatalf("一次超时拖住了另一个存储: %q found=%v err=%v", b, found, err)
+	}
+	slow.mu.Lock()
+	slow.getDelay = 0
+	slow.mu.Unlock()
+	if err := slow.Set("provenance:later", []byte("yes")); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(30 * time.Millisecond)
+	if _, found, err := s1.readProv("provenance:later"); err != nil || !found {
+		t.Fatalf("退避结束后没有重试: found=%v err=%v", found, err)
+	}
+}
+
+func TestRemoveReportsProvenanceDeleteFailure(t *testing.T) {
+	sec := &scriptedSecrets{m: map[string][]byte{}}
+	s := NewStore(t.TempDir(), sec)
+	id := "local.personal.delerr"
+	src := t.TempDir()
+	manifest := strings.Replace(personalManifest, "local.personal.gas", id, 1)
+	writePlugin(t, src, manifest, personalSource)
+	if _, err := s.Install(src); err != nil {
+		t.Fatal(err)
+	}
+	sec.delErr = errors.New("delete blocked")
+	m, err := NewManager(s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { m.Close() })
+	err = m.Remove(id)
+	if err == nil || !strings.Contains(err.Error(), ProvenanceAccount(id)) {
+		t.Fatalf("卸载没有报告来源记录删除失败: %v", err)
+	}
+	if _, statErr := os.Stat(filepath.Join(s.Dir(), id)); !errors.Is(statErr, os.ErrNotExist) {
+		t.Fatal("报告删除失败时应用目录还在")
+	}
 }

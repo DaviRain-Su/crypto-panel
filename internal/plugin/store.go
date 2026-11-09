@@ -12,6 +12,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"time"
 )
 
 // ErrBrokenManifest is the error a folder gets when its plugin.json cannot
@@ -55,6 +56,7 @@ type Store struct {
 	secrets       Secrets
 	provenanceMu  sync.Mutex
 	provenanceMem map[string][]byte
+	provBackoff   time.Time
 }
 
 // NewStore returns a store rooted at dir, which is created on first write.
@@ -227,7 +229,7 @@ func (s *Store) Install(src string) (Manifest, error) {
 	if err := os.Rename(tmp, dest); err != nil {
 		return Manifest{}, err
 	}
-	if err := s.rememberInstall(m.ID, info, dest); err != nil {
+	if err := s.rememberInstall(m.ID, info, dest); err != nil && !errors.Is(err, errProvenanceUnconfirmed) {
 		_ = os.RemoveAll(dest)
 		return Manifest{}, err
 	}
@@ -261,8 +263,7 @@ func (s *Store) remove(id string) error {
 	lock.Lock()
 	defer lock.Unlock()
 	if _, err := os.Lstat(dir); errors.Is(err, fs.ErrNotExist) {
-		s.forgetProvenance(id)
-		return nil
+		return s.reportProvenanceDelete(id)
 	} else if err != nil {
 		return managementError("REMOVE_FAILED", "无法读取应用目录", 500)
 	}
@@ -282,9 +283,7 @@ func (s *Store) remove(id string) error {
 	if os.RemoveAll(dir) != nil {
 		return managementError("REMOVE_FAILED", "无法删除应用目录", 500)
 	}
-	// 来源记录删不掉也不把已经完成的卸载报成失败。
-	s.forgetProvenance(id)
-	return nil
+	return s.reportProvenanceDelete(id)
 }
 
 // SetEnabled turns a plugin on or off.

@@ -6,40 +6,58 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io/fs"
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
-	"sync/atomic"
 	"time"
 )
 
-// provenanceKeychainDown is process-wide. A credential store that does not
-// answer is not retried for every plugin, and records then stay in memory
-// for this process only.
-var provenanceKeychainDown atomic.Bool
+// provenanceIOTimeout bounds one credential-store read or write. A slow
+// store must not stall startup or every authorization for longer than this.
+const provenanceIOTimeout = time.Second
 
-// errProvTimeout is returned when the credential store does not answer.
-// Provenance then stays in process memory, so a later process fails closed
-// instead of trusting a file the coding agent can rewrite.
+// provenanceBackoff is how long one store waits before trying the
+// credential store again after a timeout. It is not process-wide: another
+// store keeps using its own backend. Tests may shorten it.
+var provenanceBackoff = 5 * time.Second
+
+// errProvTimeout is a credential-store call that did not finish in time.
 var errProvTimeout = errors.New("provenance credential store timed out")
 
-const provenanceWriteTimeout = time.Second
+// errProvenanceUnconfirmed means the app is installed but its provenance
+// record was not durably stored. Callers keep the install; the local API
+// fails closed until a later confirmed write.
+var errProvenanceUnconfirmed = errors.New("provenance was not confirmed")
 
-// hostProvenance is the shell's record of an install. Each record is stored
-// in the existing plugin credential service under ProvenanceAccount, not in
-// a file the app or the coding agent can rewrite. API mutations and update
-// proposals trust that record. A missing record, a record that does not
-// parse, or an install.json that does not match it fails closed.
+// errProvenanceRejected means install.json is not the bytes the host wrote.
+// The record is not updated.
+var errProvenanceRejected = errors.New("install record does not match the host copy")
+
+// hostProvenance is the shell's record of an install. Each record is an
+// account in the existing plugin credential service (ProvenanceAccount).
+// That is a higher bar than a file next to the app: rewriting install.json
+// or an index file is not enough. It is not a hard boundary against another
+// process of the same user. On Linux and Windows that process can write the
+// same credential service without a prompt. On macOS the login keychain's
+// default ACL may prompt before revealing secret bytes; listing or creating
+// items usually does not. The coding agent is a same-user process with no
+// OS sandbox, so these records must not be described as something it cannot
+// forge.
 //
-// Apps installed before these records existed are classified once, when the
-// manager first starts. Only a regular, parseable install.json is a trusted
-// source for that pass: it is recorded as signed or unsigned from its
-// contents, and later edits must still match its digest. A missing, linked,
-// directory, or otherwise unreadable install.json is not migrated and does
-// not become unsigned. The completion marker lives in the same credential
-// service (provenanceMigrationAccount). Deleting a record or any on-disk
-// index does not run the migration again.
+// A missing record, a read error, a record that does not parse, or an
+// install.json that does not match fails closed for the local API. Native
+// install and removal do not require the credential store.
+//
+// Apps installed before these records existed are classified once, and only
+// when that pass can be made durable. The completion marker is written last.
+// A missing, linked, directory, or unparsable install.json is not a source.
+// If the credential store cannot confirm the pass, those apps stay forbidden
+// to the local API until a native reinstall writes a new record. See
+// migrateProvenance for the leftover case where neither the sentinel nor the
+// credential store remembers that an attempt already failed.
 type hostProvenance struct {
 	ID            string `json:"id"`
 	Signed        bool   `json:"signed"`
@@ -50,9 +68,13 @@ type hostProvenance struct {
 	InstallDigest string `json:"installDigest,omitempty"`
 }
 
-// provenanceMigrationAccount is the credential-service account that records
-// that the one-time migration has finished. It is not a plugin id.
-const provenanceMigrationAccount = "provenance:migration"
+// provenanceMigrationAccount is written only after every migrated record has
+// been stored. provenanceMigrationStarted is written before install.json is
+// read, so a pass that dies in the middle is not retried against a later file.
+const (
+	provenanceMigrationAccount = "provenance:migration"
+	provenanceMigrationStarted = "provenance:migration-started"
+)
 
 // ProvenanceAccount is the credential-service account for one app's install
 // provenance. The service name is unchanged; this is an account within it.
@@ -86,12 +108,16 @@ func installDigest(data []byte) string {
 	return "sha256:" + hex.EncodeToString(sum[:])
 }
 
-func (s *Store) keychainEnabled() bool {
-	return s.secrets != nil && !provenanceKeychainDown.Load()
+func (s *Store) inProvenanceBackoff() bool {
+	s.provenanceMu.Lock()
+	defer s.provenanceMu.Unlock()
+	return time.Now().Before(s.provBackoff)
 }
 
-func (s *Store) markKeychainDown() {
-	provenanceKeychainDown.Store(true)
+func (s *Store) startProvenanceBackoff() {
+	s.provenanceMu.Lock()
+	s.provBackoff = time.Now().Add(provenanceBackoff)
+	s.provenanceMu.Unlock()
 }
 
 func (s *Store) readMem(key string) ([]byte, bool) {
@@ -113,70 +139,114 @@ func (s *Store) writeMem(key string, value []byte) {
 	s.provenanceMem[key] = append([]byte(nil), value...)
 }
 
-func (s *Store) readProv(key string) ([]byte, bool) {
-	if s.keychainEnabled() {
-		b, err := s.secrets.Get(key)
-		if err == nil && len(b) > 0 {
-			return append([]byte(nil), b...), true
+// readProv reports found, not-found, and error separately. An error is not
+// a missing record: callers must not migrate or authorize from it. Memory
+// filled in after a failed credential-store write is not a result.
+func (s *Store) readProv(key string) ([]byte, bool, error) {
+	if s.secrets == nil {
+		b, ok := s.readMem(key)
+		if !ok {
+			return nil, false, nil
 		}
-		return nil, false
+		return b, true, nil
 	}
-	return s.readMem(key)
+	if s.inProvenanceBackoff() {
+		return nil, false, errProvTimeout
+	}
+	type result struct {
+		b   []byte
+		err error
+	}
+	ch := make(chan result, 1)
+	go func() {
+		b, err := s.secrets.Get(key)
+		ch <- result{b, err}
+	}()
+	var b []byte
+	var err error
+	select {
+	case got := <-ch:
+		b, err = got.b, got.err
+	case <-time.After(provenanceIOTimeout):
+		s.startProvenanceBackoff()
+		return nil, false, errProvTimeout
+	}
+	if err == nil && len(b) > 0 {
+		return append([]byte(nil), b...), true, nil
+	}
+	if err == nil || provenanceAbsent(err) {
+		return nil, false, nil
+	}
+	return nil, false, err
 }
 
 func (s *Store) writeProv(key string, value []byte) error {
 	value = append([]byte(nil), value...)
-	if s.keychainEnabled() {
-		err := s.secretSet(key, value)
-		if err == nil {
-			return nil
-		}
-		if !errors.Is(err, errProvTimeout) {
-			return err
-		}
-		s.markKeychainDown()
+	if s.secrets == nil {
+		s.writeMem(key, value)
+		return nil
 	}
-	s.writeMem(key, value)
-	return nil
-}
-
-func (s *Store) secretSet(key string, value []byte) error {
+	if s.inProvenanceBackoff() {
+		return errProvTimeout
+	}
 	ch := make(chan error, 1)
 	go func() { ch <- s.secrets.Set(key, value) }()
 	select {
 	case err := <-ch:
-		return err
-	case <-time.After(provenanceWriteTimeout):
+		if err != nil {
+			return err
+		}
+		return nil
+	case <-time.After(provenanceIOTimeout):
+		s.startProvenanceBackoff()
 		return errProvTimeout
 	}
 }
 
-func (s *Store) deleteProv(key string) {
-	if s.keychainEnabled() {
-		ch := make(chan struct{}, 1)
-		go func() {
-			_ = s.secrets.Delete(key)
-			ch <- struct{}{}
-		}()
-		select {
-		case <-ch:
-		case <-time.After(provenanceWriteTimeout):
-			s.markKeychainDown()
-		}
+func (s *Store) deleteProv(key string) error {
+	if s.secrets == nil {
+		s.provenanceMu.Lock()
+		delete(s.provenanceMem, key)
+		s.provenanceMu.Unlock()
+		return nil
 	}
-	s.provenanceMu.Lock()
-	delete(s.provenanceMem, key)
-	s.provenanceMu.Unlock()
+	if s.inProvenanceBackoff() {
+		return errProvTimeout
+	}
+	ch := make(chan error, 1)
+	go func() { ch <- s.secrets.Delete(key) }()
+	select {
+	case err := <-ch:
+		return err
+	case <-time.After(provenanceIOTimeout):
+		s.startProvenanceBackoff()
+		return errProvTimeout
+	}
+}
+
+func provenanceAbsent(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, os.ErrNotExist) || errors.Is(err, fs.ErrNotExist) {
+		return true
+	}
+	switch err.Error() {
+	case "mygo: secret not found", "no such secret":
+		return true
+	default:
+		return false
+	}
 }
 
 func (s *Store) getProvenance(id string) (hostProvenance, bool, error) {
-	raw, ok := s.readProv(ProvenanceAccount(id))
-	if !ok {
-		return hostProvenance{}, false, nil
+	raw, found, err := s.readProv(ProvenanceAccount(id))
+	if err != nil || !found {
+		return hostProvenance{}, false, err
 	}
 	var rec hostProvenance
 	if json.Unmarshal(raw, &rec) != nil || rec.ID != id {
-		return hostProvenance{}, false, nil
+		return hostProvenance{}, false, errors.New("provenance record is unreadable")
 	}
 	return rec, true, nil
 }
@@ -189,16 +259,25 @@ func (s *Store) putProvenance(rec hostProvenance) error {
 	if err != nil {
 		return err
 	}
-	return s.writeProv(ProvenanceAccount(rec.ID), data)
+	if err := s.writeProv(ProvenanceAccount(rec.ID), data); err != nil {
+		return fmt.Errorf("%w: %w", errProvenanceUnconfirmed, err)
+	}
+	return nil
 }
 
-func (s *Store) forgetProvenance(id string) {
-	s.deleteProv(ProvenanceAccount(id))
+func (s *Store) forgetProvenance(id string) error {
+	err := s.deleteProv(ProvenanceAccount(id))
+	if err != nil {
+		log.Printf("lintel: delete %s: %v", ProvenanceAccount(id), err)
+	}
+	return err
 }
 
-func (s *Store) migrationDone() bool {
-	_, ok := s.readProv(provenanceMigrationAccount)
-	return ok
+func (s *Store) reportProvenanceDelete(id string) error {
+	if err := s.forgetProvenance(id); err != nil {
+		return managementError("PROVENANCE_DELETE_FAILED", "应用已删除，但未能移除凭据服务账户 "+ProvenanceAccount(id), 500)
+	}
+	return nil
 }
 
 // rememberInstall records the install the host just wrote. The on-disk
@@ -211,7 +290,7 @@ func (s *Store) rememberInstall(id string, info installInfo, dir string) error {
 	}
 	want, err := marshalInstallInfo(info)
 	if err != nil || !bytes.Equal(raw, want) {
-		return errors.New("install record does not match the host copy")
+		return errProvenanceRejected
 	}
 	hash, err := normalizedPackageHash(dir)
 	if err != nil {
@@ -258,10 +337,37 @@ func (s *Store) adoptPersonalRecord(id, dir, packageHash string) error {
 }
 
 // migrateProvenance classifies installs that predate host records. It never
-// fails the manager. Unreadable install.json files are skipped, and the pass
-// does not run again once the credential-service marker is set.
+// fails the manager and never authorizes from a write that did not land.
+//
+// The completion marker is written only after every record chosen for this
+// pass has been stored. A read error is not "missing": that app is not
+// migrated, and an existing record is never replaced. If the pass cannot
+// finish, the started marker or the on-disk sentinel keeps a later start
+// from trusting install.json as it reads then. Apps left without a confirmed
+// record stay forbidden to the local API until a native reinstall.
+//
+// Residual risk: if both the sentinel file and the credential-store writes
+// fail, the next start cannot tell this attempt from a first upgrade and may
+// classify whatever install.json says at that moment. Deleting the sentinel
+// and the credential-store markers has the same effect.
 func (s *Store) migrateProvenance() {
-	if s.migrationDone() {
+	done, found, err := s.readProv(provenanceMigrationAccount)
+	if err != nil || (found && len(done) > 0) {
+		return
+	}
+	_, startedFound, err := s.readProv(provenanceMigrationStarted)
+	if err != nil {
+		return
+	}
+	sentinel, serr := s.migrationSentinelExists()
+	if serr != nil || startedFound || sentinel {
+		// An earlier pass did not finish. Do not read install.json again.
+		return
+	}
+	if err := s.createMigrationSentinel(); err != nil {
+		return
+	}
+	if err := s.writeProv(provenanceMigrationStarted, []byte("1")); err != nil {
 		return
 	}
 	entries, err := os.ReadDir(s.dir)
@@ -284,7 +390,11 @@ func (s *Store) migrateProvenance() {
 }
 
 func (s *Store) migrateOne(id string) error {
-	if _, ok, _ := s.getProvenance(id); ok {
+	_, found, err := s.getProvenance(id)
+	if err != nil {
+		return err
+	}
+	if found {
 		return nil
 	}
 	dir := filepath.Join(s.dir, id)
@@ -306,6 +416,55 @@ func (s *Store) migrateOne(id string) error {
 		Source:        record.Source,
 		InstallDigest: installDigest(raw),
 	})
+}
+
+func (s *Store) migrationSentinelPath() (string, error) {
+	dir, err := filepath.Abs(s.dir)
+	if err != nil {
+		return "", err
+	}
+	base := filepath.Base(dir)
+	if base == "" || base == "." || base == string(filepath.Separator) {
+		return "", errors.New("plugin store directory is invalid")
+	}
+	return filepath.Join(filepath.Dir(dir), "."+base+"-migration-attempted"), nil
+}
+
+func (s *Store) migrationSentinelExists() (bool, error) {
+	path, err := s.migrationSentinelPath()
+	if err != nil {
+		return false, err
+	}
+	info, err := os.Lstat(path)
+	if errors.Is(err, fs.ErrNotExist) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	if info.Mode()&fs.ModeSymlink != 0 || !info.Mode().IsRegular() {
+		return false, errors.New("migration sentinel is not a regular file")
+	}
+	return true, nil
+}
+
+func (s *Store) createMigrationSentinel() error {
+	path, err := s.migrationSentinelPath()
+	if err != nil {
+		return err
+	}
+	f, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE|os.O_EXCL, 0o600)
+	if errors.Is(err, fs.ErrExist) {
+		return err
+	}
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	if _, err := f.Write([]byte("1\n")); err != nil {
+		return err
+	}
+	return f.Sync()
 }
 
 func apiMutationForbidden() *Error {

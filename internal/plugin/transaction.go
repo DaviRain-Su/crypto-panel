@@ -197,7 +197,7 @@ func (m *Manager) commit(task *installationTask) error {
 		}
 		return rollback()
 	}
-	if err := m.store.rememberInstall(record.PluginID, info, dest); err != nil {
+	if err := m.store.rememberInstall(record.PluginID, info, dest); err != nil && !errors.Is(err, errProvenanceUnconfirmed) {
 		if old == nil {
 			_ = os.RemoveAll(dest)
 			return managementError("INSTALLATION_FAILED", "无法记录安装来源，新版本已撤回", 500)
@@ -392,7 +392,7 @@ func (m *Manager) recoverTransaction(tx string, record commitRecord) error {
 	info, infoErr := loadInstallInfo(dest)
 	stErr := validateRecoveryState(dest, true)
 	if hashErr == nil && infoErr == nil && stErr == nil && hash == record.PackageHash && info.PackageHash == record.PackageHash && (info.InstalledVia == "local-api" || info.InstalledVia == "acp") {
-		if err := m.store.adoptPersonalRecord(record.PluginID, dest, record.PackageHash); err != nil {
+		if err := m.store.adoptPersonalRecord(record.PluginID, dest, record.PackageHash); err != nil && !errors.Is(err, errProvenanceUnconfirmed) {
 			return managementError("RECOVERY_FAILED", "无法记录已恢复应用的安装来源", 503)
 		}
 		if syncDirectory(m.store.dir) != nil || os.RemoveAll(tx) != nil {

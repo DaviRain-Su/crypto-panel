@@ -226,7 +226,7 @@ func (s *Store) installOfficial(id string) error {
 		return err
 	}
 	cleanup = false
-	if err := s.rememberInstall(id, info, dest); err != nil {
+	if err := s.rememberInstall(id, info, dest); err != nil && !errors.Is(err, errProvenanceUnconfirmed) {
 		_ = os.RemoveAll(dest)
 		return err
 	}
