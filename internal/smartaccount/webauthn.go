@@ -1,6 +1,7 @@
 package smartaccount
 
 import (
+	"crypto/elliptic"
 	"errors"
 	"fmt"
 	"math/big"
@@ -85,6 +86,13 @@ func Signature(assertion webauthn.Assertion) ([]byte, error) {
 	}
 	if r.BitLen() > 256 || s.BitLen() > 256 {
 		return nil, errors.New("smartaccount: signature component is too large")
+	}
+	// WebAuthn signatures may be high-S; the account's verifier expects
+	// low-S, as the reference executor normalizes them.
+	n := elliptic.P256().Params().N
+	half := new(big.Int).Rsh(n, 1)
+	if s.Cmp(half) > 0 {
+		s = new(big.Int).Sub(n, s)
 	}
 	auth := WebAuthnAuth{
 		AuthenticatorData: assertion.AuthenticatorData,

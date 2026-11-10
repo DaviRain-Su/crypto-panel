@@ -87,6 +87,7 @@ func checkPermission(key AccessKey, signerID, receiverID string, actions []Actio
 			return fmt.Errorf("a function-call key cannot %s", a.Kind)
 		}
 	}
+	// A nil allowance spends without a cap; only an explicit limit rejects.
 	if fc.Allowance != nil && total.Cmp(fc.Allowance) > 0 {
 		return fmt.Errorf("the deposit of %s yoctoNEAR is above the key's allowance of %s", total, fc.Allowance)
 	}
@@ -205,7 +206,7 @@ func AccessKeyOf(ctx context.Context, rpc RPC, signer Signer) (AccessKey, error)
 	}
 	var fc struct {
 		FunctionCall struct {
-			Allowance   string   `json:"allowance"`
+			Allowance   *string  `json:"allowance"`
 			ReceiverID  string   `json:"receiver_id"`
 			MethodNames []string `json:"method_names"`
 		} `json:"FunctionCall"`
@@ -213,9 +214,12 @@ func AccessKeyOf(ctx context.Context, rpc RPC, signer Signer) (AccessKey, error)
 	if err := json.Unmarshal(out.Permission, &fc); err != nil {
 		return AccessKey{}, fmt.Errorf("reading the access key's permission: %w", err)
 	}
-	allowance := new(big.Int)
-	if fc.FunctionCall.Allowance != "" {
-		if _, ok := allowance.SetString(fc.FunctionCall.Allowance, 10); !ok {
+	// A null or absent allowance means the key spends without a cap; only an
+	// explicit number sets a limit, so "0" stays a zero limit.
+	var allowance *big.Int
+	if s := fc.FunctionCall.Allowance; s != nil {
+		allowance = new(big.Int)
+		if _, ok := allowance.SetString(*s, 10); !ok {
 			return AccessKey{}, errors.New("reading the access key's allowance")
 		}
 	}
@@ -268,7 +272,10 @@ func Send(ctx context.Context, rpc RPC, signed []byte, expected [32]byte) (strin
 		return "", fmt.Errorf("reading the transaction outcome: %w", err)
 	}
 	want := base58.Encode(expected[:])
-	if out.TransactionOutcome.ID != "" && out.TransactionOutcome.ID != want {
+	if out.TransactionOutcome.ID == "" {
+		return "", errors.New("the node did not report the transaction id")
+	}
+	if out.TransactionOutcome.ID != want {
 		return "", fmt.Errorf("the node reported %s, but the signed transaction is %s", out.TransactionOutcome.ID, want)
 	}
 	var status map[string]json.RawMessage
@@ -278,7 +285,15 @@ func Send(ctx context.Context, rpc RPC, signed []byte, expected [32]byte) (strin
 	if failure, ok := status["Failure"]; ok {
 		return "", fmt.Errorf("the transaction failed: %s", failure)
 	}
-	return want, nil
+	// A null or empty status is "Unknown": the outcome is not final, so it
+	// is not a success either. Only a success variant confirms the send.
+	if _, ok := status["SuccessValue"]; ok {
+		return want, nil
+	}
+	if _, ok := status["SuccessReceiptId"]; ok {
+		return want, nil
+	}
+	return "", errors.New("the transaction status is not a success")
 }
 
 // Status reads the node's chain id, for checking that an endpoint serves the

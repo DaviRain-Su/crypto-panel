@@ -106,6 +106,11 @@ func (a *App) passkeyChainCard(c *ui.Context) {
 			}
 		case chain.Solana:
 			a.passkeyAccountRow(c, a.t(i18n.PasskeySolanaAccount), pk.SolanaAddress, a.passkeySolanaBalance(), pk.SolanaAddress != "")
+			if a.passkeyVaultExists() {
+				// The refresh found an account at the derived address. The
+				// app did not create it, so it may be a squatter's.
+				ui.Text(c, a.t(i18n.PasskeySolanaClaimed)).FontSize(11).TextColor(p.danger).MaxLines(3)
+			}
 			ui.Text(c, a.t(i18n.PasskeySolanaNote)).FontSize(11).TextColor(p.muted).MaxLines(4)
 		default:
 			evm, copyable := pk.EVMAddress, pk.EVMAddress != ""
@@ -131,7 +136,27 @@ func (a *App) passkeySolanaBalance() string {
 	if snap == nil {
 		return ""
 	}
+	if a.snap.vault == vaultExists {
+		// The account is there, but the app did not create it and cannot
+		// tell whose it is: no balance that could be someone else's.
+		return ""
+	}
 	return a.nativeText(snap)
+}
+
+// passkeyVaultExists reports what the last refresh learned about the
+// passkey's Solana vault: whether the derived address already has an
+// account on the selected network. It never asks the network here; the
+// refresh loop owns that question.
+func (a *App) passkeyVaultExists() bool {
+	if a.settings.Passkey == nil || a.settings.Passkey.SolanaAddress == "" || a.network().Family != chain.Solana {
+		return false
+	}
+	snap := a.accountSnapshot(a.settings.Passkey.SolanaAddress)
+	if snap == nil {
+		return false
+	}
+	return a.snap.vault == vaultExists
 }
 
 // passkeyCard is the passkey wallet before a credential exists. Once one

@@ -13,7 +13,7 @@ var rpcQueryMethods = map[string][]string{
 		"eth_getLogs", "eth_getProof", "eth_syncing", "net_version",
 	},
 	"near": {
-		"status", "query", "block", "chunk", "gas_price", "validators", "tx",
+		"status", "query", "block", "chunk", "gas_price", "validators",
 		"EXPERIMENTAL_protocol_config", "EXPERIMENTAL_changes", "EXPERIMENTAL_changes_in_block",
 		"EXPERIMENTAL_tx_status", "light_client_proof", "next_light_client_block",
 	},

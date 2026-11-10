@@ -166,6 +166,7 @@ const (
 	PasskeyEVMNote        Key = "passkeyEVMNote"
 	PasskeySolanaAccount  Key = "passkeySolanaAccount"
 	PasskeySolanaNote     Key = "passkeySolanaNote"
+	PasskeySolanaClaimed  Key = "passkeySolanaClaimed"
 	PasskeyDeriving       Key = "passkeyDeriving"
 	PasskeyMainnetOnly    Key = "passkeyMainnetOnly"
 	PasskeyDeploy         Key = "passkeyDeploy"
@@ -423,6 +424,8 @@ const (
 	StorePermStorage     Key = "storePermStorage"
 	StorePermSettings    Key = "storePermSettings"
 	StoreFrom            Key = "storeFrom"
+	StoreInstallID       Key = "storeInstallID"
+	StoreChanged         Key = "storeChanged"
 	StoreNewPerms        Key = "storeNewPerms"
 	StoreInstallBody     Key = "storeInstallBody"
 	StoreUnsignedWarn    Key = "storeUnsignedWarn"
@@ -662,6 +665,7 @@ var messages = map[Key]map[string]string{
 	PasskeyEVMNote:        {English: "Sending from this smart account needs a bundler and is not wired.", Chinese: "从这个智能账户发送需要 bundler，当前尚未接入。"},
 	PasskeySolanaAccount:  {English: "Solana vault", Chinese: "Solana 金库"},
 	PasskeySolanaNote:     {English: "LazorKit v1 vault on Solana mainnet, derived from this passkey. Creating the account and sending SOL are not wired — do not send funds here yet.", Chinese: "由这把 Passkey 推导出的 Solana 主网 LazorKit v1 金库。创建账户和发送 SOL 都尚未接入——先不要往这里转账。"},
+	PasskeySolanaClaimed:  {English: "This vault address already has an account on this network. It may not be yours — do not send funds here.", Chinese: "这个金库地址在当前网络上已有账户，可能不是你的——不要往这里转账。"},
 	PasskeyDeriving:       {English: "Reading from the factory…", Chinese: "正在从工厂合约读取…"},
 	PasskeyMainnetOnly:    {English: "The NEAR passkey wallet contract is on mainnet. Switch to NEAR mainnet to create or send.", Chinese: "NEAR Passkey 钱包合约部署在主网。请切换到 NEAR 主网后再创建或发送。"},
 	PasskeyDeploy:         {English: "Create account", Chinese: "创建账户"},
@@ -900,7 +904,7 @@ var messages = map[Key]map[string]string{
 	AgentTitle:       {English: "Local agent API", Chinese: "本地 Agent API"},
 	AgentBody:        {English: "A loopback API for local agents to read data, validate apps and propose installs or updates. You review installation in Apps. The API cannot sign or approve.", Chinese: "供本机 Agent 读取数据、校验应用并提议安装或更新。安装需在应用页审阅确认；API 不能签名或批准，且只监听本机回环地址。"},
 	AgentPort:        {English: "Port", Chinese: "端口"},
-	AgentPortInvalid: {English: "The port must be 1 to 65535.", Chinese: "端口必须是 1 到 65535。"},
+	AgentPortInvalid: {English: "The port must be 1024 to 65535.", Chinese: "端口必须是 1024 到 65535。"},
 	AgentListening:   {English: "Listening on http://%s", Chinese: "正在监听 http://%s"},
 	AgentToken:       {English: "Bearer token", Chinese: "访问令牌"},
 	AgentRotate:      {English: "Rotate token", Chinese: "更换令牌"},
@@ -920,6 +924,8 @@ var messages = map[Key]map[string]string{
 	StorePermStorage:     {English: "Store %d KB of data", Chinese: "存储 %d KB 数据"},
 	StorePermSettings:    {English: "Settings: %d", Chinese: "设置：%d"},
 	StoreFrom:            {English: "From: %s", Chinese: "来源：%s"},
+	StoreInstallID:       {English: "ID: %s", Chinese: "应用 ID：%s"},
+	StoreChanged:         {English: "The app changed after you approved it. Nothing was installed.", Chinese: "应用在你批准后发生了变化，未安装。"},
 	StoreNewPerms:        {English: "New permissions: %s", Chinese: "新增权限：%s"},
 	StoreInstallBody:     {English: "Only what is listed here is granted. A plugin never sees your keys.", Chinese: "只授予上面列出的权限。插件永远看不到你的私钥。"},
 	StoreUnsignedWarn:    {English: "This plugin is not signed. Install it only if you trust where it came from.", Chinese: "该插件未签名，只有在你信任来源时才安装。"},

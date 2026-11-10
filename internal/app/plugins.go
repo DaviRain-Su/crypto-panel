@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -196,6 +197,11 @@ func (a *App) installPlugin() {
 		if !ok {
 			return
 		}
+		if err := reverifyManifest(src, m); err != nil {
+			a.pluginNotice = a.t(i18n.StoreChanged)
+			a.invalidate()
+			return
+		}
 		m, err := a.plugins.Install(src)
 		if err != nil {
 			a.pluginNotice = a.t(i18n.PluginInstallFailed, err.Error())
@@ -245,6 +251,11 @@ func (a *App) installPluginZip() {
 		if !ok {
 			return
 		}
+		if err := reverifyManifest(dir, m); err != nil {
+			a.pluginNotice = a.t(i18n.StoreChanged)
+			a.invalidate()
+			return
+		}
 		m, err := a.plugins.Install(dir)
 		if err != nil {
 			a.pluginNotice = a.t(i18n.PluginInstallFailed, err.Error())
@@ -256,6 +267,33 @@ func (a *App) installPluginZip() {
 		a.refreshProvenanceLocks()
 		a.invalidate()
 	})
+}
+
+// reverifyManifest re-reads the manifest from the folder the user approved
+// and reports whether it is still the one the prompt showed. The folder may
+// change between the prompt and the approval; only what was shown is what
+// gets installed. The comparison is the canonical JSON of the manifest, the
+// same equality the manager uses for a frozen installation candidate.
+func reverifyManifest(src string, approved plugin.Manifest) error {
+	now, err := plugin.LoadManifest(src)
+	if err != nil {
+		return err
+	}
+	if err := now.ValidateDir(src); err != nil {
+		return err
+	}
+	got, err := json.Marshal(now)
+	if err != nil {
+		return err
+	}
+	want, err := json.Marshal(approved)
+	if err != nil {
+		return err
+	}
+	if string(got) != string(want) {
+		return errors.New("the manifest changed after the permission prompt")
+	}
+	return nil
 }
 
 // removeBrokenPlugin deletes a folder the store could not read.

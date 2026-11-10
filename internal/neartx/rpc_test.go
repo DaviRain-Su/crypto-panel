@@ -134,6 +134,60 @@ func TestAccessKeyOfFunctionCall(t *testing.T) {
 	}
 }
 
+func TestAccessKeyOfAllowance(t *testing.T) {
+	block := `{"header":{"hash":"F3bucPK7JgJPCPf8yuBB28DaGqQ6jHfUuxJ68Tnc9PbG"}}`
+	deposit := big.NewInt(1)
+	cases := []struct {
+		name      string
+		allowance string // raw JSON for the "allowance" field, "" to omit it
+		wantNil   bool
+		want      string
+		depositOK bool
+	}{
+		{"null is unlimited", "null", true, "", true},
+		{"absent is unlimited", "", true, "", true},
+		{"zero still limits", `"0"`, false, "0", false},
+		{"number sets a limit", `"250000000000000000000000"`, false, "250000000000000000000000", true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			perm := `{"receiver_id":"contract.testnet","method_names":["donate"]}`
+			if tc.allowance != "" {
+				perm = `{"allowance":` + tc.allowance + `,"receiver_id":"contract.testnet","method_names":["donate"]}`
+			}
+			rpc := &fakeRPC{
+				accessKey: `{"nonce":7,"permission":{"FunctionCall":` + perm + `}}`,
+				block:     block,
+			}
+			key, err := AccessKeyOf(context.Background(), rpc.call, testSigner(t))
+			if err != nil {
+				t.Fatal(err)
+			}
+			fc := key.Permission.FunctionCall
+			if fc == nil {
+				t.Fatal("the key has no function-call permission")
+			}
+			if tc.wantNil && fc.Allowance != nil {
+				t.Fatalf("allowance = %s, want nil", fc.Allowance)
+			}
+			if !tc.wantNil && (fc.Allowance == nil || fc.Allowance.String() != tc.want) {
+				t.Fatalf("allowance = %v, want %s", fc.Allowance, tc.want)
+			}
+			// The same permission check gates a deposit-bearing transaction.
+			_, _, err = Prepare(context.Background(), rpc.call, testSigner(t), Request{
+				ReceiverID: "contract.testnet",
+				Actions:    []Action{FunctionCall("donate", nil, 0, deposit)},
+			})
+			if tc.depositOK && err != nil {
+				t.Fatalf("a deposit within the key's limits was refused: %v", err)
+			}
+			if !tc.depositOK && err == nil {
+				t.Fatal("a deposit outside the key's limits was prepared")
+			}
+		})
+	}
+}
+
 func TestPrepareAppliesFunctionCallKeyLimits(t *testing.T) {
 	const allowance = "250000000000000000000000" // 0.25 NEAR
 	rpc := &fakeRPC{
@@ -207,6 +261,41 @@ func TestSendRefusesAnotherHash(t *testing.T) {
 	_, err := Send(context.Background(), rpc.call, []byte{1}, want)
 	if err == nil || !strings.Contains(err.Error(), "reported") {
 		t.Fatalf("err = %v", err)
+	}
+}
+
+func TestSendSuccessReceiptID(t *testing.T) {
+	var want [32]byte
+	want[0] = 1
+	id := base58.Encode(want[:])
+	rpc := &fakeRPC{send: `{"status":{"SuccessReceiptId":"9FbucPK7JgJPCPf8yuBB28DaGqQ6jHfUuxJ68Tnc9PbG"},"transaction_outcome":{"id":"` + id + `"}}`}
+	got, err := Send(context.Background(), rpc.call, []byte{1, 2, 3}, want)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != id {
+		t.Fatalf("hash = %s, want %s", got, id)
+	}
+}
+
+func TestSendRefusesUnknownOutcome(t *testing.T) {
+	var want [32]byte
+	want[0] = 1
+	id := base58.Encode(want[:])
+	other := base58.Encode([]byte{9})
+	cases := map[string]string{
+		"no outcome id": `{"status":{"SuccessValue":""},"transaction_outcome":{"id":""}}`,
+		"another hash":  `{"status":{"SuccessValue":""},"transaction_outcome":{"id":"` + other + `"}}`,
+		"null status":   `{"status":null,"transaction_outcome":{"id":"` + id + `"}}`,
+		"empty status":  `{"status":{},"transaction_outcome":{"id":"` + id + `"}}`,
+	}
+	for name, send := range cases {
+		t.Run(name, func(t *testing.T) {
+			rpc := &fakeRPC{send: send}
+			if _, err := Send(context.Background(), rpc.call, []byte{1}, want); err == nil {
+				t.Fatal("an outcome the node did not confirm was accepted")
+			}
+		})
 	}
 }
 

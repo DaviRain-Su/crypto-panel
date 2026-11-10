@@ -139,6 +139,25 @@ func TestValidate(t *testing.T) {
 	}
 }
 
+func TestValidateAgentPort(t *testing.T) {
+	for _, tt := range []struct {
+		port int
+		want int
+	}{
+		{1023, DefaultAgentPort},
+		{1024, 1024},
+		{65535, 65535},
+		{65536, DefaultAgentPort},
+		{0, DefaultAgentPort},
+		{-8765, DefaultAgentPort},
+	} {
+		s := Settings{NetworkID: chains.Ethereum.ID, AgentPort: tt.port}.Validate()
+		if s.AgentPort != tt.want {
+			t.Errorf("AgentPort %d validated to %d, want %d", tt.port, s.AgentPort, tt.want)
+		}
+	}
+}
+
 func TestAccountsOf(t *testing.T) {
 	s := DefaultSettings()
 	s.Accounts = []wallet.Address{

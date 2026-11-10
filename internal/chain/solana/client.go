@@ -64,6 +64,31 @@ func (c *Client) Account(ctx context.Context, addr string) (chain.AccountBalance
 	return c.broker.Account(ctx, c.endpoint, c.network, addr)
 }
 
+// AccountExists reports whether an account exists on the cluster. An
+// address the program has never seen answers value null; that is not an
+// error, it is an account that is not there yet.
+func (c *Client) AccountExists(ctx context.Context, addr string) (bool, error) {
+	return c.broker.AccountExists(ctx, c.endpoint, addr)
+}
+
+// AccountExists reports whether an account exists on the cluster.
+func (b *Broker) AccountExists(ctx context.Context, ep Endpoint, addr string) (bool, error) {
+	raw, err := b.Call(ctx, ep, "getAccountInfo", []any{
+		addr,
+		map[string]string{"encoding": "base64", "commitment": "confirmed"},
+	})
+	if err != nil {
+		return false, err
+	}
+	var out struct {
+		Value *json.RawMessage `json:"value"`
+	}
+	if err := json.Unmarshal(raw, &out); err != nil {
+		return false, fmt.Errorf("%s: getAccountInfo: unreadable answer: %w", ep.Host(), err)
+	}
+	return out.Value != nil, nil
+}
+
 // Slot reads the endpoint's latest slot.
 func (b *Broker) Slot(ctx context.Context, ep Endpoint) (uint64, error) {
 	raw, err := b.Call(ctx, ep, "getSlot", []any{map[string]string{"commitment": "confirmed"}})
