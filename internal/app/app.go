@@ -93,7 +93,13 @@ type App struct {
 	draftKey         string
 	draftWalletLabel string
 	walletErr        string
-	walletNotice     string
+	// importErr is only the key-import form. walletErr and nearErr are the
+	// other wallet actions, and folding the form does not clear them.
+	importErr    string
+	walletNotice string
+	// walletImportOpen keeps the key-import form folded away: importing is
+	// occasional, and the wallet page leads with the accounts.
+	walletImportOpen bool
 	// nearKeyring holds the wallet's NEAR accounts and their ed25519 keys.
 	nearKeyring      *wallet.NearKeyring
 	draftNearKey     string
@@ -485,8 +491,8 @@ func (a *App) invalidate() {
 	}
 }
 
-// goTo selects a page of the shell. A revealed key does not outlive the
-// wallet page.
+// goTo selects a page of the shell. A revealed key, and anything typed into
+// the key-import form, does not outlive the wallet page.
 func (a *App) goTo(r route) {
 	if a.route == r {
 		return
@@ -497,6 +503,7 @@ func (a *App) goTo(r route) {
 		a.shownKeys = nil
 		a.walletNotice = ""
 		a.passkeyPrepared = false
+		a.foldWalletImport()
 	}
 	if a.route.kind == "plugins" && r.kind != "plugins" {
 		a.pluginDetail = ""

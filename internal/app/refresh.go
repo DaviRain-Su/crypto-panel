@@ -182,10 +182,22 @@ func (a *App) fetch(gen int, jobs []familyFetch) {
 			wg.Add(1)
 			go func(i int, job familyFetch) {
 				defer wg.Done()
-				sem <- struct{}{}
-				defer func() { <-sem }()
+				// The deadline starts when the job is spawned, including
+				// time spent waiting for a free slot. A job that waited out
+				// the timeout aborts instead of beginning another RPC.
 				ctx, cancel := context.WithTimeout(context.Background(), familyReadTimeout)
 				defer cancel()
+				select {
+				case sem <- struct{}{}:
+					defer func() { <-sem }()
+				case <-ctx.Done():
+					results[i] = familyResult{err: ctx.Err()}
+					return
+				}
+				if err := ctx.Err(); err != nil {
+					results[i] = familyResult{err: err}
+					return
+				}
 				var res familyResult
 				for _, addr := range job.addrs {
 					acct, err := job.reader.Account(ctx, addr)

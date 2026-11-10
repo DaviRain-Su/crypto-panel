@@ -48,7 +48,7 @@ Status accepts exactly `PENDING_DEPOSIT`, `KNOWN_DEPOSIT_TX`, `INCOMPLETE_DEPOSI
 
 Installed-app refresh keeps its existing durable KV behavior. Candidate preview constructs an isolated, empty in-memory KV with the candidate quota. `get`, `put` and `delete` work during that one page evaluation, including repeated writes, but no candidate preview can read, overwrite or delete the installed app's `kv.json`. Closing the runner discards the overlay.
 
-Every successful candidate preview has `signing:"disabled"`, `storage:"ephemeral"`, `network:"declared methods allowed"`. Local API emits these as `X-Lintel-Preview-Signing`, `X-Lintel-Preview-Storage` and `X-Lintel-Preview-Network`. The native notice carries the same facts. Preview still executes declared network methods and is not described as side-effect-free.
+Every successful candidate preview has `signing:"disabled"`, `storage:"ephemeral"`, `network:"approved hosts only"`. Local API emits these as `X-Lintel-Preview-Signing`, `X-Lintel-Preview-Storage` and `X-Lintel-Preview-Network`. The native notice carries the same facts. Settings and watched accounts are empty. Network access is the intersection of the installed version's approved hosts and the candidate declaration; fresh installs have none. Preview is therefore not described as side-effect-free, and it does not grant candidate-only hosts before review.
 
 ### Catalog and examples
 

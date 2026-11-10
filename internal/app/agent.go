@@ -344,7 +344,7 @@ type readOnlyPageOptions struct {
 	expectedHash string
 	quiet        bool
 	active       func() bool
-	ephemeralKV  bool
+	preview      bool
 }
 
 func (o readOnlyPageOptions) check() error {
@@ -459,8 +459,8 @@ func (a *App) PreviewInstallationPage(requestID, page, via string) (agent.PageRe
 	result.PackageHash = hash
 	result.Signing = "disabled"
 	result.Storage = "ephemeral"
-	result.Network = "declared methods allowed"
-	runner, err := a.agentRunner(candidate, readOnlyPageOptions{ephemeralKV: true})
+	result.Network = "approved hosts only"
+	runner, err := a.agentRunner(candidate, readOnlyPageOptions{preview: true})
 	if err != nil {
 		return result, err
 	}
@@ -490,9 +490,11 @@ func (a *App) agentRunner(inst plugin.Installed, options readOnlyPageOptions) (*
 			err = fmt.Errorf("app %s: %w", inst.Manifest.ID, rerr)
 			return
 		}
-		deps := a.pluginHostDeps(inst.Manifest)
-		if options.ephemeralKV {
-			deps.KV = plugin.NewEphemeralKV(inst.Manifest.Permissions.StorageKb)
+		var deps plugin.HostDeps
+		if options.preview {
+			deps = a.previewHostDeps(inst.Manifest)
+		} else {
+			deps = a.pluginHostDeps(inst.Manifest)
 		}
 		refuse := func() (plugin.SignResult, error) {
 			return plugin.SignResult{}, errors.New("signing is not available over the local API")

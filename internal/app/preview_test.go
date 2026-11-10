@@ -90,7 +90,7 @@ func TestPreviewUsesEphemeralKVForBothOrigins(t *testing.T) {
 				if page.Title != "true|2" {
 					t.Fatalf("preview %d retained or lost KV: %q", i, page.Title)
 				}
-				if result.Signing != "disabled" || result.Storage != "ephemeral" || result.Network != "declared methods allowed" {
+				if result.Signing != "disabled" || result.Storage != "ephemeral" || result.Network != "approved hosts only" {
 					t.Fatalf("preview metadata = %+v", result)
 				}
 			}

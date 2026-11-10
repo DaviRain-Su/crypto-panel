@@ -3,8 +3,12 @@ package app
 import (
 	"context"
 	"encoding/json"
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -13,6 +17,8 @@ import (
 	"github.com/davirain-su/lintel/internal/acp"
 	"github.com/davirain-su/lintel/internal/agent"
 	"github.com/davirain-su/lintel/internal/agent/authoring"
+	"github.com/davirain-su/lintel/internal/hyperliquid"
+	"github.com/davirain-su/lintel/internal/intents"
 	"github.com/davirain-su/lintel/internal/plugin"
 )
 
@@ -214,6 +220,10 @@ func TestInstalledACPCreatesSwapApp(t *testing.T) {
 	t.Logf("real swap app generated and previewed without installation: %s version %s; preview type=%T", result.Installation.PluginID, result.Installation.Version, preview.Page)
 }
 
+// TestInstalledACPCreatesChainCapabilityApps exercises real generation and
+// public reads after controlled test review installs into a temporary store.
+// A fresh candidate must not use its unapproved network during preview.
+// This is not a native mouse approval and never signs or broadcasts.
 func TestInstalledACPCreatesChainCapabilityApps(t *testing.T) {
 	executable := os.Getenv("LINTEL_TEST_ACP_EXECUTABLE")
 	if executable == "" {
@@ -279,17 +289,58 @@ func TestInstalledACPCreatesChainCapabilityApps(t *testing.T) {
 			if err != nil || !strings.Contains(string(source), tc.sourceText) {
 				t.Fatalf("generated source does not use %s: %v\n%s", tc.sourceText, err, source)
 			}
-			preview, err := a.PreviewInstallationPage(job.RequestID, "", "acp")
-			if err != nil {
-				t.Fatalf("real generated preview: %v", err)
+			var calls atomic.Int32
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				calls.Add(1)
+				w.Header().Set("Content-Type", "application/json")
+				if tc.name == "hyperliquid" {
+					var request struct {
+						Type string `json:"type"`
+					}
+					if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+						t.Error(err)
+					}
+					if request.Type == "l2Book" {
+						io.WriteString(w, `{"coin":"BTC","levels":[[{"px":"50000","sz":"1","n":1}],[{"px":"50001","sz":"1","n":1}]]}`)
+						return
+					}
+					io.WriteString(w, `{"BTC":"50000","ETH":"3000"}`)
+					return
+				}
+				io.WriteString(w, `[{"assetId":"nep141:wrap.near","symbol":"wNEAR","blockchain":"near","decimals":24,"price":3,"icon":""}]`)
+			}))
+			defer server.Close()
+			if tc.name == "hyperliquid" {
+				a.hyperliquidClient = hyperliquid.NewAt(server.URL)
+			} else {
+				a.intentsClient = intents.NewAt(server.URL)
 			}
-			if preview.Storage != "ephemeral" || preview.Signing != "disabled" {
-				t.Fatalf("preview metadata = %+v", preview)
+			preview, err := a.PreviewInstallationPage(job.RequestID, "", "acp")
+			if err != nil && !strings.Contains(err.Error(), "allowlist") {
+				t.Fatalf("unexpected generated preview failure: %v\n%s", err, source)
+			}
+			if got := calls.Load(); got != 0 {
+				t.Fatalf("fresh candidate made %d unapproved requests; page=%+v", got, preview.Page)
 			}
 			if _, err := a.plugins.Get(job.PluginID); err == nil {
 				t.Fatal("generation installed the candidate")
 			}
-			t.Logf("real agent generated and previewed %s using %s; pending, unsigned, no installation", job.PluginID, tc.sourceText)
+			a.confirmInstall = func(_ plugin.Manifest, _ installRequest, done func(bool)) { done(true) }
+			a.reviewInstallation(job.RequestID)
+			if _, err := a.plugins.Get(job.PluginID); err != nil {
+				t.Fatalf("controlled test review did not install: %v", err)
+			}
+			installed, err := a.RefreshPage(job.PluginID, job.Manifest.Navigation[0].Page)
+			if err != nil {
+				t.Fatalf("installed read-only protocol call: %v", err)
+			}
+			if installed.Signing != "" || installed.Storage != "" {
+				t.Fatalf("installed page inherited preview metadata: %+v", installed)
+			}
+			if calls.Load() == 0 {
+				t.Fatalf("installed generated app did not use %s; page=%+v\n%s", tc.sourceText, installed.Page, source)
+			}
+			t.Logf("real agent generated %s using %s; preview made zero requests, controlled review installed in temp store, installed read passed", job.PluginID, tc.sourceText)
 		})
 	}
 }

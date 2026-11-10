@@ -83,12 +83,12 @@ Claude 当前上游命令已更名为 `claude-agent-acp`。本机旧版仍可握
 
 ## 2026-11-10 只读链能力与候选预览补充验收
 
-本切片提供精确金额工具、Hyperliquid Info 只读、NEAR 合约 view、1Click tokens、验签 dry quote 和 status。没有 Exchange、wet quote、入金、交易广播、自动安装或私钥能力。候选预览使用空的临时 KV，成功结果明确标记签名禁用、临时存储和声明网络仍允许。
+本切片提供精确金额工具、Hyperliquid Info 只读、NEAR 合约 view、1Click tokens、验签 dry quote 和 status。没有 Exchange、wet quote、入金、交易广播、自动安装或私钥能力。候选预览使用空的临时 KV、空设置和无账户状态，成功结果明确标记签名禁用、临时存储和仅批准 Host 可联网。新安装无网络访问，更新只能访问已批准且候选仍声明的 Host。
 
 - 真实 1Click dry quote 已验证 wNEAR → Ethereum USDC 和 wNEAR → ARB；使用生产公钥验证 Ed25519 签名。线上 dry quote 实际返回 HTTP 201，客户端只对该 POST 兼容 200/201，其余响应仍拒绝。无效 recipient 和上游错误均原样失败，没有生成 wet quote 或使用 deposit address。
 - 真实 NEAR mainnet `wrap.near.ft_balance_of` 只读通过。此次验收发现节点 `result` 是字节数组，而非此前假设的 Base64 字符串；修复后真实返回和 Host 解码测试通过，空字节返回 null，参数与节点响应有大小限制。
 - Hyperliquid mainnet/testnet 路由由固定生产 endpoint 选择，JS 不能传 URL；testnet 标志不进入 Info 请求体。
-- `TestInstalledACPCreatesChainCapabilityApps` 使用 `@agentclientprotocol/claude-agent-acp 0.102.0` 通过，总耗时 330.21 秒。真实模型分别生成并预览 `local.personal.hyperliquid-markets` 与 `local.personal.intents-assets`，源码实际调用 `host.hyperliquid.info` 和 `host.intents.tokens`。两者均为 pending、无签名权限、未安装，预览存储为临时。
+- `TestInstalledACPCreatesChainCapabilityApps` 使用 `@agentclientprotocol/claude-agent-acp 0.102.0`，最终验收耗时 312.24 秒。真实模型分别生成 `local.personal.hyperliquid-markets` 与 `local.personal.intents-assets`，源码实际调用 `host.hyperliquid.info` 和 `host.intents.tokens`，候选 pending、无签名权限、未安装。本地计数测试服务器证明两次未批准预览均为零网络请求；经受控测试审阅安装到临时目录后，两者都实际发出只读请求并成功渲染。此前仅检查页面错误的测试版本失败过，因为没有识别生成代码可能捕获权限异常；最终版本改为直接统计请求，不依赖页面是否报错。
 - Intents status 对历史原始报价保留签名和时间戳格式验证，不套用 dry quote 的当前五分钟新鲜度；拒绝无签名报价和未知状态。
 - 真实桌面人工操作、第二种真实 Agent、外部 Skill 流程与真实交易仍未覆盖。最终全仓测试、变更包 race、vet、普通构建、MyGo 生产打包及差异检查见本次交付报告和随附提交。
 

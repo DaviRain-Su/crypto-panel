@@ -70,7 +70,7 @@ func (a *App) createNearAccount() {
 // must be typed, because a key alone does not name it.
 func (a *App) importNearAccount() {
 	if a.nearKeyring == nil {
-		a.nearErr = a.t(i18n.WalletUnavailable)
+		a.importErr = a.t(i18n.WalletUnavailable)
 		a.invalidate()
 		return
 	}
@@ -80,7 +80,7 @@ func (a *App) importNearAccount() {
 	}
 	acc, err := a.nearKeyring.Import(raw, a.draftNearAccount, a.draftNearLabel)
 	if err != nil {
-		a.nearErr = a.walletFailure(err)
+		a.importErr = a.walletFailure(err)
 		a.invalidate()
 		return
 	}
@@ -88,7 +88,7 @@ func (a *App) importNearAccount() {
 	a.settings = a.settings.Validate()
 	a.draftNearKey, a.draftNearAccount, a.draftNearLabel = "", "", ""
 	a.save()
-	a.nearErr = ""
+	a.importErr = ""
 	a.walletNotice = a.t(i18n.WalletNearImported, wallet.Short(acc.AccountID))
 	a.touch()
 	a.requestRefresh()

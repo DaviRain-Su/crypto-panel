@@ -35,7 +35,7 @@ func (d *managedData) PreviewInstallationPage(requestID, page, via string) (Page
 	if err != nil {
 		return PageResult{}, err
 	}
-	return PageResult{Page: d.pages[candidate.Manifest.ID], PackageHash: hash, EvaluatedAt: time.Now().UTC(), Signing: "disabled", Storage: "ephemeral", Network: "declared methods allowed"}, nil
+	return PageResult{Page: d.pages[candidate.Manifest.ID], PackageHash: hash, EvaluatedAt: time.Now().UTC(), Signing: "disabled", Storage: "ephemeral", Network: "approved hosts only"}, nil
 }
 
 type credentialMemory map[string][]byte
@@ -167,7 +167,7 @@ func TestPreviewRouteReturnsOnlyOwnedPendingPage(t *testing.T) {
 		for header, want := range map[string]string{
 			"X-Lintel-Preview-Signing": "disabled",
 			"X-Lintel-Preview-Storage": "ephemeral",
-			"X-Lintel-Preview-Network": "declared methods allowed",
+			"X-Lintel-Preview-Network": "approved hosts only",
 		} {
 			if got := rec.Header().Get(header); got != want {
 				t.Errorf("%s = %q, want %q", header, got, want)

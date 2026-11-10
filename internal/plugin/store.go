@@ -609,18 +609,18 @@ func writeFileAtomic(path string, data []byte, mode fs.FileMode) error {
 // KV is one plugin's key-value store: JSON values under string keys, kept
 // in kv.json, bounded by the manifest's storageKb.
 type KV struct {
-	path      string
-	quota     int
-	data      map[string]json.RawMessage
-	size      int
-	mu        sync.Mutex
-	ephemeral bool
+	path   string
+	quota  int
+	data   map[string]json.RawMessage
+	size   int
+	mu     sync.Mutex
+	memory bool
 }
 
-// NewEphemeralKV returns request-scoped storage for a candidate preview.
-// It never reads or writes the installed application's KV file.
-func NewEphemeralKV(storageKb int) *KV {
-	return &KV{quota: storageKb << 10, ephemeral: true}
+// NewMemoryKV is a store that never touches disk. Preview uses it so a
+// candidate cannot read or write the installed app's kv.json.
+func NewMemoryKV(quota int) *KV {
+	return &KV{memory: true, quota: quota, data: map[string]json.RawMessage{}}
 }
 
 const (
@@ -644,7 +644,7 @@ func (kv *KV) fileLock() *sync.Mutex {
 
 // Get returns the value stored under key.
 func (kv *KV) lock() func() {
-	if kv.ephemeral {
+	if kv.memory {
 		kv.mu.Lock()
 		return kv.mu.Unlock
 	}
@@ -726,7 +726,10 @@ func (kv *KV) Keys() []string {
 }
 
 func (kv *KV) load() error {
-	if kv.ephemeral {
+	if kv.memory {
+		if kv.data == nil {
+			kv.data = map[string]json.RawMessage{}
+		}
 		return nil
 	}
 	kv.data, kv.size = nil, 0
@@ -747,7 +750,7 @@ func (kv *KV) load() error {
 }
 
 func (kv *KV) save() error {
-	if kv.ephemeral {
+	if kv.memory {
 		return nil
 	}
 	data, err := json.Marshal(kv.data)

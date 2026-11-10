@@ -1,10 +1,14 @@
 package app
 
 import (
+	"bytes"
 	"context"
 	"embed"
 	"errors"
+	"image"
+	_ "image/png"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"strings"
@@ -17,7 +21,14 @@ import (
 	"github.com/davirain-su/lintel/internal/intents"
 )
 
-const maxAssetIconBytes = 2 << 20
+const (
+	maxAssetIconBytes = 2 << 20
+	// maxIconEdge keeps a token icon far below a decode bomb. 512×512 RGBA
+	// is 1 MiB, inside the 2 MiB compressed-byte budget.
+	maxIconEdge         = 512
+	maxCachedIcons      = 32
+	iconFailureCooldown = 30 * time.Second
+)
 
 //go:embed assetart/*.png assetart/*.svg
 var builtinAssetArt embed.FS
@@ -44,6 +55,21 @@ func builtinAssetIcon(token intents.Token) ui.ImageSource {
 	if path == "" {
 		return nil
 	}
+	return cachedBuiltinIcon(path)
+}
+
+var (
+	builtinIconMu sync.Mutex
+	builtinIcons  = map[string]ui.ImageSource{}
+)
+
+func cachedBuiltinIcon(path string) ui.ImageSource {
+	builtinIconMu.Lock()
+	if icon, ok := builtinIcons[path]; ok {
+		builtinIconMu.Unlock()
+		return icon
+	}
+	builtinIconMu.Unlock()
 	data, err := builtinAssetArt.ReadFile(path)
 	if err != nil {
 		return nil
@@ -52,6 +78,9 @@ func builtinAssetIcon(token intents.Token) ui.ImageSource {
 	if err != nil {
 		return nil
 	}
+	builtinIconMu.Lock()
+	builtinIcons[path] = bitmap
+	builtinIconMu.Unlock()
 	return bitmap
 }
 
@@ -60,12 +89,19 @@ type assetIconResult struct {
 	err    error
 }
 
+type iconFlight struct {
+	done   chan struct{}
+	result assetIconResult
+}
+
 // assetIconCache keeps public asset art out of the quote request path.
 type assetIconCache struct {
 	http      *http.Client
 	allowHTTP string
 	mu        sync.Mutex
 	entries   map[string]assetIconResult
+	inflight  map[string]*iconFlight
+	failed    map[string]time.Time
 }
 
 func newAssetIconCache(client *http.Client) *assetIconCache {
@@ -77,6 +113,9 @@ func newAssetIconCache(client *http.Client) *assetIconCache {
 	clone.CheckRedirect = func(req *http.Request, via []*http.Request) error {
 		if len(via) >= 5 {
 			return errors.New("too many icon redirects")
+		}
+		if len(via) > 0 && !strings.EqualFold(via[0].URL.Hostname(), req.URL.Hostname()) {
+			return errors.New("asset icon redirected to another host")
 		}
 		return icons.validateURL(req.URL.String())
 	}
@@ -91,7 +130,23 @@ func (c *assetIconCache) validateURL(raw string) error {
 	if u.User != nil || u.Host == "" || (u.Scheme != "https" && !(c.allowHTTP != "" && strings.HasPrefix(raw, c.allowHTTP+"/"))) {
 		return errors.New("asset icon URL must be public HTTPS")
 	}
+	testServer := c.allowHTTP != "" && strings.HasPrefix(raw, c.allowHTTP+"/")
+	if !testServer && privateIconHost(u.Hostname()) {
+		return errors.New("asset icon URL must be public HTTPS")
+	}
 	return nil
+}
+
+func privateIconHost(host string) bool {
+	host = strings.Trim(strings.ToLower(host), "[]")
+	if host == "localhost" {
+		return true
+	}
+	ip := net.ParseIP(host)
+	if ip == nil {
+		return false
+	}
+	return ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsUnspecified()
 }
 
 func (c *assetIconCache) cached(raw string) (assetIconResult, bool) {
@@ -101,38 +156,120 @@ func (c *assetIconCache) cached(raw string) (assetIconResult, bool) {
 	return result, ok
 }
 
+func (c *assetIconCache) loading(raw string) bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	_, ok := c.inflight[raw]
+	return ok
+}
+
+// cooling reports a recent failure. The error is not stored as an icon, and
+// the frame loop waits before trying the URL again.
+func (c *assetIconCache) cooling(raw string) bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	at, ok := c.failed[raw]
+	if !ok {
+		return false
+	}
+	if time.Since(at) >= iconFailureCooldown {
+		delete(c.failed, raw)
+		return false
+	}
+	return true
+}
+
+func (c *assetIconCache) noteFailure(raw string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.failed == nil {
+		c.failed = map[string]time.Time{}
+	}
+	c.failed[raw] = time.Now()
+}
+
 func (c *assetIconCache) load(ctx context.Context, raw string) (*ui.Bitmap, error) {
-	if result, ok := c.cached(raw); ok {
+	c.mu.Lock()
+	if result, ok := c.entries[raw]; ok {
+		c.mu.Unlock()
 		return result.bitmap, result.err
 	}
-	result := assetIconResult{err: c.validateURL(raw)}
-	if result.err == nil {
-		var req *http.Request
-		req, result.err = http.NewRequestWithContext(ctx, http.MethodGet, raw, nil)
-		if result.err == nil {
-			var res *http.Response
-			res, result.err = c.http.Do(req)
-			if result.err == nil {
-				defer res.Body.Close()
-				if res.StatusCode != http.StatusOK {
-					result.err = errors.New("asset icon request failed")
-				} else {
-					var data []byte
-					data, result.err = io.ReadAll(io.LimitReader(res.Body, maxAssetIconBytes+1))
-					if result.err == nil && len(data) > maxAssetIconBytes {
-						result.err = errors.New("asset icon is too large")
-					}
-					if result.err == nil {
-						result.bitmap, result.err = ui.DecodeBitmap(data)
-					}
-				}
-			}
+	if flight, ok := c.inflight[raw]; ok {
+		c.mu.Unlock()
+		select {
+		case <-flight.done:
+			return flight.result.bitmap, flight.result.err
+		case <-ctx.Done():
+			return nil, ctx.Err()
 		}
 	}
+	flight := &iconFlight{done: make(chan struct{})}
+	if c.inflight == nil {
+		c.inflight = map[string]*iconFlight{}
+	}
+	c.inflight[raw] = flight
+	c.mu.Unlock()
+
+	result := c.fetchIcon(ctx, raw)
 	c.mu.Lock()
-	c.entries[raw] = result
+	delete(c.inflight, raw)
+	if result.err == nil && result.bitmap != nil {
+		if len(c.entries) >= maxCachedIcons {
+			for key := range c.entries {
+				delete(c.entries, key)
+				break
+			}
+		}
+		c.entries[raw] = result
+	}
+	flight.result = result
+	close(flight.done)
 	c.mu.Unlock()
 	return result.bitmap, result.err
+}
+
+func (c *assetIconCache) fetchIcon(ctx context.Context, raw string) assetIconResult {
+	var result assetIconResult
+	result.err = c.validateURL(raw)
+	if result.err != nil {
+		return result
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, raw, nil)
+	if err != nil {
+		result.err = err
+		return result
+	}
+	res, err := c.http.Do(req)
+	if err != nil {
+		result.err = err
+		return result
+	}
+	defer res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		result.err = errors.New("asset icon request failed")
+		return result
+	}
+	data, err := io.ReadAll(io.LimitReader(res.Body, maxAssetIconBytes+1))
+	if err != nil {
+		result.err = err
+		return result
+	}
+	if len(data) > maxAssetIconBytes {
+		result.err = errors.New("asset icon is too large")
+		return result
+	}
+	cfg, _, err := image.DecodeConfig(bytes.NewReader(data))
+	if err != nil {
+		result.err = err
+		return result
+	}
+	pixels := int64(cfg.Width) * int64(cfg.Height)
+	if cfg.Width <= 0 || cfg.Height <= 0 || cfg.Width > maxIconEdge || cfg.Height > maxIconEdge || pixels > int64(maxAssetIconBytes)/4 {
+		result.err = errors.New("asset icon dimensions are too large")
+		return result
+	}
+	result.bitmap, result.err = ui.DecodeBitmap(data)
+	return result
 }
 
 func assetMonogram(symbol string) string {
@@ -145,7 +282,7 @@ func assetMonogram(symbol string) string {
 }
 
 // assetIcon draws only a completed bitmap and starts one background load.
-// Failures remain a monogram; a failed URL is not retried on every frame.
+// A failure stays a monogram and is not cached, so a later load can succeed.
 func (a *App) assetIcon(c *ui.Context, token intents.Token, size float32) {
 	if icon := builtinAssetIcon(token); icon != nil {
 		ui.Box(c).Size(size, size).Radius(size / 2).Clip().Children(func() {
@@ -161,12 +298,14 @@ func (a *App) assetIcon(c *ui.Context, token intents.Token, size float32) {
 				})
 				return
 			}
-		} else {
+		} else if !a.assetIcons.loading(token.IconURL) && !a.assetIcons.cooling(token.IconURL) {
 			raw := token.IconURL
 			a.goAsync(func() {
 				ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
 				defer cancel()
-				_, _ = a.assetIcons.load(ctx, raw)
+				if _, err := a.assetIcons.load(ctx, raw); err != nil {
+					a.assetIcons.noteFailure(raw)
+				}
 				a.runOnMain(a.invalidate)
 			})
 		}

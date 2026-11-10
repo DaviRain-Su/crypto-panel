@@ -288,7 +288,7 @@ func (a *App) openCreator(id string) {
 	a.initAuthoring()
 	if a.coding.busy {
 		a.coding.open = true
-		a.route = routePlugins
+		a.goTo(routePlugins)
 		a.invalidate()
 		return
 	}
@@ -316,7 +316,7 @@ func (a *App) openCreator(id string) {
 	a.coding.slug = ""
 	a.pluginTab = "installed"
 	a.pluginDetail = ""
-	a.route = routePlugins
+	a.goTo(routePlugins)
 	a.invalidate()
 }
 
@@ -481,7 +481,7 @@ func (a *App) previewGeneratedApp() {
 	a.coding.preview.requestID = requestID
 	a.coding.preview.manifest = job.Manifest
 	a.coding.preview.page = job.Manifest.Navigation[0].Page
-	a.route = route{kind: "preview"}
+	a.goTo(route{kind: "preview"})
 	a.loadGeneratedPreview("")
 	a.invalidate()
 }
@@ -524,7 +524,7 @@ func (a *App) loadGeneratedPreview(page string) {
 
 func (a *App) closeGeneratedPreview() {
 	a.coding.preview = candidatePreview{}
-	a.route = routePlugins
+	a.goTo(routePlugins)
 	a.invalidate()
 }
 
