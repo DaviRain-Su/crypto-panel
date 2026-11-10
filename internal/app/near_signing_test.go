@@ -26,9 +26,10 @@ import (
 // nearRPC answers the calls Prepare and Send make, and records what was
 // broadcast.
 type nearRPC struct {
-	accessKey string
-	broadcast []byte
-	calls     []string
+	accessKey  string
+	broadcast  []byte
+	broadcasts [][]byte
+	calls      []string
 }
 
 func (f *nearRPC) call(_ context.Context, method string, params any) (json.RawMessage, error) {
@@ -51,9 +52,10 @@ func (f *nearRPC) call(_ context.Context, method string, params any) (json.RawMe
 			return nil, err
 		}
 		f.broadcast = signed
+		f.broadcasts = append(f.broadcasts, append([]byte(nil), signed...))
 		hash := sha256.Sum256(signed[:len(signed)-1-ed25519.SignatureSize])
 		id := base58.Encode(hash[:])
-		return json.RawMessage(`{"status":{"SuccessValue":""},"transaction_outcome":{"id":"` + id + `"}}`), nil
+		return json.RawMessage(`{"status":{"SuccessValue":""},"transaction":{"hash":"` + id + `"},"transaction_outcome":{"id":"` + id + `","receipt_ids":["r1"]},"receipts_outcome":[{"id":"r1"}]}`), nil
 	}
 	return nil, errors.New("unexpected method " + method)
 }

@@ -272,13 +272,21 @@ func TestSend(t *testing.T) {
 	var want [32]byte
 	want[0] = 1
 	id := base58.Encode(want[:])
-	rpc := &fakeRPC{send: `{"status":{"SuccessValue":""},"transaction_outcome":{"id":"` + id + `"}}`}
-	got, err := Send(context.Background(), rpc.call, []byte{1, 2, 3}, want)
+	rpc := &fakeRPC{send: `{"status":{"SuccessValue":""},"transaction":{"hash":"` + id + `"},"transaction_outcome":{"id":"` + id + `","receipt_ids":["r1"]},"receipts_outcome":[{"id":"r1"}]}`}
+	got, outcome, err := Send(context.Background(), rpc.call, []byte{1, 2, 3}, want)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if got != id {
 		t.Fatalf("hash = %s, want %s", got, id)
+	}
+	var preserved struct {
+		Transaction struct {
+			Hash string `json:"hash"`
+		} `json:"transaction"`
+	}
+	if err := json.Unmarshal(outcome, &preserved); err != nil || preserved.Transaction.Hash != id {
+		t.Fatalf("full outcome = %s, err = %v", outcome, err)
 	}
 }
 
@@ -286,7 +294,7 @@ func TestSendFailure(t *testing.T) {
 	var want [32]byte
 	id := base58.Encode(want[:])
 	rpc := &fakeRPC{send: `{"status":{"Failure":{"ActionError":{"kind":{"FunctionCallError":{"ExecutionError":"boom"}}}}},"transaction_outcome":{"id":"` + id + `"}}`}
-	_, err := Send(context.Background(), rpc.call, []byte{1}, want)
+	_, _, err := Send(context.Background(), rpc.call, []byte{1}, want)
 	if err == nil || !strings.Contains(err.Error(), "boom") {
 		t.Fatalf("err = %v", err)
 	}
@@ -297,7 +305,7 @@ func TestSendRefusesAnotherHash(t *testing.T) {
 	var other [32]byte
 	other[0] = 9
 	rpc := &fakeRPC{send: `{"status":{"SuccessValue":""},"transaction_outcome":{"id":"` + base58.Encode(other[:]) + `"}}`}
-	_, err := Send(context.Background(), rpc.call, []byte{1}, want)
+	_, _, err := Send(context.Background(), rpc.call, []byte{1}, want)
 	if err == nil || !strings.Contains(err.Error(), "reported") {
 		t.Fatalf("err = %v", err)
 	}
@@ -308,12 +316,12 @@ func TestSendSuccessReceiptID(t *testing.T) {
 	want[0] = 1
 	id := base58.Encode(want[:])
 	rpc := &fakeRPC{send: `{"status":{"SuccessReceiptId":"9FbucPK7JgJPCPf8yuBB28DaGqQ6jHfUuxJ68Tnc9PbG"},"transaction_outcome":{"id":"` + id + `"}}`}
-	got, err := Send(context.Background(), rpc.call, []byte{1, 2, 3}, want)
+	got, outcome, err := Send(context.Background(), rpc.call, []byte{1, 2, 3}, want)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got != id {
-		t.Fatalf("hash = %s, want %s", got, id)
+	if got != id || len(outcome) == 0 {
+		t.Fatalf("hash = %s, outcome = %s, want %s and the full result", got, outcome, id)
 	}
 }
 
@@ -331,7 +339,7 @@ func TestSendRefusesUnknownOutcome(t *testing.T) {
 	for name, send := range cases {
 		t.Run(name, func(t *testing.T) {
 			rpc := &fakeRPC{send: send}
-			if _, err := Send(context.Background(), rpc.call, []byte{1}, want); err == nil {
+			if _, _, err := Send(context.Background(), rpc.call, []byte{1}, want); err == nil {
 				t.Fatal("an outcome the node did not confirm was accepted")
 			}
 		})
@@ -340,7 +348,7 @@ func TestSendRefusesUnknownOutcome(t *testing.T) {
 
 func TestSendRPCError(t *testing.T) {
 	rpc := &fakeRPC{sendErr: errors.New("nonce too low")}
-	if _, err := Send(context.Background(), rpc.call, []byte{1}, [32]byte{}); err == nil {
+	if _, _, err := Send(context.Background(), rpc.call, []byte{1}, [32]byte{}); err == nil {
 		t.Fatal("an RPC error was ignored")
 	}
 }

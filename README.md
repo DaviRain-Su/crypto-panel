@@ -147,6 +147,12 @@ the shell's keychain; plugins and web pages never see any key.
   `connect`、`signIn`、`disconnect`、`signOut`、`getAccounts`、`getNetwork`、
   `signAndSendTransaction` 和 `addFunctionCallKey`。请求发送到 shell 的
   `cryptopanel://near/request`；不受信任的页面不能读取异源响应，因此结果通过事件返回。
+- **NEAR Connect**：主 frame 响应 `near-selector-ready`，以
+  `near-wallet-injected` 的 `CustomEvent.detail` 发布 Lintel 的 injected-wallet manifest
+  与适配器。标准 `signIn` 返回 `Account[]`；`signAndSendTransaction` 返回完整的
+  `FinalExecutionOutcome`，`signAndSendTransactions` 按顺序逐笔原生批准并广播。适配器接受
+  connector 与 `@near-js/transactions` 的 action 形状；请求的 mainnet/testnet 必须与当前网络一致。
+  NEP-413、`verifyOwner` 与离线签名明确返回 unsupported，不伪装成已支持。
 - **Origin 与文档**：请求须携带原生 host 向加载完成的主文档发放的随机 capability。
   Host 共同校验当前 WebView、实际 origin 与文档 capability；顶层 URL 或 HTTP
   `Origin` header 不能单独授权 frame。仅接受 `https` 或 loopback 上的 `http`。

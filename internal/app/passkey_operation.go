@@ -194,5 +194,6 @@ func (a *App) relayPasskeyNear(op *passkeyOperation, state passkeyRelayState, rp
 	}
 	sendCtx, cancel := context.WithTimeout(op.ctx, 90*time.Second)
 	defer cancel()
-	return neartx.Send(sendCtx, guardedRPC, signed, hash)
+	hashText, _, err := neartx.Send(sendCtx, guardedRPC, signed, hash)
+	return hashText, err
 }

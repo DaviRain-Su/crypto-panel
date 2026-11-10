@@ -311,10 +311,10 @@ func RecentBlockHash(ctx context.Context, rpc RPC) ([32]byte, error) {
 
 // Send broadcasts a signed transaction and waits for its final outcome. It
 // refuses a node that reports another transaction id than the one signed.
-func Send(ctx context.Context, rpc RPC, signed []byte, expected [32]byte) (string, error) {
+func Send(ctx context.Context, rpc RPC, signed []byte, expected [32]byte) (string, json.RawMessage, error) {
 	raw, err := rpc(ctx, "broadcast_tx_commit", []any{base64.StdEncoding.EncodeToString(signed)})
 	if err != nil {
-		return "", err
+		return "", nil, err
 	}
 	var out struct {
 		Status             json.RawMessage `json:"status"`
@@ -323,31 +323,31 @@ func Send(ctx context.Context, rpc RPC, signed []byte, expected [32]byte) (strin
 		} `json:"transaction_outcome"`
 	}
 	if err := json.Unmarshal(raw, &out); err != nil {
-		return "", fmt.Errorf("reading the transaction outcome: %w", err)
+		return "", nil, fmt.Errorf("reading the transaction outcome: %w", err)
 	}
 	want := base58.Encode(expected[:])
 	if out.TransactionOutcome.ID == "" {
-		return "", errors.New("the node did not report the transaction id")
+		return "", nil, errors.New("the node did not report the transaction id")
 	}
 	if out.TransactionOutcome.ID != want {
-		return "", fmt.Errorf("the node reported %s, but the signed transaction is %s", out.TransactionOutcome.ID, want)
+		return "", nil, fmt.Errorf("the node reported %s, but the signed transaction is %s", out.TransactionOutcome.ID, want)
 	}
 	var status map[string]json.RawMessage
 	if err := json.Unmarshal(out.Status, &status); err != nil {
-		return "", fmt.Errorf("reading the transaction status: %w", err)
+		return "", nil, fmt.Errorf("reading the transaction status: %w", err)
 	}
 	if failure, ok := status["Failure"]; ok {
-		return "", fmt.Errorf("the transaction failed: %s", failure)
+		return "", nil, fmt.Errorf("the transaction failed: %s", failure)
 	}
 	// A null or empty status is "Unknown": the outcome is not final, so it
 	// is not a success either. Only a success variant confirms the send.
 	if _, ok := status["SuccessValue"]; ok {
-		return want, nil
+		return want, raw, nil
 	}
 	if _, ok := status["SuccessReceiptId"]; ok {
-		return want, nil
+		return want, raw, nil
 	}
-	return "", errors.New("the transaction status is not a success")
+	return "", nil, errors.New("the transaction status is not a success")
 }
 
 // Status reads the node's chain id, for checking that an endpoint serves the

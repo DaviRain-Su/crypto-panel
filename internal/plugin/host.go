@@ -44,7 +44,8 @@ type SignRequest struct {
 
 // SignResult is what host.requestSign resolves to.
 type SignResult struct {
-	Hash string `json:"hash"`
+	Hash    string          `json:"hash"`
+	Outcome json.RawMessage `json:"outcome,omitempty"`
 }
 
 // HostDeps is what the shell gives a plugin's host functions. Every field

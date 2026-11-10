@@ -390,7 +390,7 @@ func TestRPCTimeouts(t *testing.T) {
 			var err error
 			switch tt.send {
 			case "reader":
-				_, err = neartx.Send(ctx, c.RPC, []byte("fake signed transaction"), [32]byte{})
+				_, _, err = neartx.Send(ctx, c.RPC, []byte("fake signed transaction"), [32]byte{})
 			case "client":
 				_, err = c.Send(ctx, []byte("fake signed transaction"), [32]byte{})
 			default:

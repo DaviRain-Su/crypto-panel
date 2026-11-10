@@ -163,7 +163,8 @@ func (c *Client) verifyStatus(raw json.RawMessage) error {
 
 // Send broadcasts a signed transaction and waits for its final outcome.
 func (c *Client) Send(ctx context.Context, signed []byte, expected [32]byte) (string, error) {
-	return neartx.Send(ctx, c.RPC, signed, expected)
+	hash, _, err := neartx.Send(ctx, c.RPC, signed, expected)
+	return hash, err
 }
 
 // unknownAccount reports the RPC error a view_account call answers for an

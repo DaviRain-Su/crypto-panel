@@ -123,11 +123,11 @@ func signNearTransaction(deps nearSignDeps, network chain.Network, req plugin.Ne
 	}
 	sendCtx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()
-	sent, err := neartx.Send(sendCtx, deps.rpc, signed, hash)
+	sent, outcome, err := neartx.Send(sendCtx, deps.rpc, signed, hash)
 	if err != nil {
 		return plugin.SignResult{}, err
 	}
-	return plugin.SignResult{Hash: sent}, nil
+	return plugin.SignResult{Hash: sent, Outcome: outcome}, nil
 }
 
 // nearActions turns the plugin's stated actions into the shell's own, with
