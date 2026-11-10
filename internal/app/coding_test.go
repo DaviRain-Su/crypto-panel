@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -22,6 +23,21 @@ func TestCodingSelectChoicesBoundsLargeModelCatalog(t *testing.T) {
 	}
 	if got := len(codingSelectChoices(acp.ConfigOption{Options: values})); got != acp.MaxConfigValues {
 		t.Fatalf("rendered options = %d, want %d", got, acp.MaxConfigValues)
+	}
+}
+
+func TestCodingErrorTextShowsBoundedAgentMessage(t *testing.T) {
+	a := newTestApp(t)
+	err := &acp.RPCError{Code: -32000, Message: "Authentication\x00 required\u202eignored\nsecond line", Data: json.RawMessage(`{"private":"not rendered"}`)}
+	got := a.codingErrorText(err)
+	if !strings.Contains(got, "Authentication requiredignored\nsecond line") || strings.Contains(got, "\u202e") || strings.Contains(got, "private") {
+		t.Fatalf("agent error = %q", got)
+	}
+	if got := a.codingErrorText(&acp.RPCError{Code: -32000, Message: strings.Repeat("x", 2000)}); len([]rune(got)) > 600 {
+		t.Fatalf("unbounded agent error: %d runes", len([]rune(got)))
+	}
+	if got := a.codingErrorText(&acp.RPCError{Code: -32000, Message: "\x00"}); got != err.Error() {
+		t.Fatalf("empty remote message should retain the error code: %q", got)
 	}
 }
 

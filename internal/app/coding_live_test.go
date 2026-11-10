@@ -161,6 +161,59 @@ func TestInstalledACPCreatesPreviewsAndInstalls(t *testing.T) {
 	t.Logf("real agent revised the same app to version %s after a separate native review", current.Manifest.Version)
 }
 
+func TestInstalledACPCreatesSwapApp(t *testing.T) {
+	executable := os.Getenv("LINTEL_TEST_ACP_EXECUTABLE")
+	if executable == "" {
+		t.Skip("需要 LINTEL_TEST_ACP_EXECUTABLE；此测试调用真实模型生成")
+	}
+	a := newTestApp(t)
+	a.initAuthoring()
+	catalog, err := json.Marshal(agent.Catalog(true))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var examples []plugin.Package
+	for _, id := range []string{"com.example.gas", "com.example.feargreed"} {
+		pkg, _, err := plugin.OfficialPackage(id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		examples = append(examples, pkg)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
+	defer cancel()
+	result, err := a.coding.service.Run(ctx, authoring.Request{
+		Profile:       authoring.Profile{ID: "live", Name: "Live test", Executable: executable},
+		Prompt:        "创建一个 swap 的 App",
+		WorkspaceRoot: a.workspaceRoot(),
+		TargetID:      "local.personal.swap",
+		Catalog:       catalog,
+		Examples:      examples,
+		RequestPermission: func(_ context.Context, req acp.PermissionRequest) (string, error) {
+			for _, option := range req.Options {
+				if option.Kind == "allow_once" {
+					return option.OptionID, nil
+				}
+			}
+			return "", nil
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Installation.Status != "pending" || result.Installation.PluginID != "local.personal.swap" {
+		t.Fatalf("generated candidate = %+v", result.Installation)
+	}
+	if _, err := a.plugins.Get(result.Installation.PluginID); err == nil {
+		t.Fatal("generation installed the candidate")
+	}
+	preview, err := a.PreviewInstallationPage(result.Installation.RequestID, "", "acp")
+	if err != nil {
+		t.Fatalf("swap preview: %v", err)
+	}
+	t.Logf("real swap app generated and previewed without installation: %s version %s; preview type=%T", result.Installation.PluginID, result.Installation.Version, preview.Page)
+}
+
 func TestInstalledACPGenerationRejectsInstallation(t *testing.T) {
 	// Rejection uses a fixed candidate so the live model is invoked at most
 	// once by this file. The real generated candidate above proves the model

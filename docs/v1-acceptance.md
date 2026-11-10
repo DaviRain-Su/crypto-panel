@@ -79,6 +79,8 @@ Claude 当前上游命令已更名为 `claude-agent-acp`。本机旧版仍可握
 
 这不是桌面鼠标验收：`Manager.Decide` 由原生审阅入口下的受控测试回调触发，没有人工点击窗口，也没有 NEAR 签名或广播。因此 A20 的 Claude 模型生成、生命周期与同 ID 更新路径已取得真实模型证据，A20 的第二种真实 agent 和真实窗口操作仍未完成；A24 外部 Skill 流程也未完成。
 
+真实窗口随后暴露另一个独立问题：已有 `settings.json` 仍保存内置 Claude 的旧 executable `claude-code-acp`，所以修改代码中的默认值不会更新已安装用户的配置。旧适配器在显式包含 Homebrew 的 PATH 下握手成功，但真实 prompt 返回 `-32000`，远端消息为 `Authentication required`；这与 `available_commands_update` 通知无关。设置加载现仅迁移内置 `claude` profile 的精确旧命令到 `claude-agent-acp`，自定义 profile 不改写。生成与连接窗口会显示经过控制字符清洗和长度限制的远端短消息，不显示 RPC data；`RPCError.Error()` 与普通日志仍只含错误码。回归覆盖旧配置迁移、自定义命令保留、控制字符和长度边界。`TestInstalledACPCreatesSwapApp` 使用真实 `claude-agent-acp` 和完全相同的中文需求“创建一个 swap 的 App”通过：生成 `local.personal.swap` 1.0.0，候选保持 pending、未自动安装，首页原生预览成功。真实生成测试耗时 515.03 秒，包总耗时 515.492 秒。此次没有安装该 Swap、没有钱包签名或广播。修复后的完整构建、全仓测试、vet、ACP / Agent / Plugin / App race 和 MyGo 生产打包通过。旧窗口人工重启与点击尚未完成。
+
 ## 尚未覆盖
 
 - A20：Claude 的真实模型创建、预览、受控审阅、安装、运行和同 ID 更新已通过；第二种真实适配器，以及两种 agent 的真实桌面窗口操作仍未完成。

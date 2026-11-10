@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -273,7 +274,7 @@ func (a *App) checkCodingAgent() {
 				return
 			}
 			if err != nil {
-				a.coding.err = a.t(i18n.CodingConnectFailed, safeAgentText(err.Error(), 600))
+				a.coding.err = a.t(i18n.CodingConnectFailed, safeAgentText(a.codingErrorText(err), 600))
 			} else {
 				a.coding.initialization = initialization
 				a.coding.session = session
@@ -448,7 +449,7 @@ func (a *App) startGeneration() {
 			if cancelled {
 				a.coding.notice = a.t(i18n.CodingCanceled)
 			} else if err != nil {
-				a.coding.err = a.t(i18n.CodingIncomplete, safeAgentText(a.pluginErrorText(err), 800))
+				a.coding.err = a.t(i18n.CodingIncomplete, safeAgentText(a.codingErrorText(err), 800))
 			} else {
 				a.coding.installationID = result.Installation.RequestID
 				a.coding.notice = a.t(i18n.CodingValidated, result.Installation.Manifest.Name, result.Installation.Version)
@@ -574,6 +575,19 @@ func (a *App) cancelGeneration() {
 	}
 	a.coding.notice = a.t(i18n.CodingCanceling)
 	a.invalidate()
+}
+
+// codingErrorText exposes only a bounded, sanitized agent-supplied message
+// in the interactive UI. RPCError.Error and diagnostic logging remain terse,
+// and RPC error data is never rendered.
+func (a *App) codingErrorText(err error) string {
+	var remote *acp.RPCError
+	if errors.As(err, &remote) && remote != nil {
+		if message := strings.TrimSpace(safeAgentText(remote.Message, 400)); message != "" {
+			return fmt.Sprintf("%s: %s", err, message)
+		}
+	}
+	return err.Error()
 }
 
 func safeAgentText(text string, limit int) string {

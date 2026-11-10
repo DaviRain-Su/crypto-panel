@@ -117,6 +117,14 @@ func LoadSettings(path string) (Settings, error) {
 			loaded.NetworkID = n.ID
 		}
 	}
+	// The former Claude preset used an adapter that can hand out a separate
+	// CLI authentication context. Migrate only that exact built-in command;
+	// a custom profile may intentionally keep the old adapter.
+	for i := range loaded.CodingAgents {
+		if loaded.CodingAgents[i].ID == "claude" && loaded.CodingAgents[i].Executable == "claude-code-acp" {
+			loaded.CodingAgents[i].Executable = "claude-agent-acp"
+		}
+	}
 	return loaded.Validate(), nil
 }
 
