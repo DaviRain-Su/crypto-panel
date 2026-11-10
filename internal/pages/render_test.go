@@ -8,6 +8,34 @@ import (
 	"github.com/egoist/mygo/ui/chart"
 )
 
+func TestSparkFractions(t *testing.T) {
+	// A rising series: x marches forward, y runs from the bottom to the
+	// top of the box.
+	xs, ys := sparkFractions([]float64{1, 2, 4, 8})
+	if len(xs) != 4 || len(ys) != 4 {
+		t.Fatalf("fractions = %v %v", xs, ys)
+	}
+	if xs[0] != 0 || xs[3] != 1 {
+		t.Fatalf("x ends = %v %v, want 0 and 1", xs[0], xs[3])
+	}
+	if ys[0] != 1 || ys[3] != 0 {
+		t.Fatalf("y ends = %v %v, want the first value at the bottom edge", ys[0], ys[3])
+	}
+	for i := 1; i < len(ys); i++ {
+		if ys[i] >= ys[i-1] {
+			t.Fatalf("a rising series does not rise: y[%d] = %v after %v", i, ys[i], ys[i-1])
+		}
+	}
+	// A flat series still draws as a line, not a division by zero.
+	if _, ys := sparkFractions([]float64{5, 5, 5}); ys[0] != 0.5 || ys[2] != 0.5 {
+		t.Fatalf("flat series = %v, want a mid line", ys)
+	}
+	// A single value draws nothing.
+	if xs, ys := sparkFractions([]float64{1}); xs != nil || ys != nil {
+		t.Fatal("one value is not a shape")
+	}
+}
+
 func TestXTicksKeepsTheEndsApart(t *testing.T) {
 	labels := make([]string, 30)
 	for i := range labels {
