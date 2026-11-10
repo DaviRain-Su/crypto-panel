@@ -472,8 +472,28 @@ func (a *App) pageBody(c *ui.Context) {
 	}
 }
 
+// watchedAccount pairs a watched address with the network its balances
+// come from: the selected preset for its family, or the family's first.
+type watchedAccount struct {
+	addr    wallet.Address
+	network chain.Network
+}
+
+// watchedAll lists every watched address across the chains the app reads.
+// The portfolio is the whole picture, not one network's slice of it.
+func (a *App) watchedAll() []watchedAccount {
+	var out []watchedAccount
+	for _, family := range chains.Families() {
+		network := a.settings.NetworkFor(family)
+		for _, acc := range a.settings.WatchedOf(family) {
+			out = append(out, watchedAccount{addr: acc, network: network})
+		}
+	}
+	return out
+}
+
 func (a *App) headline() string {
-	n := len(a.settings.WatchedOf(a.network().Family))
+	n := len(a.watchedAll())
 	var count string
 	switch n {
 	case 0:
@@ -483,60 +503,54 @@ func (a *App) headline() string {
 	default:
 		count = a.t(i18n.AccountMany, n)
 	}
-	return a.network().Name + " · " + count
+	return count
 }
 
 func (a *App) portfolio(c *ui.Context) {
-	accounts := a.settings.WatchedOf(a.network().Family)
+	accounts := a.watchedAll()
 	a.heroCard(c)
 	if len(accounts) == 0 {
 		a.emptyPortfolio(c)
 	} else {
 		a.sectionTitle(c, a.t(i18n.AccountsTitle))
 		ui.Column(c).Gap(10).Children(func() {
-			for _, acc := range accounts {
-				a.accountCard(c, acc)
+			for _, wa := range accounts {
+				a.accountCard(c, wa.addr, wa.network)
 			}
 		})
 	}
 	a.addForm(c)
 }
 
-// heroCard is the page's headline: the total, on a card that carries the
-// accent.
+// heroCard is the page's headline: what every watched address on every
+// chain is worth, on a card that carries the accent.
 func (a *App) heroCard(c *ui.Context) {
 	p := a.pal
-	network := a.network()
 	value := "—"
-	total, known := a.totalNative()
+	total, known := a.totalUSD()
 	if known {
-		value = chain.FormatAmount(total, network.Decimals, 4)
+		value = usdText(total)
 	}
 	ui.Column(c).Gap(10).Padding(22).Radius(16).Border(1, p.hairline).
 		Gradient(p.accentSoft, p.card, 115).Children(func() {
 		ui.Row(c).AlignItems(ui.Center).Children(func() {
-			ui.Text(c, displayKicker(a.t(i18n.TotalIn, network.Name))).FontSize(10.5).
+			ui.Text(c, displayKicker(a.t(i18n.TotalAllChains))).FontSize(10.5).
 				FontWeight(700).TextColor(p.muted).LetterSpacing(0.8).Grow(1).MaxLines(1)
 			ui.Row(c).Gap(6).Padding(5, 9).Radius(99).Background(p.inset).
 				AlignItems(ui.Center).Children(func() {
 				ui.Box(c).Size(6, 6).Radius(3).Background(p.success)
-				ui.Text(c, network.Symbol).FontSize(10.5).FontWeight(600).
+				ui.Text(c, "USD").FontSize(10.5).FontWeight(600).
 					TextColor(p.muted).MaxLines(1)
 			})
 		})
 		ui.Row(c).AlignItems(ui.Baseline).Gap(9).Children(func() {
 			ui.Text(c, value).FontSize(44).FontWeight(700).LetterSpacing(-1.2)
-			ui.Text(c, network.Symbol).FontSize(18).FontWeight(600).TextColor(p.muted)
 		})
-		if known {
-			if fiat, ok := a.fiatText(total, network.Decimals, network.Symbol); ok {
-				ui.Text(c, a.t(i18n.FiatApprox, fiat)).FontSize(12).TextColor(p.muted).MaxLines(1)
-			} else if a.snap != nil && a.snap.fiatErr != "" && !a.settings.HideFiat {
-				ui.Text(c, a.t(i18n.FiatUnavailable)).FontSize(12).TextColor(p.muted).MaxLines(1)
-			}
-			if a.totalsPartial() {
-				ui.Text(c, a.t(i18n.PortfolioIncomplete)).FontSize(12).TextColor(p.danger).MaxLines(2)
-			}
+		if a.snap != nil && a.snap.fiatErr != "" && !a.settings.HideFiat {
+			ui.Text(c, a.t(i18n.FiatUnavailable)).FontSize(12).TextColor(p.muted).MaxLines(1)
+		}
+		if a.totalsPartial() {
+			ui.Text(c, a.t(i18n.PortfolioIncomplete)).FontSize(12).TextColor(p.danger).MaxLines(2)
 		}
 		ui.Text(c, a.headline()).FontSize(11.5).TextColor(p.muted).MaxLines(1)
 	})
@@ -554,7 +568,7 @@ func (a *App) emptyPortfolio(c *ui.Context) {
 	})
 }
 
-func (a *App) accountCard(c *ui.Context, acc wallet.Address) {
+func (a *App) accountCard(c *ui.Context, acc wallet.Address, network chain.Network) {
 	p := a.pal
 	snap := a.accountSnapshot(acc.Addr)
 	ui.Column(c).Key(acc.Addr).Gap(12).Padding(16).Radius(14).
@@ -572,15 +586,19 @@ func (a *App) accountCard(c *ui.Context, acc wallet.Address) {
 						ui.Text(c, a.t(i18n.WalletBadge)).FontSize(9.5).FontWeight(700).
 							TextColor(p.accent).Padding(3, 6).Radius(99).Background(p.accentSoft)
 					}
+					// The balances belong to one chain; with every chain
+					// on this page, the card says which.
+					ui.Text(c, network.Name).FontSize(9.5).FontWeight(700).
+						TextColor(p.muted).Padding(3, 6).Radius(99).Background(p.inset)
 				})
 				ui.Text(c, a.displayAddress(acc.Addr)).Font("monospace").FontSize(12).
 					TextColor(p.muted).MaxLines(1)
 			})
 			ui.Column(c).AlignItems(ui.End).Gap(1).Children(func() {
 				ui.Text(c, a.nativeText(snap)).FontSize(15).FontWeight(700)
-				ui.Text(c, a.network().Symbol).FontSize(12).TextColor(p.muted)
-				if snap != nil {
-					if fiat, ok := a.fiatText(snap.native, a.network().Decimals, a.network().Symbol); ok {
+				ui.Text(c, network.Symbol).FontSize(12).TextColor(p.muted)
+				if snap != nil && snap.native != nil {
+					if fiat, ok := a.fiatText(snap.native, network.Decimals, network.Symbol); ok {
 						ui.Text(c, fiat).FontSize(12).TextColor(p.muted).MaxLines(1)
 					}
 				}
@@ -713,7 +731,12 @@ func (a *App) nativeText(snap *accountSnapshot) string {
 	if snap == nil || snap.err != "" || snap.native == nil {
 		return "—"
 	}
-	network := a.network()
+	// The balances were read on the snapshot's own chain; an account the
+	// refresh has not reached yet reads as the selected network's.
+	network := snap.network
+	if network.ID == "" {
+		network = a.network()
+	}
 	return chain.FormatAmount(snap.native, network.Decimals, 4) + " " + network.Symbol
 }
 
@@ -742,6 +765,7 @@ func (a *App) addForm(c *ui.Context) {
 	a.sectionTitle(c, a.t(i18n.AddAddress))
 	ui.Column(c).Gap(10).Padding(16).Radius(14).MaxWidth(600).
 		Background(p.card).Border(1, p.hairline).Shadow(0, 1, 2, 0, p.shadow).Children(func() {
+		ui.Text(c, a.t(i18n.AddAddressNote)).FontSize(11.5).TextColor(p.muted).MaxLines(2)
 		ui.Row(c).Gap(8).AlignItems(ui.End).Children(func() {
 			ui.TextInput(c.Key("address"), &a.draftAddr).
 				Placeholder(a.t(i18n.AddressPlaceholder)).

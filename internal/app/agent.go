@@ -14,6 +14,7 @@ import (
 	"github.com/egoist/mygo/ui"
 
 	"github.com/davirain-su/lintel/internal/agent"
+	"github.com/davirain-su/lintel/internal/chains"
 	"github.com/davirain-su/lintel/internal/i18n"
 	"github.com/davirain-su/lintel/internal/plugin"
 )
@@ -202,10 +203,16 @@ func (a *App) agentPortfolio() agent.Portfolio {
 	}
 	out.Block = a.snap.block
 	labels := make(map[string]string)
-	for _, acc := range a.settings.WatchedOf(network.Family) {
-		labels[acc.Addr] = acc.Label
+	for _, family := range chains.Families() {
+		for _, acc := range a.settings.WatchedOf(family) {
+			labels[acc.Addr] = acc.Label
+		}
 	}
 	for _, acc := range a.snap.accounts {
+		network := acc.network
+		if network.ID == "" {
+			network = a.network()
+		}
 		native := agent.Amount{Symbol: network.Symbol, Decimals: network.Decimals, Amount: "0"}
 		if acc.native != nil {
 			native.Amount = acc.native.String()
