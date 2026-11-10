@@ -306,7 +306,11 @@ func TestRefreshVaultErrorShowsTheWarning(t *testing.T) {
 		}
 	}
 	t.Cleanup(func() { runOnUI = previous })
-	a.fetch(a.gen, a.reader, []string{vault})
+	a.fetch(a.gen, []familyFetch{{
+		network: chains.SolanaMainnet,
+		reader:  vaultErrReader{},
+		addrs:   []string{vault},
+	}})
 	select {
 	case <-done:
 	case <-time.After(2 * time.Second):
@@ -348,7 +352,7 @@ func newTestAppWithPluginSecrets(t *testing.T, secrets plugin.Secrets) *App {
 	a.keyring = wallet.NewKeyring(memStore{}, nil)
 	a.nearKeyring = wallet.NewNearKeyring(memStore{}, nil)
 	a.solanaKeyring = wallet.NewSolanaKeyring(memStore{}, nil)
-	a.startRefresh = func(int, chain.Reader, []string) {}
+	a.startRefresh = func(int, []familyFetch) {}
 	a.runOnMain = func(fn func()) { fn() }
 	a.goAsync = func(fn func()) { fn() }
 	a.confirmInstall = func(_ plugin.Manifest, _ installRequest, done func(bool)) { done(true) }

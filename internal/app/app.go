@@ -196,7 +196,7 @@ type App struct {
 	storeInstalling string
 
 	// startRefresh starts the network work. Tests replace it.
-	startRefresh func(gen int, reader chain.Reader, addrs []string)
+	startRefresh func(gen int, jobs []familyFetch)
 	// priceSource reads approximate USD prices. Nil turns fiat values off,
 	// as the tests do.
 	priceSource priceSource

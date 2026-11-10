@@ -202,7 +202,7 @@ func TestPortfolioIncludesWalletAccounts(t *testing.T) {
 	if got := a.settings.WatchedOf(chain.EVM); len(got) != 1 || got[0].Addr != walletTestAddr {
 		t.Fatalf("watched = %+v", got)
 	}
-	if got := a.headline(); got != "Ethereum · 1 account" {
+	if got := a.headline(); got != "1 account" {
 		t.Fatalf("headline = %q", got)
 	}
 	// The same address cannot also be added as a watch-only one.

@@ -444,6 +444,38 @@ func (s Settings) Reader() (chain.Reader, error) {
 	return chains.NewReader(s.Network(), s.RPCURL)
 }
 
+// NetworkFor picks the preset a family is read on: the selected network
+// when it belongs to the family, otherwise that family's mainnet. An
+// unselected family never falls back to a testnet. A family with no
+// mainnet preset is skipped.
+func (s Settings) NetworkFor(family chain.Family) chain.Network {
+	if sel := s.Network(); sel.Family == family {
+		return sel
+	}
+	for _, n := range chains.All() {
+		if n.Family == family && !testnetNetwork(n) {
+			return n
+		}
+	}
+	return chain.Network{}
+}
+
+// testnetNetwork reports a preset that must not be priced into the fiat
+// total, and must not be the stand-in for a family the user did not select.
+func testnetNetwork(n chain.Network) bool {
+	return strings.EqualFold(n.ChainName, "testnet") || strings.Contains(strings.ToLower(n.ID), "testnet")
+}
+
+// ReaderFor builds the reader for a network. The custom endpoint belongs to
+// the network it was set for; every other preset reads its own default.
+func (s Settings) ReaderFor(network chain.Network) (chain.Reader, error) {
+	rpc := ""
+	if network.ID == s.NetworkID {
+		rpc = s.RPCURL
+	}
+	return chains.NewReader(network, rpc)
+}
+
 // Has reports whether addr is already watched, by the watch list or the
 // wallet.
 func (s Settings) Has(addr string) bool {

@@ -34,7 +34,7 @@ func newTestApp(t *testing.T) *App {
 	a.keyring = wallet.NewKeyring(memStore{}, nil)
 	a.nearKeyring = wallet.NewNearKeyring(memStore{}, nil)
 	a.solanaKeyring = wallet.NewSolanaKeyring(memStore{}, nil)
-	a.startRefresh = func(int, chain.Reader, []string) {}
+	a.startRefresh = func(int, []familyFetch) {}
 	a.runOnMain = func(fn func()) { fn() }
 	a.goAsync = func(fn func()) { fn() }
 	a.confirmInstall = func(_ plugin.Manifest, _ installRequest, done func(bool)) { done(true) }
@@ -238,16 +238,20 @@ func TestViewShowsFiatValues(t *testing.T) {
 	a := newTestApp(t)
 	a.settings.Accounts = []wallet.Address{{Addr: viewAddr}}
 	a.snap = &snapshot{
-		accounts: []accountSnapshot{{addr: viewAddr, native: big.NewInt(2_000_000_000_000_000_000)}},
-		usd:      map[string]float64{"ETH": 3000},
+		accounts: []accountSnapshot{{
+			addr:    viewAddr,
+			network: chains.Ethereum,
+			native:  big.NewInt(2_000_000_000_000_000_000),
+		}},
+		usd: map[string]float64{"ETH": 3000},
 	}
 	tt := ui.NewTester(a.view, windowWidth, windowHeight)
-	if !tt.HasText("≈ $6,000.00") {
+	if !tt.HasText("$6,000.00") {
 		t.Fatalf("missing the fiat value in %q", tt.Texts())
 	}
 	a.settings.HideFiat = true
 	tt.Frame()
-	if tt.HasText("≈ $6,000.00") {
+	if tt.HasText("$6,000.00") {
 		t.Error("the fiat value is still shown after it was turned off")
 	}
 }
@@ -394,15 +398,14 @@ func TestViewRejectsOtherFamily(t *testing.T) {
 	}
 }
 
-func TestViewHidesOtherFamilies(t *testing.T) {
+// The portfolio reads every chain: a Solana address stays on the page
+// while the selected network is Ethereum, under its own chain badge.
+func TestPortfolioShowsOtherFamilies(t *testing.T) {
 	a := newTestApp(t)
 	a.settings.Accounts = []wallet.Address{{Addr: viewSol, Label: "Sol"}}
 	tt := ui.NewTester(a.view, windowWidth, windowHeight)
-	if tt.HasText("Sol") {
-		t.Errorf("a Solana account shows on Ethereum: %q", tt.Texts())
-	}
-	if !tt.HasText("No addresses yet") {
-		t.Errorf("the empty state is not shown: %q", tt.Texts())
+	if !tt.HasText("Sol") || !tt.HasText("Solana") {
+		t.Errorf("a Solana account is missing on Ethereum: %q", tt.Texts())
 	}
 }
 

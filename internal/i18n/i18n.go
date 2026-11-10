@@ -47,13 +47,14 @@ const (
 	Refresh    Key = "refresh"
 	Refreshing Key = "refreshing"
 
-	TotalIn       Key = "totalIn"
-	NoAccounts    Key = "noAccounts"
-	NoAccountsWhy Key = "noAccountsWhy"
-	AccountOne    Key = "accountOne"
-	AccountMany   Key = "accountMany"
-	AccountsTitle Key = "accountsTitle"
-	AddAddress    Key = "addAddress"
+	TotalAllChains Key = "totalAllChains"
+	NoAccounts     Key = "noAccounts"
+	NoAccountsWhy  Key = "noAccountsWhy"
+	AccountOne     Key = "accountOne"
+	AccountMany    Key = "accountMany"
+	AccountsTitle  Key = "accountsTitle"
+	AddAddress     Key = "addAddress"
+	AddAddressNote Key = "addAddressNote"
 
 	AddressPlaceholder Key = "addressPlaceholder"
 	AddressLabel       Key = "addressLabel"
@@ -618,13 +619,14 @@ var messages = map[Key]map[string]string{
 	Refresh:    {English: "Refresh", Chinese: "刷新"},
 	Refreshing: {English: "Refreshing…", Chinese: "刷新中…"},
 
-	TotalIn:       {English: "Total in %s", Chinese: "%s 合计"},
-	NoAccounts:    {English: "No addresses yet", Chinese: "还没有地址"},
-	NoAccountsWhy: {English: "Add a watch-only address to see its balances.", Chinese: "添加一个只读地址以查看余额。"},
-	AccountOne:    {English: "1 account", Chinese: "1 个地址"},
-	AccountMany:   {English: "%d accounts", Chinese: "%d 个地址"},
-	AccountsTitle: {English: "Accounts", Chinese: "地址"},
-	AddAddress:    {English: "Add an address", Chinese: "添加地址"},
+	TotalAllChains: {English: "Total across chains", Chinese: "所有链合计"},
+	NoAccounts:     {English: "No addresses yet", Chinese: "还没有地址"},
+	NoAccountsWhy:  {English: "Add a watch-only address to see its balances.", Chinese: "添加一个只读地址以查看余额。"},
+	AccountOne:     {English: "1 account", Chinese: "1 个地址"},
+	AccountMany:    {English: "%d accounts", Chinese: "%d 个地址"},
+	AccountsTitle:  {English: "Accounts", Chinese: "地址"},
+	AddAddress:     {English: "Add an address", Chinese: "添加地址"},
+	AddAddressNote: {English: "Watch-only: balances are read; keys are never asked for.", Chinese: "只读观察：只读取余额，不会索取任何私钥。"},
 
 	AddressPlaceholder: {English: "0x… or base58 address", Chinese: "0x… 或 base58 地址"},
 	AddressLabel:       {English: "Address", Chinese: "地址"},
