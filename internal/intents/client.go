@@ -61,6 +61,7 @@ type Token struct {
 	Blockchain string
 	Decimals   int
 	Price      float64
+	IconURL    string
 }
 
 // QuoteRequest is one swap the user is asking about. Amount is in the
@@ -105,6 +106,7 @@ type wireToken struct {
 	Blockchain string  `json:"blockchain"`
 	Decimals   float64 `json:"decimals"`
 	Price      float64 `json:"price"`
+	IconURL    string  `json:"icon"`
 }
 
 // Tokens lists the assets 1Click supports, sorted for display.
@@ -124,6 +126,7 @@ func (c *Client) Tokens(ctx context.Context) ([]Token, error) {
 			Blockchain: t.Blockchain,
 			Decimals:   int(t.Decimals),
 			Price:      t.Price,
+			IconURL:    strings.TrimSpace(t.IconURL),
 		})
 	}
 	sort.Slice(out, func(i, j int) bool {

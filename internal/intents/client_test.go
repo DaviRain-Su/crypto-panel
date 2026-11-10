@@ -150,7 +150,7 @@ func TestTokens(t *testing.T) {
 		}
 		w.Header().Set("Content-Type", "application/json")
 		io.WriteString(w, `[
-			{"assetId":"nep141:wrap.near","decimals":24,"blockchain":"near","symbol":"wNEAR","price":2.5,"priceUpdatedAt":"2026-11-09T00:00:00Z"},
+			{"assetId":"nep141:wrap.near","decimals":24,"blockchain":"near","symbol":"wNEAR","price":2.5,"icon":"https://assets.example/near.png","priceUpdatedAt":"2026-11-09T00:00:00Z"},
 			{"assetId":"nep141:eth.omft.near","decimals":18,"blockchain":"eth","symbol":"ETH","price":3000,"priceUpdatedAt":"2026-11-09T00:00:00Z"},
 			{"assetId":"","decimals":6,"blockchain":"eth","symbol":"","price":1,"priceUpdatedAt":"2026-11-09T00:00:00Z"}
 		]`)
@@ -168,6 +168,9 @@ func TestTokens(t *testing.T) {
 	}
 	if tokens[1].Decimals != 24 || tokens[1].Blockchain != "near" {
 		t.Fatalf("token = %+v", tokens[1])
+	}
+	if tokens[1].IconURL != "https://assets.example/near.png" {
+		t.Fatalf("icon = %q", tokens[1].IconURL)
 	}
 }
 

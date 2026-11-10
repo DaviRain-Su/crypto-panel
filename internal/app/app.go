@@ -8,6 +8,7 @@ package app
 
 import (
 	"log"
+	"net/http"
 	"path/filepath"
 	"runtime"
 	"strconv"
@@ -261,6 +262,7 @@ type App struct {
 	intentsAccepted      bool
 	intentsNotice        string
 	approveIntents       func(intentsApprovalRequest) bool
+	assetIcons           *assetIconCache
 }
 
 // appUserDataDir, appRunOnMain and appGoAsync are the startup hooks. Tests
@@ -301,6 +303,7 @@ func New() (*App, error) {
 	a.nearKeyring = wallet.NewNearKeyring(secrets, settings.NearWallet)
 	a.solanaKeyring = wallet.NewSolanaKeyring(secrets, settings.SolanaAccounts())
 	a.intentsClient = intents.New()
+	a.assetIcons = newAssetIconCache(&http.Client{Timeout: 8 * time.Second})
 	a.priceSource = prices.New()
 	a.startRefresh = a.fetch
 	a.runOnMain = appRunOnMain
