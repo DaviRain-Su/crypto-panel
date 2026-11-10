@@ -234,7 +234,7 @@ func (a *App) appTile(c *ui.Context, item plugin.Installed) {
 			ui.Text(c, m.Description).FontSize(12).TextColor(p.muted).MaxLines(2)
 		}
 		if current := a.installationVerifications[id]; current != nil {
-			ui.Text(c, installationVerificationMessage(current.result)).FontSize(11).TextColor(p.muted).MaxLines(2)
+			ui.Text(c, a.installationVerificationMessage(current.result)).FontSize(11).TextColor(p.muted).MaxLines(2)
 		}
 		ui.Row(c).Gap(6).AlignItems(ui.Center).Children(func() {
 			if enabled && len(m.Navigation) > 0 {
@@ -374,11 +374,9 @@ func (a *App) pluginSettingsForm(c *ui.Context, m plugin.Manifest) {
 				if field.Secret {
 					input.Password()
 					configured := false
-					if statuses, err := a.plugins.DescribeSettings(m.ID); err == nil {
-						for _, status := range statuses {
-							if status.Key == field.Key && status.Configured != nil {
-								configured = *status.Configured
-							}
+					for _, status := range a.pluginSettingStatus[m.ID] {
+						if status.Key == field.Key && status.Configured != nil {
+							configured = *status.Configured
 						}
 					}
 					if configured {

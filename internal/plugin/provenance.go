@@ -269,7 +269,7 @@ func (s *Store) forgetProvenance(id string) error {
 
 func (s *Store) reportProvenanceDelete(id string) error {
 	if err := s.forgetProvenance(id); err != nil {
-		return managementError("PROVENANCE_DELETE_FAILED", "应用已删除，但未能移除凭据服务账户 "+ProvenanceAccount(id), 500)
+		return managementError("PROVENANCE_DELETE_FAILED", "应用已删除，但来源记录未能从凭据服务移除", 500)
 	}
 	return nil
 }

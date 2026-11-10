@@ -2,6 +2,8 @@ package smartaccount
 
 import (
 	"bytes"
+	"crypto/elliptic"
+	"encoding/asn1"
 	"math/big"
 	"testing"
 
@@ -83,11 +85,106 @@ func TestSignatureFromAssertion(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// The authenticator's s may be high-S; the account's signature carries
+	// the low-S form, which verifies to the same value.
+	n := elliptic.P256().Params().N
+	half := new(big.Int).Rsh(n, 1)
+	lowS := s
+	if lowS.Cmp(half) > 0 {
+		lowS = new(big.Int).Sub(n, lowS)
+	}
 	var wantR, wantS [32]byte
 	r.FillBytes(wantR[:])
-	s.FillBytes(wantS[:])
+	lowS.FillBytes(wantS[:])
 	if values[4].([32]byte) != wantR || values[5].([32]byte) != wantS {
 		t.Fatal("signature components were not preserved")
+	}
+}
+
+func TestSignatureNormalizesHighS(t *testing.T) {
+	auth, err := webauthn.NewSoftAuthenticator("lintel.example", "https://lintel.example")
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertion, err := auth.Assert(bytes.Repeat([]byte{0x77}, 32))
+	if err != nil {
+		t.Fatal(err)
+	}
+	r, s, err := webauthn.ParseSignature(assertion.Signature)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Force a high-S signature: the authenticator may hand one back, and the
+	// account's verifier expects low-S.
+	n := elliptic.P256().Params().N
+	half := new(big.Int).Rsh(n, 1)
+	lowS := s
+	if lowS.Cmp(half) > 0 {
+		lowS = new(big.Int).Sub(n, lowS)
+	}
+	highS := new(big.Int).Sub(n, lowS)
+	highAssert := assertion
+	highAssert.Signature, err = asn1.Marshal(struct{ R, S *big.Int }{r, highS})
+	if err != nil {
+		t.Fatal(err)
+	}
+	encoded, err := Signature(highAssert)
+	if err != nil {
+		t.Fatal(err)
+	}
+	values, err := abi.Arguments{
+		{Type: bytesType},
+		{Type: stringType},
+		{Type: uint256Type},
+		{Type: uint256Type},
+		{Type: bytes32Type},
+		{Type: bytes32Type},
+	}.Unpack(encoded)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var wantR, wantS [32]byte
+	r.FillBytes(wantR[:])
+	lowS.FillBytes(wantS[:])
+	if values[4].([32]byte) != wantR {
+		t.Fatal("r was not preserved")
+	}
+	if values[5].([32]byte) != wantS {
+		t.Fatal("s was not normalized back to low-S")
+	}
+	packed := values[5].([32]byte)
+	if got := new(big.Int).SetBytes(packed[:]); got.Cmp(half) > 0 {
+		t.Fatalf("packed s = %s, which is still high-S", got)
+	}
+}
+
+func TestSignatureRejectsSAtOrAboveOrder(t *testing.T) {
+	auth, err := webauthn.NewSoftAuthenticator("lintel.example", "https://lintel.example")
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertion, err := auth.Assert(bytes.Repeat([]byte{0x42}, 32))
+	if err != nil {
+		t.Fatal(err)
+	}
+	n := elliptic.P256().Params().N
+	for _, s := range []*big.Int{new(big.Int).Set(n), new(big.Int).Add(new(big.Int).Set(n), big.NewInt(5))} {
+		der, err := asn1.Marshal(struct{ R, S *big.Int }{R: big.NewInt(1), S: s})
+		if err != nil {
+			t.Fatal(err)
+		}
+		assertion.Signature = der
+		if _, err := Signature(assertion); err == nil {
+			t.Fatalf("accepted s = %s", s)
+		}
+	}
+	der, err := asn1.Marshal(struct{ R, S *big.Int }{R: new(big.Int).Set(n), S: big.NewInt(1)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertion.Signature = der
+	if _, err := Signature(assertion); err == nil {
+		t.Fatal("accepted r >= n")
 	}
 }
 

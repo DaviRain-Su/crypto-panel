@@ -35,6 +35,7 @@ type Manager struct {
 	candidateSlots    chan struct{}
 	removalGeneration uint64
 	viaGeneration     [2]uint64
+	viaClosed         [2]bool
 }
 
 // NewManager 先恢复已确认提交，再清除上次进程未确认的快照。
@@ -135,11 +136,16 @@ func (m *Manager) Propose(source Source, operation, targetID, expectedHash, via 
 		beforeProposalCommit()
 	}
 	m.mu.Lock()
-	defer m.mu.Unlock()
 	if m.closed {
+		m.mu.Unlock()
 		return Installation{}, managementError("MANAGER_CLOSED", "应用生命周期服务已关闭", 503)
 	}
+	if m.viaClosed[viaIndex(via)] {
+		m.mu.Unlock()
+		return Installation{}, managementError("PROPOSAL_CANCELLED", "提议来源已关闭，未登记安装任务", 409)
+	}
 	if m.removalGeneration != removalGeneration || m.viaGeneration[viaIndex(via)] != viaGeneration {
+		m.mu.Unlock()
 		return Installation{}, managementError("PROPOSAL_CANCELLED", "提议期间来源已取消或应用被卸载，请重新提议", 409)
 	}
 	m.pruneLocked(time.Now().UTC())
@@ -154,21 +160,46 @@ func (m *Manager) Propose(source Source, operation, targetID, expectedHash, via 
 		}
 		// 相同内容只复用同一入口的任务。API 不能挂到 ACP 任务上，否则关闭 API 撤不掉它。
 		if task.record.Operation == operation && task.record.PackageHash == c.hash && task.record.ExpectedHash == expectedHash && task.record.Via == via {
+			m.mu.Unlock()
 			return cloneInstallation(task.record), nil
 		}
+		m.mu.Unlock()
 		return Installation{}, managementError("CANDIDATE_CONFLICT", "该应用已有其他待处理候选", 409)
 	}
 	if active >= MaxPendingInstallations {
+		m.mu.Unlock()
 		return Installation{}, managementError("QUEUE_FULL", "待安装队列已满", 429)
 	}
 	release, err := m.store.tryLease(c.manifest.ID)
 	if err != nil {
+		m.mu.Unlock()
 		return Installation{}, err
 	}
+	m.mu.Unlock()
 	defer release()
+	// 整树拷贝、哈希与迁移检查在 m.mu 之外执行：lease 已持有，同 id 的
+	// 提交、卸载与执行无法穿插，UI 每帧的 Installations() 也不会被阻塞。
 	old, err := m.checkTarget(c.manifest, operation, expectedHash)
 	if err != nil {
 		return Installation{}, err
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.closed {
+		return Installation{}, managementError("MANAGER_CLOSED", "应用生命周期服务已关闭", 503)
+	}
+	if m.viaClosed[viaIndex(via)] || m.removalGeneration != removalGeneration || m.viaGeneration[viaIndex(via)] != viaGeneration {
+		return Installation{}, managementError("PROPOSAL_CANCELLED", "提议期间来源已取消或应用被卸载，请重新提议", 409)
+	}
+	// 其他 id 的提议可能在锁外期间占满队列；同 id 因 lease 独占不会新增。
+	active = 0
+	for _, task := range m.tasks {
+		if activeInstallation(task.record.Status) {
+			active++
+		}
+	}
+	if active >= MaxPendingInstallations {
+		return Installation{}, managementError("QUEUE_FULL", "待安装队列已满", 429)
 	}
 	var random [24]byte
 	if _, err := rand.Read(random[:]); err != nil {
@@ -316,12 +347,14 @@ func (m *Manager) cancel(id, via string) (Installation, error) {
 }
 
 // CancelVia 使已关闭入口的未批准任务失效；已经开始提交的任务继续完成。
+// 入口保持关闭，直到 ResumeVia 重新开放，关闭期间开始的提议不会被登记。
 func (m *Manager) CancelVia(via string) {
 	if via != "local-api" && via != "acp" {
 		return
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	m.viaClosed[viaIndex(via)] = true
 	m.viaGeneration[viaIndex(via)]++
 	m.pruneLocked(time.Now().UTC())
 	for _, task := range m.tasks {
@@ -329,6 +362,37 @@ func (m *Manager) CancelVia(via string) {
 			m.finishLocked(task, "cancelled", "", "")
 		}
 	}
+}
+
+// ResumeVia 重新开放一个入口；不恢复已取消的任务。
+func (m *Manager) ResumeVia(via string) {
+	if via != "local-api" && via != "acp" {
+		return
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.viaClosed[viaIndex(via)] = false
+}
+
+// RemoveAt 清理一个无法读取清单的目录；能校验的 id 仍走 lease 与待确认撤销。
+func (m *Manager) RemoveAt(dir string) error {
+	id := filepath.Base(filepath.Clean(dir))
+	if validatePluginID(id) == nil {
+		release, err := m.store.tryLease(id)
+		if err != nil {
+			return err
+		}
+		defer release()
+		m.mu.Lock()
+		m.removalGeneration++
+		for _, task := range m.tasks {
+			if task.record.PluginID == id && task.record.Status == "pending" {
+				m.finishLocked(task, "cancelled", "", "")
+			}
+		}
+		m.mu.Unlock()
+	}
+	return m.store.RemoveAt(dir)
 }
 
 // Remove 与执行、设置、提交共用 lease，并先撤销同 id 的待确认任务。
@@ -383,6 +447,9 @@ func (m *Manager) beginCandidate(via string) (uint64, uint64, error) {
 	defer m.mu.Unlock()
 	if m.closed {
 		return 0, 0, managementError("MANAGER_CLOSED", "应用生命周期服务已关闭", 503)
+	}
+	if m.viaClosed[viaIndex(via)] {
+		return 0, 0, managementError("PROPOSAL_CANCELLED", "提议来源已关闭，未登记安装任务", 409)
 	}
 	select {
 	case m.candidateSlots <- struct{}{}:
