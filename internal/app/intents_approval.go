@@ -108,14 +108,16 @@ func (ap *intentsApproval) loadIcons(c *ui.Context) {
 		if token.IconURL == "" {
 			continue
 		}
-		if _, ok := ap.icons.cached(token.IconURL); ok {
+		if _, ok := ap.icons.cached(token.IconURL); ok || ap.icons.loading(token.IconURL) || ap.icons.cooling(token.IconURL) {
 			continue
 		}
 		raw := token.IconURL
 		go func() {
 			ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
 			defer cancel()
-			_, _ = ap.icons.load(ctx, raw)
+			if _, err := ap.icons.load(ctx, raw); err != nil {
+				ap.icons.noteFailure(raw)
+			}
 			mygo.RunOnMain(c.Invalidate)
 		}()
 	}

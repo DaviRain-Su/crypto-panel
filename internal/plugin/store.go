@@ -609,10 +609,17 @@ func writeFileAtomic(path string, data []byte, mode fs.FileMode) error {
 // KV is one plugin's key-value store: JSON values under string keys, kept
 // in kv.json, bounded by the manifest's storageKb.
 type KV struct {
-	path  string
-	quota int
-	data  map[string]json.RawMessage
-	size  int
+	path   string
+	quota  int
+	data   map[string]json.RawMessage
+	size   int
+	memory bool
+}
+
+// NewMemoryKV is a store that never touches disk. Preview uses it so a
+// candidate cannot read or write the installed app's kv.json.
+func NewMemoryKV(quota int) *KV {
+	return &KV{memory: true, quota: quota, data: map[string]json.RawMessage{}}
 }
 
 const (
@@ -712,6 +719,12 @@ func (kv *KV) Keys() []string {
 }
 
 func (kv *KV) load() error {
+	if kv.memory {
+		if kv.data == nil {
+			kv.data = map[string]json.RawMessage{}
+		}
+		return nil
+	}
 	kv.data, kv.size = nil, 0
 	data, err := os.ReadFile(kv.path)
 	if errors.Is(err, fs.ErrNotExist) {
@@ -730,6 +743,9 @@ func (kv *KV) load() error {
 }
 
 func (kv *KV) save() error {
+	if kv.memory {
+		return nil
+	}
 	data, err := json.Marshal(kv.data)
 	if err != nil {
 		return err

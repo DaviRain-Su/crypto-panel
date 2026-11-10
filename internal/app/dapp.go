@@ -298,7 +298,26 @@ func (a *App) dappSign(ctx context.Context, origin string, params json.RawMessag
 	if err != nil {
 		return nil, err
 	}
-	return res.Outcome, nil
+	return withTopLevelHash(res.Outcome, res.Hash), nil
+}
+
+// withTopLevelHash keeps the full NEAR outcome and also the old {hash}
+// field callers already read.
+func withTopLevelHash(outcome json.RawMessage, hash string) json.RawMessage {
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(outcome, &fields); err != nil || fields == nil {
+		fields = map[string]json.RawMessage{}
+	}
+	encoded, err := json.Marshal(hash)
+	if err != nil {
+		return outcome
+	}
+	fields["hash"] = encoded
+	raw, err := json.Marshal(fields)
+	if err != nil {
+		return outcome
+	}
+	return raw
 }
 
 type dappTransaction struct {
@@ -340,7 +359,7 @@ func (a *App) dappSignTransactions(ctx context.Context, origin string, params js
 		}
 		result, err := a.dappSign(ctx, origin, raw)
 		if err != nil {
-			return nil, fmt.Errorf("signAndSendTransactions: transaction %d: %w", i+1, err)
+			return outcomes, fmt.Errorf("signAndSendTransactions: transaction %d: %w", i+1, err)
 		}
 		outcome, ok := result.(json.RawMessage)
 		if !ok {

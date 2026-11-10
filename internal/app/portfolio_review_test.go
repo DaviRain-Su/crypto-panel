@@ -331,6 +331,32 @@ func TestVaultCheckUsesTheSelectedSolanaReader(t *testing.T) {
 	}
 }
 
+func TestQueuedNetworkDoesNotWaitASecondTimeout(t *testing.T) {
+	if familyReadTimeout != 90*time.Second {
+		t.Fatalf("family timeout = %s, want 90s", familyReadTimeout)
+	}
+	previous := familyReadTimeout
+	familyReadTimeout = 250 * time.Millisecond
+	t.Cleanup(func() { familyReadTimeout = previous })
+	a := newTestApp(t)
+	jobs := make([]familyFetch, maxRefreshConcurrency+1)
+	for i := range jobs {
+		jobs[i] = familyFetch{
+			network: chain.Network{ID: "job-" + string(rune('a'+i)), Family: chain.EVM},
+			addrs:   []string{viewAddr},
+			reader: gateReader{account: func(ctx context.Context) error {
+				<-ctx.Done()
+				return ctx.Err()
+			}},
+		}
+	}
+	start := time.Now()
+	finishFetch(t, a, jobs)
+	if elapsed := time.Since(start); elapsed > 450*time.Millisecond {
+		t.Fatalf("refresh took %s; a job queued on the semaphore started another full timeout", elapsed)
+	}
+}
+
 func TestFamiliesReadConcurrently(t *testing.T) {
 	if familyReadTimeout != 90*time.Second {
 		t.Fatalf("family timeout = %s, want 90s", familyReadTimeout)

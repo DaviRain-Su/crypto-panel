@@ -344,6 +344,7 @@ type readOnlyPageOptions struct {
 	expectedHash string
 	quiet        bool
 	active       func() bool
+	preview      bool
 }
 
 func (o readOnlyPageOptions) check() error {
@@ -456,7 +457,7 @@ func (a *App) PreviewInstallationPage(requestID, page, via string) (agent.PageRe
 		return result, &plugin.Error{Code: "PAGE_NOT_FOUND", Message: "the page is not declared by the app", Status: 400}
 	}
 	result.PackageHash = hash
-	runner, err := a.agentRunner(candidate, readOnlyPageOptions{})
+	runner, err := a.agentRunner(candidate, readOnlyPageOptions{preview: true})
 	if err != nil {
 		return result, err
 	}
@@ -487,6 +488,9 @@ func (a *App) agentRunner(inst plugin.Installed, options readOnlyPageOptions) (*
 			return
 		}
 		deps := a.pluginHostDeps(inst.Manifest)
+		if options.preview {
+			deps = a.previewHostDeps(inst.Manifest)
+		}
 		refuse := func() (plugin.SignResult, error) {
 			return plugin.SignResult{}, errors.New("signing is not available over the local API")
 		}

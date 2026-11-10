@@ -189,6 +189,12 @@ func TestDappSign(t *testing.T) {
 	if !ok {
 		t.Fatalf("result = %T", res)
 	}
+	var withHash struct {
+		Hash string `json:"hash"`
+	}
+	if json.Unmarshal(out, &withHash) != nil || withHash.Hash == "" {
+		t.Fatalf("result has no top-level hash: %s", out)
+	}
 	var outcome struct {
 		Status      map[string]json.RawMessage `json:"status"`
 		Transaction struct {
@@ -329,6 +335,35 @@ func TestDappSignsTransactionsSequentially(t *testing.T) {
 		if json.Unmarshal(raw, &outcome) != nil || outcome["transaction"] == nil {
 			t.Fatalf("outcome %d = %s", i, raw)
 		}
+	}
+}
+
+func TestDappBatchKeepsConfirmedOutcomes(t *testing.T) {
+	a, rpc, _ := newDappApp(t)
+	a.dappConnected["https://dapp.test"] = true
+	n := 0
+	a.approve = func(approvalRequest) bool {
+		n++
+		return n == 1
+	}
+	res, err := a.dappSignTransactions(context.Background(), "https://dapp.test", json.RawMessage(`{"transactions":[
+		{"receiverId":"one.testnet","actions":[{"type":"transfer","amount":"1"}]},
+		{"receiverId":"two.testnet","actions":[{"type":"transfer","amount":"2"}]},
+		{"receiverId":"three.testnet","actions":[{"type":"transfer","amount":"3"}]}
+	]}`))
+	if err == nil || !strings.Contains(err.Error(), "transaction 2") || !strings.Contains(err.Error(), "rejected") {
+		t.Fatalf("err = %v", err)
+	}
+	if len(rpc.broadcasts) != 1 {
+		t.Fatalf("broadcasts = %d, want the confirmed transaction only", len(rpc.broadcasts))
+	}
+	outcomes, ok := res.([]json.RawMessage)
+	if !ok || len(outcomes) != 1 {
+		t.Fatalf("confirmed outcomes = %#v", res)
+	}
+	var outcome map[string]any
+	if json.Unmarshal(outcomes[0], &outcome) != nil || outcome["transaction"] == nil {
+		t.Fatalf("outcome = %s", outcomes[0])
 	}
 }
 

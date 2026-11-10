@@ -873,3 +873,77 @@ func (a *App) pluginHostDeps(m plugin.Manifest) plugin.HostDeps {
 		},
 	}
 }
+
+// previewHostDeps is the host a frozen candidate may use. It never reads
+// installed settings or secrets, never touches the installed kv.json, does
+// not reveal watched accounts, and may fetch only hosts already approved
+// on the installed version and still declared by the candidate. A fresh
+// install has no approved hosts, so fetch is disabled.
+func (a *App) previewHostDeps(m plugin.Manifest) plugin.HostDeps {
+	manifest := m
+	manifest.Permissions.Network = a.previewFetchAllowlist(m)
+	quota := m.Permissions.StorageKb * 1024
+	if quota <= 0 {
+		quota = 64 * 1024
+	}
+	declared := make(map[string]bool, len(m.Settings))
+	for _, field := range m.Settings {
+		declared[field.Key] = true
+	}
+	locale := a.lang()
+	readers := make(map[string]chain.Reader, len(m.Permissions.Chains))
+	for _, id := range m.Permissions.Chains {
+		network, ok := chains.ByID(id)
+		if !ok {
+			continue
+		}
+		if reader, err := chains.NewReader(network, ""); err == nil {
+			readers[id] = reader
+		}
+	}
+	return plugin.HostDeps{
+		Manifest: manifest,
+		Settings: func(key string) (string, error) {
+			if !declared[key] {
+				return "", nil
+			}
+			return "", nil
+		},
+		KV:       plugin.NewMemoryKV(quota),
+		Accounts: func() []plugin.Account { return []plugin.Account{} },
+		RPC: func(chainID, method string, params any) (json.RawMessage, error) {
+			reader, ok := readers[chainID]
+			if !ok {
+				return nil, fmt.Errorf("chain %q is not available", chainID)
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+			defer cancel()
+			return reader.RPC(ctx, method, params)
+		},
+		Log:    a.pluginLog(m.ID).Add,
+		Locale: func() string { return locale },
+		Translate: func(key string, args []any) string {
+			return i18n.T(locale, i18n.Key(key), args...)
+		},
+	}
+}
+
+// previewFetchAllowlist is the hosts a preview may call: the intersection
+// of the installed app's already-approved list and the candidate's list.
+func (a *App) previewFetchAllowlist(m plugin.Manifest) []string {
+	installed, err := a.plugins.Get(m.ID)
+	if err != nil {
+		return nil
+	}
+	approved := map[string]bool{}
+	for _, host := range installed.Manifest.Permissions.Network {
+		approved[strings.ToLower(host)] = true
+	}
+	var out []string
+	for _, host := range m.Permissions.Network {
+		if approved[strings.ToLower(host)] {
+			out = append(out, host)
+		}
+	}
+	return out
+}
