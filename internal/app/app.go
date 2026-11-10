@@ -363,6 +363,10 @@ func (a *App) Ready() {
 	// The tray shows values within seconds of launch instead of waiting
 	// for the refresh loop's first tick.
 	a.updateTray()
+	// A binary run outside a bundle takes no icon from an Info.plist; the
+	// Dock gets the app's mark. A bundled app already carries it, and
+	// setting the same art again changes nothing.
+	_ = mygo.App.Dock.SetIcon(appLogoPNG)
 	a.startAgent()
 	// The Dock icon, or launching the app again, brings the window back.
 	mygo.App.OnActivate(func(bool) { a.showWindow() })
