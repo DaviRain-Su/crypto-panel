@@ -243,14 +243,48 @@ func (a *App) importWalletKey() {
 	}
 }
 
-// submitWalletImport runs the import and folds the form away when it
-// succeeded: every family clears the key draft on success, and an open
-// form with no key in it has nothing left to say.
+// toggleWalletImport opens the key form, or folds it. Folding drops the
+// drafts, including a NEAR key copied aside on a failed import and the
+// Solana secret, which lives in the same draft as an EVM key. Opening
+// starts from an empty form too, so a previous error is not still there.
+func (a *App) toggleWalletImport() {
+	if a.walletImportOpen {
+		a.foldWalletImport()
+		return
+	}
+	a.clearWalletImportDraft()
+	a.walletImportOpen = true
+	a.invalidate()
+}
+
+// foldWalletImport closes the key form and forgets what was typed.
+func (a *App) foldWalletImport() {
+	a.walletImportOpen = false
+	a.clearWalletImportDraft()
+	a.invalidate()
+}
+
+// clearWalletImportDraft drops every key-import field. Solana has no
+// separate draft: its secret is draftKey, the same field an EVM key uses.
+func (a *App) clearWalletImportDraft() {
+	a.draftKey = ""
+	a.draftWalletLabel = ""
+	a.draftNearKey = ""
+	a.draftNearAccount = ""
+	a.draftNearLabel = ""
+	a.walletErr = ""
+	a.nearErr = ""
+}
+
+// submitWalletImport runs the import and folds the form when it succeeded.
+// An empty submit that reports an error, such as a missing keychain, stays
+// open so that error can be read. A failed key stays in the field too.
 func (a *App) submitWalletImport() {
 	a.importWalletKey()
-	if a.draftKey == "" {
-		a.walletImportOpen = false
+	if strings.TrimSpace(a.draftKey) != "" || a.walletErr != "" || a.nearErr != "" {
+		return
 	}
+	a.foldWalletImport()
 }
 
 func (a *App) importSolanaAccount() {

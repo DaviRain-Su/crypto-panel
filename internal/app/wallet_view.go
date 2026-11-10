@@ -331,11 +331,7 @@ func (a *App) walletAccountCard(c *ui.Context, acc wallet.Account) {
 func (a *App) walletImportSection(c *ui.Context) {
 	p := a.pal
 	ui.Row(c).Margin(0, 0, 14, 0).Children(func() {
-		a.softButton(c, a.t(i18n.WalletImport), iconKey, p.muted, func() {
-			a.walletImportOpen = !a.walletImportOpen
-			a.walletErr = ""
-			a.invalidate()
-		})
+		a.softButton(c, a.t(i18n.WalletImport), iconKey, p.muted, a.toggleWalletImport)
 	})
 	if a.walletImportOpen {
 		a.walletImportForm(c)

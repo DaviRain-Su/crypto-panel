@@ -463,8 +463,8 @@ func (a *App) invalidate() {
 	}
 }
 
-// goTo selects a page of the shell. A revealed key does not outlive the
-// wallet page.
+// goTo selects a page of the shell. A revealed key, and anything typed into
+// the key-import form, does not outlive the wallet page.
 func (a *App) goTo(r route) {
 	if a.route == r {
 		return
@@ -475,6 +475,7 @@ func (a *App) goTo(r route) {
 		a.shownKeys = nil
 		a.walletNotice = ""
 		a.passkeyPrepared = false
+		a.foldWalletImport()
 	}
 	if a.route.kind == "plugins" && r.kind != "plugins" {
 		a.pluginDetail = ""
