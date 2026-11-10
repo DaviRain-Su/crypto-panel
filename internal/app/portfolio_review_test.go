@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"math/big"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -354,6 +355,75 @@ func TestQueuedNetworkDoesNotWaitASecondTimeout(t *testing.T) {
 	finishFetch(t, a, jobs)
 	if elapsed := time.Since(start); elapsed > 450*time.Millisecond {
 		t.Fatalf("refresh took %s; a job queued on the semaphore started another full timeout", elapsed)
+	}
+}
+
+func TestOtherFamiliesAreNotStarvedByHungEVM(t *testing.T) {
+	if familyReadTimeout != 90*time.Second {
+		t.Fatalf("family timeout = %s, want 90s", familyReadTimeout)
+	}
+	previous := familyReadTimeout
+	familyReadTimeout = 2 * time.Second
+	t.Cleanup(func() { familyReadTimeout = previous })
+	var entered sync.WaitGroup
+	entered.Add(maxRefreshConcurrency + 2)
+	hold := make(chan struct{})
+	var release sync.Once
+	closeHold := func() { release.Do(func() { close(hold) }) }
+	t.Cleanup(closeHold)
+	block := func(ctx context.Context) error {
+		entered.Done()
+		select {
+		case <-hold:
+			return nil
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+	start := func(context.Context) error {
+		entered.Done()
+		return nil
+	}
+	jobs := make([]familyFetch, 0, maxRefreshConcurrency+2)
+	for i := 0; i < maxRefreshConcurrency; i++ {
+		jobs = append(jobs, familyFetch{
+			network: chain.Network{ID: "eip155:" + string(rune('1'+i)), Family: chain.EVM},
+			addrs:   []string{viewAddr},
+			reader:  gateReader{account: block},
+		})
+	}
+	jobs = append(jobs,
+		familyFetch{network: chain.Network{ID: "near:mainnet", Family: chain.Near}, addrs: []string{"alice.near"}, reader: gateReader{account: start}},
+		familyFetch{network: chain.Network{ID: "solana:mainnet", Family: chain.Solana}, addrs: []string{"sol"}, reader: gateReader{account: start}},
+	)
+	a := newTestApp(t)
+	done := make(chan struct{})
+	previousUI := runOnUI
+	runOnUI = func(fn func()) {
+		fn()
+		select {
+		case <-done:
+		default:
+			close(done)
+		}
+	}
+	t.Cleanup(func() { runOnUI = previousUI })
+	a.fetch(a.gen, jobs)
+	allEntered := make(chan struct{})
+	go func() {
+		entered.Wait()
+		close(allEntered)
+	}()
+	select {
+	case <-allEntered:
+	case <-time.After(400 * time.Millisecond):
+		t.Fatal("NEAR or Solana did not start while the EVM slots were full")
+	}
+	closeHold()
+	select {
+	case <-done:
+	case <-time.After(3 * time.Second):
+		t.Fatal("refresh did not finish")
 	}
 }
 

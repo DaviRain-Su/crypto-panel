@@ -587,13 +587,44 @@ func (a *App) codingErrorText(err error) string {
 			return fmt.Sprintf("%s: %s", err, message)
 		}
 	}
+	var known *plugin.Error
+	if errors.As(err, &known) && known != nil {
+		return a.pluginErrorText(err)
+	}
 	return err.Error()
 }
 
 func safeAgentText(text string, limit int) string {
 	out := make([]rune, 0, min(len(text), limit))
+	esc, csi := false, false
 	for _, r := range text {
-		if (unicode.IsControl(r) && r != '\n' && r != '\t') || (r >= 0x202a && r <= 0x202e) || (r >= 0x2066 && r <= 0x2069) {
+		if esc {
+			esc = false
+			if r == '[' {
+				csi = true
+				continue
+			}
+		}
+		if csi {
+			if r >= 0x40 && r <= 0x7e {
+				csi = false
+			}
+			continue
+		}
+		if r == '\u001b' {
+			esc = true
+			continue
+		}
+		switch r {
+		case '\n', '\r', '\u0085', '\u2028', '\u2029':
+			if len(out) == 0 || out[len(out)-1] == ' ' {
+				continue
+			}
+			r = ' '
+		case '\u200b', '\u200e', '\u200f', '\u061c', '\ufeff', '\u2060':
+			continue
+		}
+		if (unicode.IsControl(r) && r != '\t') || (r >= 0x202a && r <= 0x202e) || (r >= 0x2066 && r <= 0x2069) {
 			continue
 		}
 		out = append(out, r)

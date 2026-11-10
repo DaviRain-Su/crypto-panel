@@ -137,7 +137,10 @@ func (a *App) serveDappRequestFrom(w http.ResponseWriter, r *http.Request, bridg
 	result, err := a.handleDappRequest(call.ctx, origin, req)
 	out := dappResponse{ID: req.ID, Capability: call.binding.capability, Origin: call.binding.origin, Result: result}
 	if err != nil {
-		out.Result, out.Error = nil, err.Error()
+		// A batch can confirm one transaction and then fail the next. The
+		// page has to see the outcome that is already on chain, not only
+		// the error, or it will submit that transaction again.
+		out.Error = err.Error()
 	}
 	if call.ctx.Err() == nil && bridge.current(call.binding) {
 		emit(out)

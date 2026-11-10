@@ -195,11 +195,22 @@ func TestAssetIconsCoalesceInFlightLoads(t *testing.T) {
 
 func TestAssetIconsRejectPrivateHostsAndCrossHostRedirects(t *testing.T) {
 	icons := newAssetIconCache(&http.Client{Timeout: time.Second})
-	for _, raw := range []string{"https://127.0.0.1/icon.png", "https://10.1.2.3/a.png", "https://192.168.0.5/a.png"} {
+	for _, raw := range []string{
+		"https://127.0.0.1/icon.png", "https://10.1.2.3/a.png", "https://192.168.0.5/a.png",
+		"https://localhost./icon.png", "https://foo.localhost/icon.png", "https://127.1/icon.png",
+		"https://2130706433/icon.png", "https://0x7f000001/icon.png", "https://100.64.0.1/icon.png",
+		"https://[fe80::1%25eth0]/icon.png",
+	} {
 		_, err := icons.load(context.Background(), raw)
-		if err == nil || !strings.Contains(err.Error(), "public HTTPS") {
+		if err == nil || !strings.Contains(err.Error(), "public HTTPS") && !strings.Contains(err.Error(), "invalid") {
 			t.Errorf("load(%q) = %v, want a public-HTTPS refusal", raw, err)
 		}
+	}
+	if err := icons.validateURL("https://example.com/icon.png"); err != nil {
+		t.Fatalf("public icon URL rejected: %v", err)
+	}
+	if err := icons.validateURL("https://8.8.8.8/icon.png"); err != nil {
+		t.Fatalf("public address rejected: %v", err)
 	}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "https://example.com/icon.png", http.StatusFound)

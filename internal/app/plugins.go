@@ -960,8 +960,13 @@ func (a *App) previewHostDeps(m plugin.Manifest) plugin.HostDeps {
 		declared[field.Key] = true
 	}
 	locale := a.lang()
-	readers := make(map[string]chain.Reader, len(m.Permissions.Chains))
-	for _, id := range m.Permissions.Chains {
+	// The manifest still lists the chains the candidate declared, so a
+	// signing call reaches the disabled signer. Readers exist only for
+	// chains the installed app already approved, so a candidate-only chain
+	// never opens an RPC.
+	allowedChains := a.previewChainAllowlist(m)
+	readers := make(map[string]chain.Reader, len(allowedChains))
+	for _, id := range allowedChains {
 		network, ok := chains.ByID(id)
 		if !ok {
 			continue
@@ -970,6 +975,7 @@ func (a *App) previewHostDeps(m plugin.Manifest) plugin.HostDeps {
 			readers[id] = reader
 		}
 	}
+	previewLog := plugin.NewLogBuffer(32)
 	return plugin.HostDeps{
 		Manifest: manifest,
 		Settings: func(key string) (string, error) {
@@ -993,7 +999,7 @@ func (a *App) previewHostDeps(m plugin.Manifest) plugin.HostDeps {
 		IntentsTokens:   a.readIntentsTokens,
 		IntentsDryQuote: a.intentsDryQuote,
 		IntentsStatus:   a.intentsStatus,
-		Log:             a.pluginLog(m.ID).Add,
+		Log:             previewLog.Add,
 		Locale:          func() string { return locale },
 		Translate: func(key string, args []any) string {
 			return i18n.T(locale, i18n.Key(key), args...)
@@ -1016,6 +1022,26 @@ func (a *App) previewFetchAllowlist(m plugin.Manifest) []string {
 	for _, host := range m.Permissions.Network {
 		if approved[strings.ToLower(host)] {
 			out = append(out, host)
+		}
+	}
+	return out
+}
+
+// previewChainAllowlist is the chains a preview may call. A candidate-only
+// chain has not been approved, so the preview does not open that RPC.
+func (a *App) previewChainAllowlist(m plugin.Manifest) []string {
+	installed, err := a.plugins.Get(m.ID)
+	if err != nil {
+		return nil
+	}
+	approved := map[string]bool{}
+	for _, id := range installed.Manifest.Permissions.Chains {
+		approved[id] = true
+	}
+	var out []string
+	for _, id := range m.Permissions.Chains {
+		if approved[id] {
+			out = append(out, id)
 		}
 	}
 	return out

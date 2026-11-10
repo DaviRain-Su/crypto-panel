@@ -11,6 +11,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -139,14 +140,90 @@ func (c *assetIconCache) validateURL(raw string) error {
 
 func privateIconHost(host string) bool {
 	host = strings.Trim(strings.ToLower(host), "[]")
-	if host == "localhost" {
+	if i := strings.IndexByte(host, '%'); i >= 0 {
+		host = host[:i]
+	}
+	host = strings.TrimRight(host, ".")
+	if host == "localhost" || strings.HasSuffix(host, ".localhost") {
 		return true
 	}
-	ip := net.ParseIP(host)
+	ip := parseIconIP(host)
 	if ip == nil {
 		return false
 	}
-	return ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsUnspecified()
+	return ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() || ip.IsUnspecified() || sharedIconAddress(ip)
+}
+
+// parseIconIP accepts the numeric spellings resolvers treat as addresses:
+// a short dotted form such as 127.1, a decimal integer, and a hex integer.
+func parseIconIP(host string) net.IP {
+	if ip := net.ParseIP(host); ip != nil {
+		return ip
+	}
+	if strings.Contains(host, ".") {
+		return parseInetAton(host)
+	}
+	if host == "" {
+		return nil
+	}
+	for _, r := range host {
+		if r != 'x' && (r < '0' || r > '9') && (r < 'a' || r > 'f') {
+			return nil
+		}
+	}
+	return ipv4FromNumber(host)
+}
+
+func parseInetAton(host string) net.IP {
+	parts := strings.Split(host, ".")
+	if len(parts) < 2 || len(parts) > 4 {
+		return nil
+	}
+	nums := make([]uint64, len(parts))
+	for i, part := range parts {
+		if part == "" {
+			return nil
+		}
+		n, err := strconv.ParseUint(part, 0, 64)
+		if err != nil {
+			return nil
+		}
+		nums[i] = n
+	}
+	var ip uint64
+	switch len(nums) {
+	case 2:
+		if nums[0] > 0xff || nums[1] > 0xffffff {
+			return nil
+		}
+		ip = nums[0]<<24 | nums[1]
+	case 3:
+		if nums[0] > 0xff || nums[1] > 0xff || nums[2] > 0xffff {
+			return nil
+		}
+		ip = nums[0]<<24 | nums[1]<<16 | nums[2]
+	default:
+		for _, n := range nums {
+			if n > 0xff {
+				return nil
+			}
+		}
+		ip = nums[0]<<24 | nums[1]<<16 | nums[2]<<8 | nums[3]
+	}
+	return net.IPv4(byte(ip>>24), byte(ip>>16), byte(ip>>8), byte(ip)).To4()
+}
+
+func ipv4FromNumber(host string) net.IP {
+	n, err := strconv.ParseUint(host, 0, 64)
+	if err != nil || n > 0xffffffff {
+		return nil
+	}
+	return net.IPv4(byte(n>>24), byte(n>>16), byte(n>>8), byte(n)).To4()
+}
+
+func sharedIconAddress(ip net.IP) bool {
+	ip4 := ip.To4()
+	return ip4 != nil && ip4[0] == 100 && ip4[1]&0xc0 == 0x40
 }
 
 func (c *assetIconCache) cached(raw string) (assetIconResult, bool) {

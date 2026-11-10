@@ -265,6 +265,40 @@ async function answerNetwork(networkId) {
   answer({ id: sent.at(-1).body.id, capability: token, origin: "https://dapp.test", result: { transaction: { hash: "two" } } });
   assert.equal(JSON.stringify(await batch), JSON.stringify([{ transaction: { hash: "one" } }, { transaction: { hash: "two" } }]));
 
+  const partial = discovered.signAndSendTransactions({
+    network: "testnet",
+    transactions: [
+      { receiverId: "one.testnet", actions: [{ type: "Transfer", params: { deposit: "1" } }] },
+      { receiverId: "two.testnet", actions: [{ type: "Transfer", params: { deposit: "2" } }] },
+    ],
+  });
+  for (let i = 0; i < 20 && sent.at(-1).body.method !== "signAndSendTransactions"; i++) await Promise.resolve();
+  const partialRequest = sent.at(-1).body;
+  answer({
+    id: partialRequest.id, capability: token, origin: "https://dapp.test",
+    error: "transaction 2 rejected",
+    result: [{ hash: "one", transaction: { hash: "one" } }],
+  });
+  await assert.rejects(partial, err => {
+    assert.match(String(err.message), /transaction 2 rejected/);
+    assert.equal(err.result[0].hash, "one");
+    return true;
+  });
+
+  const legacyPartial = w.nearWallet.signAndSendTransactions({ transactions: [
+    { receiverId: "kept.testnet", actions: [{ type: "Transfer", params: { deposit: "1" } }] },
+    { receiverId: "dropped.testnet", actions: [{ type: "Transfer", params: { deposit: "2" } }] },
+  ] });
+  for (let i = 0; i < 10 && sent.at(-1).body.params.receiverId !== "kept.testnet"; i++) await Promise.resolve();
+  answer({ id: sent.at(-1).body.id, capability: token, origin: "https://dapp.test", result: { transaction: { hash: "kept" } } });
+  for (let i = 0; i < 10 && sent.at(-1).body.params.receiverId !== "dropped.testnet"; i++) await Promise.resolve();
+  answer({ id: sent.at(-1).body.id, capability: token, origin: "https://dapp.test", error: "transaction 2 rejected" });
+  await assert.rejects(legacyPartial, err => {
+    assert.match(String(err.message), /transaction 2 rejected/);
+    assert.equal(err.result[0].transaction.hash, "kept");
+    return true;
+  });
+
   for (const method of ["signMessage", "verifyOwner", "signTransaction", "signTransactions", "signDelegateActions", "signInAndSignMessage"]) {
     await assert.rejects(discovered[method]({}), new RegExp(method + ".*unsupported"));
   }

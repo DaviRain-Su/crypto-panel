@@ -152,8 +152,9 @@ func (a *App) refreshJobs() []familyFetch {
 }
 
 // fetch reads every address on every network in the background and hands the
-// snapshot back to the main thread. At most maxRefreshConcurrency reads run
-// at once, and each one has its own timeout.
+// snapshot back to the main thread. At most maxRefreshConcurrency EVM reads
+// run at once. NEAR and Solana run beside that pool, and each read has its
+// own timeout.
 func (a *App) fetch(gen int, jobs []familyFetch) {
 	source := a.priceSource
 	// The vault check is best-effort and only applies to the selected
@@ -177,26 +178,32 @@ func (a *App) fetch(gen int, jobs []familyFetch) {
 	go func() {
 		results := make([]familyResult, len(jobs))
 		var wg sync.WaitGroup
-		sem := make(chan struct{}, maxRefreshConcurrency)
+		// EVM networks share one endpoint family, so they share the slot
+		// limit. NEAR and Solana talk to different endpoints and must not
+		// wait behind a hung EVM wave, or their own deadline expires before
+		// they send a request.
+		evmSem := make(chan struct{}, maxRefreshConcurrency)
 		for i, job := range jobs {
 			wg.Add(1)
 			go func(i int, job familyFetch) {
 				defer wg.Done()
 				// The deadline starts when the job is spawned, including
-				// time spent waiting for a free slot. A job that waited out
-				// the timeout aborts instead of beginning another RPC.
+				// time spent waiting for a free EVM slot. A job that waited
+				// out the timeout aborts instead of beginning another RPC.
 				ctx, cancel := context.WithTimeout(context.Background(), familyReadTimeout)
 				defer cancel()
-				select {
-				case sem <- struct{}{}:
-					defer func() { <-sem }()
-				case <-ctx.Done():
-					results[i] = familyResult{err: ctx.Err()}
-					return
-				}
-				if err := ctx.Err(); err != nil {
-					results[i] = familyResult{err: err}
-					return
+				if job.network.Family == chain.EVM {
+					select {
+					case evmSem <- struct{}{}:
+						defer func() { <-evmSem }()
+					case <-ctx.Done():
+						results[i] = familyResult{err: ctx.Err()}
+						return
+					}
+					if err := ctx.Err(); err != nil {
+						results[i] = familyResult{err: err}
+						return
+					}
 				}
 				var res familyResult
 				for _, addr := range job.addrs {

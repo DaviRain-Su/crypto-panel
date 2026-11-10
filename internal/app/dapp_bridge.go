@@ -39,8 +39,11 @@ const nearBridgeScript = `(() => {
       if (!p || msg.origin !== origin || msg.capability !== p.capability || msg.capability !== capability) return;
       pending.delete(msg.id);
       stopTimer(p.timer);
-      if (msg.error) p.reject(new Error(msg.error));
-      else p.resolve(msg.result);
+      if (msg.error) {
+        const err = new Error(msg.error);
+        if (msg.result != null) err.result = msg.result;
+        p.reject(err);
+      } else p.resolve(msg.result);
     });
   }
   window.addEventListener("pagehide", () => {
@@ -184,9 +187,14 @@ const nearBridgeScript = `(() => {
     signAndSendTransactions: async (params) => {
       const results = [];
       for (const transaction of params.transactions || []) {
-        results.push(await legacySignAndSendTransaction({
-          network: params.network, signerId: params.signerId, ...transaction,
-        }));
+        try {
+          results.push(await legacySignAndSendTransaction({
+            network: params.network, signerId: params.signerId, ...transaction,
+          }));
+        } catch (err) {
+          if (results.length) err.result = results;
+          throw err;
+        }
       }
       return results;
     },

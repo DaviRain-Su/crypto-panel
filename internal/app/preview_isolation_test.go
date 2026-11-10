@@ -2,6 +2,7 @@ package app
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/davirain-su/lintel/internal/pages"
@@ -163,5 +164,128 @@ func TestFreshInstallPreviewDoesNotExposeAccountsOrFetch(t *testing.T) {
 	}
 	if _, err := a.plugins.Get(id); err == nil {
 		t.Fatal("preview installed the candidate")
+	}
+}
+
+func TestPreviewDoesNotReadInstalledSecrets(t *testing.T) {
+	sec := &countingSecrets{inner: memStore{}}
+	a := newTestAppWithPluginSecrets(t, sec)
+	id := "local.personal.r21keychain"
+	installed := plugin.Manifest{
+		ID: id, Name: "Secret", Version: "1.0.0", Main: "index.js",
+		Settings:   []plugin.SettingField{{Key: "apiKey", Label: "API key", Secret: true}},
+		Navigation: []plugin.NavItem{{Title: "Overview", Page: "overview"}},
+	}
+	job, err := a.pluginManager.Propose(previewPackage(t, installed, `export function page() { return { title: "Installed", sections: [] }; }`), "install", "", "", "acp")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := a.pluginManager.Decide(job.RequestID, true); err != nil {
+		t.Fatal(err)
+	}
+	a.refreshPlugins()
+	if err := a.plugins.SetSetting(id, "apiKey", "sk-live-SECRET"); err != nil {
+		t.Fatal(err)
+	}
+	hash, err := a.plugins.PackageHash(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	update := installed
+	update.Version = "1.0.1"
+	pending, err := a.pluginManager.Propose(previewPackage(t, update, `export function page() { return { title: "Preview", sections: [] }; }`), "update", id, hash, "acp")
+	if err != nil {
+		t.Fatal(err)
+	}
+	before := sec.gets
+	if _, err := a.PreviewInstallationPage(pending.RequestID, "overview", "acp"); err != nil {
+		t.Fatalf("preview: %v", err)
+	}
+	if sec.gets != before {
+		t.Fatalf("preview read the installed secret from the keychain %d times", sec.gets-before)
+	}
+}
+
+func TestPreviewDoesNotWriteTheInstalledLog(t *testing.T) {
+	a := newTestApp(t)
+	id := "local.personal.r21log"
+	installed := plugin.Manifest{
+		ID: id, Name: "Log", Version: "1.0.0", Main: "index.js",
+		Navigation: []plugin.NavItem{{Title: "Overview", Page: "overview"}},
+	}
+	job, err := a.pluginManager.Propose(previewPackage(t, installed, `export function page() { return { title: "Installed", sections: [] }; }`), "install", "", "", "acp")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := a.pluginManager.Decide(job.RequestID, true); err != nil {
+		t.Fatal(err)
+	}
+	a.refreshPlugins()
+	hash, err := a.plugins.PackageHash(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	page := `export function page() { host.log("info", "preview-injected"); return { title: "Preview", sections: [] }; }`
+	update := installed
+	update.Version = "1.0.1"
+	pending, err := a.pluginManager.Propose(previewPackage(t, update, page), "update", id, hash, "acp")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := a.PreviewInstallationPage(pending.RequestID, "overview", "acp"); err != nil {
+		t.Fatalf("preview: %v", err)
+	}
+	if buf := a.pluginLogs[id]; buf != nil {
+		for _, entry := range buf.Entries() {
+			if strings.Contains(entry.Message, "preview-injected") {
+				t.Fatal("preview wrote the installed app log")
+			}
+		}
+	}
+}
+
+func TestPreviewDoesNotCallCandidateOnlyChains(t *testing.T) {
+	a := newTestApp(t)
+	id := "local.personal.r21rpc"
+	installed := plugin.Manifest{
+		ID: id, Name: "RPC", Version: "1.0.0", Main: "index.js",
+		Navigation: []plugin.NavItem{{Title: "Overview", Page: "overview"}},
+	}
+	job, err := a.pluginManager.Propose(previewPackage(t, installed, `export function page() { return { title: "Installed", sections: [] }; }`), "install", "", "", "acp")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := a.pluginManager.Decide(job.RequestID, true); err != nil {
+		t.Fatal(err)
+	}
+	a.refreshPlugins()
+	hash, err := a.plugins.PackageHash(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	page := `export function page() {
+  let rpc = "other";
+  try {
+    host.rpc("eip155:1", "eth_chainId");
+    rpc = "sent";
+  } catch (e) {
+    const text = String(e);
+    rpc = text.includes("not in the plugin") || text.includes("not available") ? "refused" : "other";
+  }
+  return { title: "Preview", sections: [{ stats: [{ label: "rpc", value: rpc }] }] };
+}`
+	update := installed
+	update.Version = "1.0.1"
+	update.Permissions.Chains = []string{"eip155:1"}
+	pending, err := a.pluginManager.Propose(previewPackage(t, update, page), "update", id, hash, "acp")
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := a.PreviewInstallationPage(pending.RequestID, "overview", "acp")
+	if err != nil {
+		t.Fatalf("preview: %v", err)
+	}
+	if previewStat(t, result.Page, "rpc") != "refused" {
+		t.Fatal("preview called a chain the installed app never approved")
 	}
 }
