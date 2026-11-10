@@ -1,6 +1,7 @@
 package solana
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -80,13 +81,24 @@ func (b *Broker) AccountExists(ctx context.Context, ep Endpoint, addr string) (b
 	if err != nil {
 		return false, err
 	}
-	var out struct {
-		Value *json.RawMessage `json:"value"`
+	// A missing account is {"value": null}. A null result, an empty object,
+	// or an object without value is not that answer: the check failed.
+	trimmed := bytes.TrimSpace(raw)
+	if len(trimmed) == 0 || string(trimmed) == "null" {
+		return false, fmt.Errorf("%s: getAccountInfo: missing account value", ep.Host())
 	}
-	if err := json.Unmarshal(raw, &out); err != nil {
-		return false, fmt.Errorf("%s: getAccountInfo: unreadable answer: %w", ep.Host(), err)
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(trimmed, &fields); err != nil || fields == nil {
+		return false, fmt.Errorf("%s: getAccountInfo: unreadable answer", ep.Host())
 	}
-	return out.Value != nil, nil
+	value, ok := fields["value"]
+	if !ok || len(bytes.TrimSpace(value)) == 0 {
+		return false, fmt.Errorf("%s: getAccountInfo: missing account value", ep.Host())
+	}
+	if string(bytes.TrimSpace(value)) == "null" {
+		return false, nil
+	}
+	return true, nil
 }
 
 // Slot reads the endpoint's latest slot.

@@ -170,7 +170,7 @@ func (a *App) installPlugin() {
 	if a.plugins == nil {
 		return
 	}
-	paths, err := mygo.Dialog.Open(mygo.OpenDialogOptions{
+	paths, err := pickInstallPath(mygo.OpenDialogOptions{
 		Title:       a.t(i18n.PluginInstallTitle),
 		ButtonLabel: a.t(i18n.PluginInstall),
 		Directory:   true,
@@ -188,6 +188,10 @@ func (a *App) installPlugin() {
 	if err == nil {
 		err = m.ValidateDir(src)
 	}
+	var digest string
+	if err == nil {
+		digest, err = plugin.DigestDir(src)
+	}
 	if err != nil {
 		a.pluginNotice = a.t(i18n.PluginInstallFailed, err.Error())
 		a.invalidate()
@@ -197,21 +201,7 @@ func (a *App) installPlugin() {
 		if !ok {
 			return
 		}
-		if err := reverifyManifest(src, m); err != nil {
-			a.pluginNotice = a.t(i18n.StoreChanged)
-			a.invalidate()
-			return
-		}
-		m, err := a.plugins.Install(src)
-		if err != nil {
-			a.pluginNotice = a.t(i18n.PluginInstallFailed, err.Error())
-			a.invalidate()
-			return
-		}
-		a.pluginNotice = a.t(i18n.PluginInstalled, m.Name)
-		a.refreshPlugins()
-		a.refreshProvenanceLocks()
-		a.invalidate()
+		a.installApprovedSource(src, m, digest)
 	})
 }
 
@@ -221,7 +211,7 @@ func (a *App) installPluginZip() {
 	if a.plugins == nil {
 		return
 	}
-	paths, err := mygo.Dialog.Open(mygo.OpenDialogOptions{
+	paths, err := pickInstallPath(mygo.OpenDialogOptions{
 		Title:       a.t(i18n.AppZipTitle),
 		ButtonLabel: a.t(i18n.StoreInstall),
 		Filters:     []mygo.FileFilter{{Name: "zip", Extensions: []string{"zip"}}},
@@ -234,7 +224,7 @@ func (a *App) installPluginZip() {
 	if len(paths) == 0 {
 		return
 	}
-	data, err := os.ReadFile(paths[0])
+	data, err := readZipLimited(paths[0])
 	if err != nil {
 		a.pluginNotice = a.t(i18n.PluginInstallFailed, err.Error())
 		a.invalidate()
@@ -246,34 +236,98 @@ func (a *App) installPluginZip() {
 		a.invalidate()
 		return
 	}
+	digest, err := plugin.DigestDir(dir)
+	if err != nil {
+		a.plugins.DiscardUnpacked(dir)
+		a.pluginNotice = a.t(i18n.PluginInstallFailed, err.Error())
+		a.invalidate()
+		return
+	}
 	a.confirmInstall(m, installRequest{unsigned: true, source: a.t(i18n.StoreSourceZip)}, func(ok bool) {
 		defer a.plugins.DiscardUnpacked(dir)
 		if !ok {
 			return
 		}
-		if err := reverifyManifest(dir, m); err != nil {
-			a.pluginNotice = a.t(i18n.StoreChanged)
-			a.invalidate()
-			return
-		}
-		m, err := a.plugins.Install(dir)
-		if err != nil {
-			a.pluginNotice = a.t(i18n.PluginInstallFailed, err.Error())
-			a.invalidate()
-			return
-		}
-		a.pluginNotice = a.t(i18n.PluginInstalled, m.Name)
-		a.refreshPlugins()
-		a.refreshProvenanceLocks()
-		a.invalidate()
+		a.installApprovedSource(dir, m, digest)
 	})
 }
 
+// pickInstallPath opens the folder or zip dialog. Tests replace it.
+var pickInstallPath = func(opts mygo.OpenDialogOptions) ([]string, error) {
+	return mygo.Dialog.Open(opts)
+}
+
+// readPluginZip is the zip read. Tests replace it to prove an oversized
+// archive is rejected before its bytes are pulled into memory.
+var readPluginZip = os.ReadFile
+
+func readZipLimited(path string) ([]byte, error) {
+	info, err := os.Stat(path)
+	if err != nil {
+		return nil, err
+	}
+	if !info.Mode().IsRegular() {
+		return nil, errors.New("the archive is not a regular file")
+	}
+	if info.Size() > plugin.MaxArchiveBytes {
+		return nil, fmt.Errorf("the archive is larger than %d bytes", plugin.MaxArchiveBytes)
+	}
+	return readPluginZip(path)
+}
+
+// installApprovedSource installs src only when every file still matches the
+// digest shown in the permission prompt, and only from a private copy taken
+// after that check.
+func (a *App) installApprovedSource(src string, approved plugin.Manifest, digest string) {
+	if err := reverifyPackage(src, approved, digest); err != nil {
+		a.pluginNotice = a.t(i18n.StoreChanged)
+		a.invalidate()
+		return
+	}
+	frozen, err := plugin.FreezeDir(src)
+	if err != nil {
+		a.pluginNotice = a.t(i18n.PluginInstallFailed, err.Error())
+		a.invalidate()
+		return
+	}
+	defer os.RemoveAll(frozen)
+	if err := reverifyPackage(frozen, approved, digest); err != nil {
+		a.pluginNotice = a.t(i18n.StoreChanged)
+		a.invalidate()
+		return
+	}
+	installed, err := a.plugins.Install(frozen)
+	if err != nil {
+		a.pluginNotice = a.t(i18n.PluginInstallFailed, err.Error())
+		a.invalidate()
+		return
+	}
+	a.pluginNotice = a.t(i18n.PluginInstalled, installed.Name)
+	a.refreshPlugins()
+	a.refreshProvenanceLocks()
+	a.invalidate()
+}
+
+// reverifyPackage refuses when the folder no longer matches the manifest
+// and the full-file digest shown in the permission prompt. A changed
+// index.js is refused the same way a changed manifest is.
+func reverifyPackage(src string, approved plugin.Manifest, digest string) error {
+	if err := reverifyManifest(src, approved); err != nil {
+		return err
+	}
+	got, err := plugin.DigestDir(src)
+	if err != nil {
+		return err
+	}
+	if got != digest {
+		return errors.New("the app's files changed after the permission prompt")
+	}
+	return nil
+}
+
 // reverifyManifest re-reads the manifest from the folder the user approved
-// and reports whether it is still the one the prompt showed. The folder may
-// change between the prompt and the approval; only what was shown is what
-// gets installed. The comparison is the canonical JSON of the manifest, the
-// same equality the manager uses for a frozen installation candidate.
+// and reports whether it is still the one the prompt showed. The comparison
+// is the canonical JSON of the manifest.
 func reverifyManifest(src string, approved plugin.Manifest) error {
 	now, err := plugin.LoadManifest(src)
 	if err != nil {

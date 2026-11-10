@@ -35,8 +35,9 @@ type fakeRPC struct {
 	mu            sync.Mutex
 	genesis       string
 	balances      map[string]uint64
-	accounts      map[string]bool           // getAccountInfo: true when the account exists
-	tokenAccounts map[string][]tokenAccount // keyed by token program
+	accounts      map[string]bool            // getAccountInfo: true when the account exists
+	accountBodies map[string]json.RawMessage // raw getAccountInfo result, when set
+	tokenAccounts map[string][]tokenAccount  // keyed by token program
 	programErr    map[string]*RPCError
 	fail          map[string]*RPCError
 	slot          uint64
@@ -48,6 +49,7 @@ func newFakeRPC() *fakeRPC {
 		genesis:       testGenesis,
 		balances:      map[string]uint64{},
 		accounts:      map[string]bool{},
+		accountBodies: map[string]json.RawMessage{},
 		tokenAccounts: map[string][]tokenAccount{},
 		programErr:    map[string]*RPCError{},
 		fail:          map[string]*RPCError{},
@@ -97,7 +99,12 @@ func (f *fakeRPC) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		_ = json.Unmarshal(req.Params[0], &addr)
 		f.mu.Lock()
 		exists := f.accounts[addr]
+		rawBody, rawOK := f.accountBodies[addr]
 		f.mu.Unlock()
+		if rawOK {
+			writeRPC(w, req.ID, rawBody, nil)
+			return
+		}
 		var value any
 		if exists {
 			value = map[string]any{"data": []string{"", "base64"}, "lamports": 1}
@@ -230,6 +237,21 @@ func TestAccountExists(t *testing.T) {
 	fake.fail["getAccountInfo"] = &RPCError{Code: -32000, Message: "boom"}
 	if _, err := b.AccountExists(context.Background(), ep, testAddr); err == nil {
 		t.Fatal("endpoint error reported as an answer")
+	}
+}
+
+func TestAccountExistsRejectsMalformedResults(t *testing.T) {
+	fake := newFakeRPC()
+	srv := httptest.NewServer(fake)
+	defer srv.Close()
+	b := testBroker()
+	ep := Endpoint{URL: srv.URL, Genesis: testGenesis}
+	for _, body := range []string{`null`, `{}`, `{"context":{"slot":1}}`} {
+		fake.accountBodies["Bad1111111111111111111111111111111111111111"] = json.RawMessage(body)
+		exists, err := b.AccountExists(context.Background(), ep, "Bad1111111111111111111111111111111111111111")
+		if err == nil || exists {
+			t.Fatalf("result %s: exists=%v err=%v", body, exists, err)
+		}
 	}
 }
 

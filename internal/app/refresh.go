@@ -133,12 +133,16 @@ func (a *App) fetch(gen int, reader chain.Reader, addrs []string) {
 			snap.accounts = append(snap.accounts, s)
 		}
 		if exister != nil && vaultAddr != "" {
-			if exists, err := exister.AccountExists(ctx, vaultAddr); err == nil {
-				if exists {
-					snap.vault = vaultExists
-				} else {
-					snap.vault = vaultAbsent
-				}
+			exists, err := exister.AccountExists(ctx, vaultAddr)
+			switch {
+			case err != nil:
+				// Leave the check unknown. The card must not treat a failed
+				// lookup as "this address is free" and show a balance.
+				snap.vault = vaultUnknown
+			case exists:
+				snap.vault = vaultExists
+			default:
+				snap.vault = vaultAbsent
 			}
 		}
 		if block, err := reader.Block(ctx); err == nil {

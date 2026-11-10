@@ -396,6 +396,21 @@ func saveState(dir string, st state) error {
 	return writeFileAtomic(filepath.Join(dir, "state.json"), data, 0o600)
 }
 
+// FreezeDir copies src into a new temporary directory. Callers install from
+// the copy after they have checked it, so a later edit to src is not what
+// gets installed. The caller removes the directory.
+func FreezeDir(src string) (string, error) {
+	dst, err := os.MkdirTemp("", "lintel-install-*")
+	if err != nil {
+		return "", err
+	}
+	if err := copyTree(src, dst); err != nil {
+		_ = os.RemoveAll(dst)
+		return "", err
+	}
+	return dst, nil
+}
+
 // copyTree copies src into dst, refusing symlinks and bounding what one
 // plugin may bring. The shell's own files and a file manager's junk are not
 // copied: a folder that was itself installed elsewhere stays unsigned.

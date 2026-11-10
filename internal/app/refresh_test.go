@@ -1,6 +1,7 @@
 package app
 
 import (
+	"math/big"
 	"testing"
 
 	"github.com/davirain-su/lintel/internal/chain"
@@ -116,6 +117,23 @@ func TestPasskeyVaultExists(t *testing.T) {
 	// The balance is withheld once the account may not be the user's.
 	if got := a.passkeySolanaBalance(); got != "" {
 		t.Fatalf("balance = %q, want empty for an existing vault", got)
+	}
+	// A failed check is not "the address is free": no balance, and the
+	// card says the check did not succeed.
+	a.snap.vault = vaultUnknown
+	a.snap.accounts = []accountSnapshot{{addr: vault, native: big.NewInt(5_000_000_000)}}
+	if got := a.passkeySolanaBalance(); got != "" {
+		t.Fatalf("balance = %q, want empty when the vault check failed", got)
+	}
+	if !a.passkeyVaultUnchecked() {
+		t.Fatal("a failed vault check was treated as an answer")
+	}
+	a.snap.vault = vaultAbsent
+	if a.passkeyVaultUnchecked() {
+		t.Fatal("a confirmed-absent vault was treated as unchecked")
+	}
+	if got := a.passkeySolanaBalance(); got == "" {
+		t.Fatal("an absent vault hid the balance")
 	}
 	// The state belongs to the Solana page only.
 	a.settings.NetworkID = chains.Ethereum.ID

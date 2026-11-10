@@ -84,12 +84,12 @@ func Signature(assertion webauthn.Assertion) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	if r.BitLen() > 256 || s.BitLen() > 256 {
-		return nil, errors.New("smartaccount: signature component is too large")
+	n := elliptic.P256().Params().N
+	if r.Sign() <= 0 || s.Sign() <= 0 || r.Cmp(n) >= 0 || s.Cmp(n) >= 0 {
+		return nil, errors.New("smartaccount: signature scalar is out of range")
 	}
 	// WebAuthn signatures may be high-S; the account's verifier expects
 	// low-S, as the reference executor normalizes them.
-	n := elliptic.P256().Params().N
 	half := new(big.Int).Rsh(n, 1)
 	if s.Cmp(half) > 0 {
 		s = new(big.Int).Sub(n, s)

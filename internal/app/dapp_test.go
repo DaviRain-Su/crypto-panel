@@ -99,6 +99,34 @@ func TestDappConnectRejected(t *testing.T) {
 	}
 }
 
+func TestDisconnectRequiresANewConnection(t *testing.T) {
+	a, _, _ := newDappApp(t)
+	a.dappConnected["https://dapp.test"] = true
+	if _, err := a.handleDappRequest(context.Background(), "https://dapp.test", dappRequest{ID: "bye", Method: "disconnect"}); err != nil {
+		t.Fatal(err)
+	}
+	if a.dappConnected["https://dapp.test"] {
+		t.Fatal("disconnect left the origin connected")
+	}
+	asked := false
+	a.confirmConnect = func(string) bool { asked = true; return true }
+	if _, err := a.dappConnect(context.Background(), "https://dapp.test", nil); err != nil {
+		t.Fatal(err)
+	}
+	if !asked {
+		t.Fatal("connect after disconnect did not ask again")
+	}
+}
+
+func TestSwitchingNearNetworkDropsTheConnection(t *testing.T) {
+	a, _, _ := newDappApp(t)
+	a.dappConnected["https://dapp.test"] = true
+	a.setNetwork(chains.NearMainnet.ID)
+	if a.dappConnected["https://dapp.test"] {
+		t.Fatal("a testnet connection survived the switch to mainnet")
+	}
+}
+
 func TestDappConnectSkipsTheQuestionWhenConnected(t *testing.T) {
 	a, _, acc := newDappApp(t)
 	a.dappConnected["https://dapp.test"] = true

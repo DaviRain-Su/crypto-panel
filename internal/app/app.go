@@ -543,6 +543,9 @@ func (a *App) setNetwork(id string) {
 		return
 	}
 	a.settings.NetworkID = id
+	// A connection is for the network that was current. A NEAR testnet
+	// approval must not silently become a mainnet connection.
+	a.dappConnected = map[string]bool{}
 	a.settings.RPCURL = ""
 	a.rpcDraft = ""
 	a.settings = a.settings.Validate()

@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	"strings"
 
 	"github.com/davirain-su/lintel/internal/base58"
 )
@@ -204,31 +205,79 @@ func AccessKeyOf(ctx context.Context, rpc RPC, signer Signer) (AccessKey, error)
 	if string(out.Permission) == `"FullAccess"` {
 		return key, nil
 	}
-	var fc struct {
-		FunctionCall struct {
-			Allowance   *string  `json:"allowance"`
-			ReceiverID  string   `json:"receiver_id"`
-			MethodNames []string `json:"method_names"`
-		} `json:"FunctionCall"`
+	var envelope map[string]json.RawMessage
+	if err := json.Unmarshal(out.Permission, &envelope); err != nil || envelope == nil {
+		return AccessKey{}, errors.New("reading the access key's permission")
 	}
-	if err := json.Unmarshal(out.Permission, &fc); err != nil {
-		return AccessKey{}, fmt.Errorf("reading the access key's permission: %w", err)
+	rawFC, ok := envelope["FunctionCall"]
+	if !ok || string(bytesTrim(rawFC)) == "null" {
+		return AccessKey{}, errors.New("reading the access key's permission")
 	}
-	// A null or absent allowance means the key spends without a cap; only an
-	// explicit number sets a limit, so "0" stays a zero limit.
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(rawFC, &fields); err != nil || fields == nil {
+		return AccessKey{}, errors.New("reading the access key's permission")
+	}
+	rawAllowance, ok := fields["allowance"]
+	if !ok {
+		// A missing allowance is not the on-chain null that means unlimited.
+		return AccessKey{}, errors.New("reading the access key's allowance")
+	}
 	var allowance *big.Int
-	if s := fc.FunctionCall.Allowance; s != nil {
-		allowance = new(big.Int)
-		if _, ok := allowance.SetString(*s, 10); !ok {
+	if string(bytesTrim(rawAllowance)) != "null" {
+		var text string
+		if err := json.Unmarshal(rawAllowance, &text); err != nil {
 			return AccessKey{}, errors.New("reading the access key's allowance")
+		}
+		parsed, err := parseU128(text)
+		if err != nil {
+			return AccessKey{}, err
+		}
+		allowance = parsed
+	}
+	var receiver string
+	if raw, ok := fields["receiver_id"]; ok && string(bytesTrim(raw)) != "null" {
+		if err := json.Unmarshal(raw, &receiver); err != nil {
+			return AccessKey{}, errors.New("reading the access key's permission")
+		}
+	}
+	var methods []string
+	if raw, ok := fields["method_names"]; ok && string(bytesTrim(raw)) != "null" {
+		if err := json.Unmarshal(raw, &methods); err != nil {
+			return AccessKey{}, errors.New("reading the access key's permission")
 		}
 	}
 	key.Permission.FunctionCall = &FunctionCallPermission{
 		Allowance:   allowance,
-		ReceiverID:  fc.FunctionCall.ReceiverID,
-		MethodNames: fc.FunctionCall.MethodNames,
+		ReceiverID:  receiver,
+		MethodNames: methods,
 	}
 	return key, nil
+}
+
+func bytesTrim(raw json.RawMessage) json.RawMessage {
+	return json.RawMessage(strings.TrimSpace(string(raw)))
+}
+
+// parseU128 accepts a decimal integer in 0..2^128-1. A sign, a fraction,
+// or a value past u128 is an error, not an unlimited key.
+func parseU128(s string) (*big.Int, error) {
+	if s == "" {
+		return nil, errors.New("reading the access key's allowance")
+	}
+	for _, r := range s {
+		if r < '0' || r > '9' {
+			return nil, errors.New("reading the access key's allowance")
+		}
+	}
+	n, ok := new(big.Int).SetString(s, 10)
+	if !ok {
+		return nil, errors.New("reading the access key's allowance")
+	}
+	max := new(big.Int).Sub(new(big.Int).Lsh(big.NewInt(1), 128), big.NewInt(1))
+	if n.Cmp(max) > 0 {
+		return nil, errors.New("reading the access key's allowance")
+	}
+	return n, nil
 }
 
 // RecentBlockHash reads the latest final block's hash, which a transaction

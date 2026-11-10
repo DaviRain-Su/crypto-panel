@@ -110,6 +110,8 @@ func (a *App) passkeyChainCard(c *ui.Context) {
 				// The refresh found an account at the derived address. The
 				// app did not create it, so it may be a squatter's.
 				ui.Text(c, a.t(i18n.PasskeySolanaClaimed)).FontSize(11).TextColor(p.danger).MaxLines(3)
+			} else if a.passkeyVaultUnchecked() {
+				ui.Text(c, a.t(i18n.PasskeySolanaUnchecked)).FontSize(11).TextColor(p.danger).MaxLines(3)
 			}
 			ui.Text(c, a.t(i18n.PasskeySolanaNote)).FontSize(11).TextColor(p.muted).MaxLines(4)
 		default:
@@ -136,9 +138,9 @@ func (a *App) passkeySolanaBalance() string {
 	if snap == nil {
 		return ""
 	}
-	if a.snap.vault == vaultExists {
-		// The account is there, but the app did not create it and cannot
-		// tell whose it is: no balance that could be someone else's.
+	if a.snap.vault != vaultAbsent {
+		// An existing account may belong to someone else. An unknown check
+		// is not "the address is free": hide the balance either way.
 		return ""
 	}
 	return a.nativeText(snap)
@@ -157,6 +159,18 @@ func (a *App) passkeyVaultExists() bool {
 		return false
 	}
 	return a.snap.vault == vaultExists
+}
+
+// passkeyVaultUnchecked is true when a Solana refresh could not say whether
+// the derived vault address already has an account.
+func (a *App) passkeyVaultUnchecked() bool {
+	if a.settings.Passkey == nil || a.settings.Passkey.SolanaAddress == "" || a.network().Family != chain.Solana {
+		return false
+	}
+	if a.snap == nil {
+		return false
+	}
+	return a.snap.vault == vaultUnknown
 }
 
 // passkeyCard is the passkey wallet before a credential exists. Once one

@@ -158,6 +158,28 @@ func TestSignatureNormalizesHighS(t *testing.T) {
 	}
 }
 
+func TestSignatureRejectsSAtOrAboveOrder(t *testing.T) {
+	auth, err := webauthn.NewSoftAuthenticator("lintel.example", "https://lintel.example")
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertion, err := auth.Assert(bytes.Repeat([]byte{0x42}, 32))
+	if err != nil {
+		t.Fatal(err)
+	}
+	n := elliptic.P256().Params().N
+	for _, s := range []*big.Int{new(big.Int).Set(n), new(big.Int).Add(new(big.Int).Set(n), big.NewInt(5))} {
+		der, err := asn1.Marshal(struct{ R, S *big.Int }{R: big.NewInt(1), S: s})
+		if err != nil {
+			t.Fatal(err)
+		}
+		assertion.Signature = der
+		if _, err := Signature(assertion); err == nil {
+			t.Fatalf("accepted s = %s", s)
+		}
+	}
+}
+
 func TestSignatureRejectsBadAssertion(t *testing.T) {
 	if _, err := Signature(webauthn.Assertion{}); err == nil {
 		t.Fatal("Signature accepted an empty assertion")

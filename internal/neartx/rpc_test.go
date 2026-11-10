@@ -143,11 +143,16 @@ func TestAccessKeyOfAllowance(t *testing.T) {
 		wantNil   bool
 		want      string
 		depositOK bool
+		wantErr   bool
 	}{
-		{"null is unlimited", "null", true, "", true},
-		{"absent is unlimited", "", true, "", true},
-		{"zero still limits", `"0"`, false, "0", false},
-		{"number sets a limit", `"250000000000000000000000"`, false, "250000000000000000000000", true},
+		{"null is unlimited", "null", true, "", true, false},
+		{"absent is an error", "", false, "", false, true},
+		{"zero still limits", `"0"`, false, "0", false, false},
+		{"number sets a limit", `"250000000000000000000000"`, false, "250000000000000000000000", true, false},
+		{"negative is an error", `"-5"`, false, "", false, true},
+		{"sign is an error", `"+5"`, false, "", false, true},
+		{"fraction is an error", `"1.5"`, false, "", false, true},
+		{"over u128 is an error", `"340282366920938463463374607431768211456"`, false, "", false, true},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -160,6 +165,12 @@ func TestAccessKeyOfAllowance(t *testing.T) {
 				block:     block,
 			}
 			key, err := AccessKeyOf(context.Background(), rpc.call, testSigner(t))
+			if tc.wantErr {
+				if err == nil {
+					t.Fatal("invalid allowance was accepted")
+				}
+				return
+			}
 			if err != nil {
 				t.Fatal(err)
 			}
