@@ -1,4 +1,10 @@
-// Package intents talks to NEAR Intents through the official 1Click Go SDK.
+// Package intents talks to NEAR Intents through 1Click's public HTTP API.
+//
+// The calls here are hand-rolled rather than made through the official
+// one-click-sdk-go: the SDK decodes responses with unknown fields
+// disallowed, so any field 1Click adds — coingeckoId did — breaks the app
+// until a new SDK release. Plain json.Unmarshal ignores fields it has not
+// heard of, which is the right posture for a moving public API.
 //
 // This build only ever asks for dry quotes: a dry quote prices the swap but
 // issues no deposit address, so no funds can move. A real swap needs a
@@ -7,17 +13,17 @@
 package intents
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"math/big"
 	"net/http"
 	"sort"
 	"strings"
 	"time"
-
-	sdk "github.com/defuse-protocol/one-click-sdk-go"
 )
 
 // DefaultBaseURL is 1Click's public API. It has no testnet.
@@ -32,7 +38,8 @@ const quoteLifetime = 30 * time.Minute
 
 // Client is a 1Click client.
 type Client struct {
-	api *sdk.APIClient
+	baseURL string
+	http    *http.Client
 }
 
 // New returns a client for the public 1Click API.
@@ -41,11 +48,10 @@ func New() *Client { return NewAt(DefaultBaseURL) }
 // NewAt returns a client for another 1Click-compatible endpoint, as tests
 // use.
 func NewAt(baseURL string) *Client {
-	cfg := sdk.NewConfiguration()
-	cfg.Servers = sdk.ServerConfigurations{{URL: strings.TrimRight(baseURL, "/")}}
-	cfg.HTTPClient = &http.Client{Timeout: 25 * time.Second}
-	cfg.UserAgent = "lintel"
-	return &Client{api: sdk.NewAPIClient(cfg)}
+	return &Client{
+		baseURL: strings.TrimRight(baseURL, "/"),
+		http:    &http.Client{Timeout: 25 * time.Second},
+	}
 }
 
 // Token is one asset 1Click can swap.
@@ -90,23 +96,34 @@ type Quote struct {
 	Request        QuoteRequest
 }
 
+// wireToken is the part of a token on the wire this client reads. 1Click
+// may send more fields — coingeckoId, contractAddress — and the decode
+// ignores what it does not name.
+type wireToken struct {
+	AssetID    string  `json:"assetId"`
+	Symbol     string  `json:"symbol"`
+	Blockchain string  `json:"blockchain"`
+	Decimals   float64 `json:"decimals"`
+	Price      float64 `json:"price"`
+}
+
 // Tokens lists the assets 1Click supports, sorted for display.
 func (c *Client) Tokens(ctx context.Context) ([]Token, error) {
-	list, _, err := c.api.OneClickAPI.GetTokens(ctx).Execute()
-	if err != nil {
-		return nil, apiError(err)
+	var wire []wireToken
+	if err := c.get(ctx, "/v0/tokens", &wire); err != nil {
+		return nil, err
 	}
-	out := make([]Token, 0, len(list))
-	for _, t := range list {
-		if strings.TrimSpace(t.AssetId) == "" || strings.TrimSpace(t.Symbol) == "" {
+	out := make([]Token, 0, len(wire))
+	for _, t := range wire {
+		if strings.TrimSpace(t.AssetID) == "" || strings.TrimSpace(t.Symbol) == "" {
 			continue
 		}
 		out = append(out, Token{
-			AssetID:    t.AssetId,
+			AssetID:    t.AssetID,
 			Symbol:     t.Symbol,
 			Blockchain: t.Blockchain,
 			Decimals:   int(t.Decimals),
-			Price:      float64(t.Price),
+			Price:      t.Price,
 		})
 	}
 	sort.Slice(out, func(i, j int) bool {
@@ -151,69 +168,125 @@ func (c *Client) Quote(ctx context.Context, req QuoteRequest) (Quote, error) {
 
 	// Dry is always true here. A wet quote would issue a deposit address,
 	// and this build has no path that could fund it.
-	res, _, err := c.api.OneClickAPI.GetQuote(ctx).QuoteRequest(sdk.QuoteRequest{
-		Dry:               true,
-		SwapType:          "EXACT_INPUT",
-		SlippageTolerance: float32(req.SlippageBps),
-		OriginAsset:       req.OriginAsset,
-		DepositType:       "ORIGIN_CHAIN",
-		DestinationAsset:  req.DestinationAsset,
-		Amount:            req.Amount,
-		RefundTo:          req.RefundTo,
-		RefundType:        "ORIGIN_CHAIN",
-		Recipient:         req.Recipient,
-		RecipientType:     "DESTINATION_CHAIN",
-		Deadline:          req.Deadline,
-	}).Execute()
-	if err != nil {
-		return Quote{}, apiError(err)
+	body := map[string]any{
+		"dry":               true,
+		"swapType":          "EXACT_INPUT",
+		"slippageTolerance": req.SlippageBps,
+		"originAsset":       req.OriginAsset,
+		"depositType":       "ORIGIN_CHAIN",
+		"destinationAsset":  req.DestinationAsset,
+		"amount":            req.Amount,
+		"refundTo":          req.RefundTo,
+		"refundType":        "ORIGIN_CHAIN",
+		"recipient":         req.Recipient,
+		"recipientType":     "DESTINATION_CHAIN",
+		"deadline":          req.Deadline,
 	}
-	if res == nil {
-		return Quote{}, errors.New("1Click returned no quote")
+	var res wireQuoteResponse
+	if err := c.post(ctx, "/v0/quote", body, &res); err != nil {
+		return Quote{}, err
 	}
-	q := res.Quote
 	out := Quote{
-		DepositAddress: stringOf(q.DepositAddress),
-		DepositMemo:    stringOf(q.DepositMemo),
-		AmountIn:       q.AmountIn,
-		AmountInText:   q.AmountInFormatted,
-		AmountInUSD:    q.AmountInUsd,
-		MinAmountIn:    q.MinAmountIn,
-		AmountOut:      q.AmountOut,
-		AmountOutText:  q.AmountOutFormatted,
-		AmountOutUSD:   q.AmountOutUsd,
-		MinAmountOut:   q.MinAmountOut,
-		TimeEstimate:   int(q.TimeEstimate),
-		CorrelationID:  res.CorrelationId,
+		DepositAddress: res.Quote.DepositAddress,
+		DepositMemo:    res.Quote.DepositMemo,
+		AmountIn:       res.Quote.AmountIn,
+		AmountInText:   res.Quote.AmountInFormatted,
+		AmountInUSD:    res.Quote.AmountInUsd,
+		MinAmountIn:    res.Quote.MinAmountIn,
+		AmountOut:      res.Quote.AmountOut,
+		AmountOutText:  res.Quote.AmountOutFormatted,
+		AmountOutUSD:   res.Quote.AmountOutUsd,
+		MinAmountOut:   res.Quote.MinAmountOut,
+		TimeEstimate:   int(res.Quote.TimeEstimate),
+		CorrelationID:  res.CorrelationID,
 		Signature:      res.Signature,
 		Request:        req,
 	}
-	if q.Deadline != nil {
-		out.Deadline = *q.Deadline
+	if res.Quote.Deadline != nil {
+		out.Deadline = *res.Quote.Deadline
 	}
 	return out, nil
 }
 
-// apiError keeps 1Click's own message, which says which asset or address it
-// did not like, instead of only the HTTP status.
-func apiError(err error) error {
-	var apiErr *sdk.GenericOpenAPIError
-	if errors.As(err, &apiErr) {
-		var body struct {
-			Message string `json:"message"`
-		}
-		if json.Unmarshal(apiErr.Body(), &body) == nil && body.Message != "" {
-			return fmt.Errorf("1Click: %s", body.Message)
-		}
-	}
-	return fmt.Errorf("1Click: %w", err)
+// wireQuoteResponse is the part of a quote answer this client reads. See
+// wireToken for why the rest of the answer stays unnamed.
+type wireQuoteResponse struct {
+	CorrelationID string    `json:"correlationId"`
+	Signature     string    `json:"signature"`
+	Quote         wireQuote `json:"quote"`
 }
 
-func stringOf(s *string) string {
-	if s == nil {
-		return ""
+type wireQuote struct {
+	DepositAddress     string     `json:"depositAddress"`
+	DepositMemo        string     `json:"depositMemo"`
+	AmountIn           string     `json:"amountIn"`
+	AmountInFormatted  string     `json:"amountInFormatted"`
+	AmountInUsd        string     `json:"amountInUsd"`
+	MinAmountIn        string     `json:"minAmountIn"`
+	AmountOut          string     `json:"amountOut"`
+	AmountOutFormatted string     `json:"amountOutFormatted"`
+	AmountOutUsd       string     `json:"amountOutUsd"`
+	MinAmountOut       string     `json:"minAmountOut"`
+	Deadline           *time.Time `json:"deadline"`
+	TimeEstimate       float64    `json:"timeEstimate"`
+}
+
+// get fetches path and decodes the JSON answer into out.
+func (c *Client) get(ctx context.Context, path string, out any) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+path, nil)
+	if err != nil {
+		return err
 	}
-	return *s
+	return c.do(req, out)
+}
+
+// post sends body as JSON and decodes the answer into out.
+func (c *Client) post(ctx context.Context, path string, body, out any) error {
+	encoded, err := json.Marshal(body)
+	if err != nil {
+		return err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+path, bytes.NewReader(encoded))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	return c.do(req, out)
+}
+
+// do sends the request, keeps 1Click's own error message, and decodes a
+// successful answer into out.
+func (c *Client) do(req *http.Request, out any) error {
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("User-Agent", "lintel")
+	res, err := c.http.Do(req)
+	if err != nil {
+		return err
+	}
+	defer res.Body.Close()
+	data, err := io.ReadAll(io.LimitReader(res.Body, 4<<20))
+	if err != nil {
+		return err
+	}
+	if res.StatusCode >= 300 {
+		return apiError(res.StatusCode, data)
+	}
+	if err := json.Unmarshal(data, out); err != nil {
+		return fmt.Errorf("1Click: %w", err)
+	}
+	return nil
+}
+
+// apiError keeps 1Click's own message, which says which asset or address it
+// did not like, instead of only the HTTP status.
+func apiError(status int, body []byte) error {
+	var wire struct {
+		Message string `json:"message"`
+	}
+	if json.Unmarshal(body, &wire) == nil && wire.Message != "" {
+		return fmt.Errorf("1Click: %s", wire.Message)
+	}
+	return fmt.Errorf("1Click: HTTP %d", status)
 }
 
 // positiveInteger reports whether s is a whole decimal number above zero,
