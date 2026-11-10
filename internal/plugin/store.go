@@ -13,6 +13,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/egoist/mygo"
 )
 
 // ErrBrokenManifest is the error a folder gets when its plugin.json cannot
@@ -186,10 +188,30 @@ func verifyInstall(dir string, inst *Installed) error {
 	return nil
 }
 
+// ErrPackageChanged means the staged copy no longer matches the digest the
+// caller checked. Install refuses it instead of renaming it into place.
+var ErrPackageChanged = errors.New("the app's files changed after the permission prompt")
+
+// beforeInstallRename runs immediately before the staged digest is checked
+// and the folder is renamed into the store. It is nil in production; tests
+// use it to change the staged tree after the copy.
+var beforeInstallRename func(staged string)
+
 // Install copies the plugin in src into the store and enables it. A local
 // folder is unsigned — it has no registry entry to check it against — and
 // the shell marks such a plugin wherever it draws it.
 func (s *Store) Install(src string) (Manifest, error) {
+	return s.InstallFrom(src, "", "")
+}
+
+// InstallFrom is Install with the source kind and the digest of the tree the
+// caller already approved. via is "folder" or "zip"; an empty via keeps the
+// old path guess. A non-empty digest is compared to the staged copy
+// immediately before that copy is renamed into the store.
+func (s *Store) InstallFrom(src, via, digest string) (Manifest, error) {
+	if err := rejectSymlinkRoot(src); err != nil {
+		return Manifest{}, err
+	}
 	m, err := LoadManifest(src)
 	if err != nil {
 		return Manifest{}, err
@@ -220,16 +242,44 @@ func (s *Store) Install(src string) (Manifest, error) {
 	if err := m.ValidateDir(tmp); err != nil {
 		return Manifest{}, err
 	}
+	// 同 id 的旧目录可能已被破损清理删除，但钥匙串仍残留旧凭据；
+	// 新安装从空设置开始，不能静默继承。
+	if s.secrets != nil {
+		for _, field := range m.Settings {
+			if !field.Secret {
+				continue
+			}
+			if err := s.secrets.Delete(secretKey(m.ID, field.Key)); err != nil && !errors.Is(err, fs.ErrNotExist) && !errors.Is(err, mygo.ErrSecretNotFound) {
+				return Manifest{}, err
+			}
+		}
+	}
 	if err := saveState(tmp, state{Enabled: true}); err != nil {
 		return Manifest{}, err
 	}
-	via := "folder"
-	if filepath.Dir(filepath.Clean(src)) == filepath.Clean(s.dir) && strings.HasPrefix(filepath.Base(src), ".local-") {
-		via = "zip"
+	if via == "" {
+		via = "folder"
+		if filepath.Dir(filepath.Clean(src)) == filepath.Clean(s.dir) && strings.HasPrefix(filepath.Base(src), ".local-") {
+			via = "zip"
+		}
 	}
 	info := installInfo{InstalledVia: via}
 	if err := saveInstallInfo(tmp, info); err != nil {
 		return Manifest{}, err
+	}
+	// The staged tree can still change after it was copied. Check it on the
+	// way into the store, with nothing but the rename after the digest.
+	if beforeInstallRename != nil {
+		beforeInstallRename(tmp)
+	}
+	if digest != "" {
+		got, err := DigestDir(tmp)
+		if err != nil {
+			return Manifest{}, err
+		}
+		if got != digest {
+			return Manifest{}, ErrPackageChanged
+		}
 	}
 	if err := os.Rename(tmp, dest); err != nil {
 		return Manifest{}, err
@@ -243,12 +293,43 @@ func (s *Store) Install(src string) (Manifest, error) {
 
 // RemoveAt deletes one folder the store lists, including a folder whose
 // manifest cannot be read. The folder must sit directly under the store.
+// A readable manifest still lets the declared secrets be cleaned first.
 func (s *Store) RemoveAt(dir string) error {
 	clean := filepath.Clean(dir)
 	if filepath.Dir(clean) != filepath.Clean(s.dir) {
 		return errors.New("not a plugin folder of this store")
 	}
-	return os.RemoveAll(clean)
+	info, err := os.Lstat(clean)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return managementError("REMOVE_FAILED", "无法读取应用目录", 500)
+	}
+	if info.Mode()&fs.ModeSymlink != 0 {
+		return managementError("INVALID_PLUGIN_DIR", "应用目录不能是符号链接", 400)
+	}
+	id := filepath.Base(clean)
+	if m, err := LoadManifest(clean); err == nil && s.secrets != nil {
+		for _, field := range m.Settings {
+			if !field.Secret {
+				continue
+			}
+			if err := s.secrets.Delete(secretKey(id, field.Key)); err != nil && !errors.Is(err, fs.ErrNotExist) && !errors.Is(err, mygo.ErrSecretNotFound) {
+				return managementError("REMOVE_FAILED", "无法删除应用凭据，请重试卸载", 500)
+			}
+		}
+	}
+	if os.RemoveAll(clean) != nil {
+		return managementError("REMOVE_FAILED", "无法删除应用目录", 500)
+	}
+	// 与 remove 一样丢掉来源记录。破损目录删掉后若留下 provenance:<id>，
+	// 同一 id 的后续安装会被旧摘要挡住。
+	if validatePluginID(id) == nil {
+		s.forgetSeenHash(id)
+		return s.reportProvenanceDelete(id)
+	}
+	return nil
 }
 
 // Remove deletes the plugin's folder and the secrets of its settings.
@@ -271,11 +352,15 @@ func (s *Store) remove(id string) error {
 	lock := kv.fileLock()
 	lock.Lock()
 	defer lock.Unlock()
-	if _, err := os.Lstat(dir); errors.Is(err, fs.ErrNotExist) {
+	info, err := os.Lstat(dir)
+	if errors.Is(err, fs.ErrNotExist) {
 		s.forgetSeenHash(id)
 		return s.reportProvenanceDelete(id)
 	} else if err != nil {
 		return managementError("REMOVE_FAILED", "无法读取应用目录", 500)
+	}
+	if info.Mode()&fs.ModeSymlink != 0 {
+		return managementError("INVALID_PLUGIN_DIR", "应用目录不能是符号链接", 400)
 	}
 	m, err := LoadManifest(dir)
 	if err != nil {
@@ -284,7 +369,7 @@ func (s *Store) remove(id string) error {
 	if s.secrets != nil {
 		for _, field := range m.Settings {
 			if field.Secret {
-				if err := s.secrets.Delete(secretKey(id, field.Key)); err != nil && !errors.Is(err, fs.ErrNotExist) {
+				if err := s.secrets.Delete(secretKey(id, field.Key)); err != nil && !errors.Is(err, fs.ErrNotExist) && !errors.Is(err, mygo.ErrSecretNotFound) {
 					return managementError("REMOVE_FAILED", "无法删除应用凭据，请重试卸载", 500)
 				}
 			}
@@ -394,6 +479,35 @@ func saveState(dir string, st state) error {
 	}
 	data = append(data, '\n')
 	return writeFileAtomic(filepath.Join(dir, "state.json"), data, 0o600)
+}
+
+// FreezeDir copies src into a new temporary directory. Callers install from
+// the copy after they have checked it, so a later edit to src is not what
+// gets installed. The caller removes the directory.
+func FreezeDir(src string) (string, error) {
+	if err := rejectSymlinkRoot(src); err != nil {
+		return "", err
+	}
+	dst, err := os.MkdirTemp("", "lintel-install-*")
+	if err != nil {
+		return "", err
+	}
+	if err := copyTree(src, dst); err != nil {
+		_ = os.RemoveAll(dst)
+		return "", err
+	}
+	return dst, nil
+}
+
+func rejectSymlinkRoot(dir string) error {
+	info, err := os.Lstat(dir)
+	if err != nil {
+		return err
+	}
+	if info.Mode()&fs.ModeSymlink != 0 {
+		return errors.New("the app folder cannot be a symlink")
+	}
+	return nil
 }
 
 // copyTree copies src into dst, refusing symlinks and bounding what one

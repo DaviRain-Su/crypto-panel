@@ -348,7 +348,7 @@ agent 在活跃等待时查询间隔不短于两秒，离开 pending 即按结�
 
 ### 10.6 设置
 
-请求形状为 `{"values":{"label":"我的池子","apiKey":"<经私密渠道提供的值>"}}`。values 是部分更新：缺省键保持原值；普通空字符串设为空；secret 空字符串明确清除已存凭据。
+请求形状为 `{"values":{"label":"我的池子","apiKey":"<经私密渠道提供的值>"}}`。values 是部分更新：缺省键保持原值；普通空字符串设为空；secret 空字符串明确清除已存凭据。显式 JSON `null`（`{"values":{"apiKey":null}}`）解码成空字符串，和传 `""` 一样会清空该 secret，不表示「不修改」。
 
 所有键先完整验证，再开始写入：未声明键、非字符串、重复键或超限导致整个请求拒绝且无写入。每个值最多 8192 字节，正文最多 1 MiB。secret 写入既有系统凭据存储；不可用时明确失败，不能回落到明文文件。
 
@@ -386,7 +386,7 @@ API 上下文同时拒绝 `host.requestSign` 和 `host.requestNearSign`，在进
 HTTP 错误保留原来的字符串 error 字段，补充稳定 code；需要时增加只含字段位置的 details。示例：
 
 ```json
-{"error":"已安装内容发生变化，请重新读取后提议更新","code":"BASE_CHANGED"}
+{"error":"The installed app's content or state changed; read it again and propose.","code":"BASE_CHANGED"}
 ```
 
 | 状态码 | 使用范围 |

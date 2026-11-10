@@ -236,6 +236,60 @@ func TestVerifySignatureRejectsNonP256(t *testing.T) {
 	}
 }
 
+func TestRegistrationRejectsCrossOrigin(t *testing.T) {
+	auth := newTestAuthenticator(t)
+	challenge := bytes.Repeat([]byte{0x21}, 32)
+	clientData, attestation, err := auth.Register(challenge)
+	if err != nil {
+		t.Fatal(err)
+	}
+	crossOrigin := bytes.Replace(clientData, []byte(`"crossOrigin":false`), []byte(`"crossOrigin":true`), 1)
+	if bytes.Equal(crossOrigin, clientData) {
+		t.Fatal("the client data has no crossOrigin field to flip")
+	}
+	_, err = ParseRegistration(crossOrigin, attestation, challenge, testOrigin, testRPID)
+	if err == nil {
+		t.Fatal("registration accepted a cross-origin ceremony")
+	}
+	if !strings.Contains(err.Error(), "cross-origin") {
+		t.Fatalf("err = %v", err)
+	}
+	// Without the field at all the ceremony still registers.
+	absent := bytes.Replace(clientData, []byte(`,"crossOrigin":false`), nil, 1)
+	if bytes.Equal(absent, clientData) {
+		t.Fatal("the client data has no crossOrigin field to remove")
+	}
+	if _, err := ParseRegistration(absent, attestation, challenge, testOrigin, testRPID); err != nil {
+		t.Fatalf("registration rejected an absent crossOrigin: %v", err)
+	}
+}
+
+func TestAssertionRejectsCrossOrigin(t *testing.T) {
+	auth := newTestAuthenticator(t)
+	challenge := bytes.Repeat([]byte{0x22}, 32)
+	assertion, err := auth.Assert(challenge)
+	if err != nil {
+		t.Fatal(err)
+	}
+	crossOrigin := bytes.Replace(assertion.ClientDataJSON, []byte(`"crossOrigin":false`), []byte(`"crossOrigin":true`), 1)
+	if bytes.Equal(crossOrigin, assertion.ClientDataJSON) {
+		t.Fatal("the client data has no crossOrigin field to flip")
+	}
+	tampered := assertion
+	tampered.ClientDataJSON = crossOrigin
+	err = tampered.Verify(auth.Credential(), challenge, testOrigin, testRPID)
+	if err == nil {
+		t.Fatal("verify accepted a cross-origin ceremony")
+	}
+	if !strings.Contains(err.Error(), "cross-origin") {
+		t.Fatalf("err = %v", err)
+	}
+	// The untouched ceremony, with crossOrigin false, still verifies.
+	if err := assertion.Verify(auth.Credential(), challenge, testOrigin, testRPID); err != nil {
+		t.Fatalf("verify rejected a same-origin ceremony: %v", err)
+	}
+}
+
 func TestClientDataOriginIsChecked(t *testing.T) {
 	auth := newTestAuthenticator(t)
 	assertion, err := auth.Assert(bytes.Repeat([]byte{3}, 32))

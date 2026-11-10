@@ -163,20 +163,21 @@ type App struct {
 	// plugins is the installed plugins folder. The rest is the manager's
 	// state: the list last read, one runtime and one log per plugin, the
 	// switch and form values the view binds to, and the page it shows.
-	plugins            *plugin.Store
-	pluginManager      *plugin.Manager
-	coding             codingState
-	pluginItems        []plugin.Installed
-	pluginRunners      map[string]*plugin.Runner
-	pluginRunnerHashes map[string]string
-	pluginLogs         map[string]*plugin.LogBuffer
-	pluginEnabled      map[string]*bool
-	pluginDrafts       map[string]*string
-	pluginLogsOpen     map[string]bool
-	pluginNotice       string
-	provenanceLocked   []plugin.Installed
-	pluginView         pluginPageState
-	pluginGen          int
+	plugins             *plugin.Store
+	pluginManager       *plugin.Manager
+	coding              codingState
+	pluginItems         []plugin.Installed
+	pluginRunners       map[string]*plugin.Runner
+	pluginRunnerHashes  map[string]string
+	pluginLogs          map[string]*plugin.LogBuffer
+	pluginEnabled       map[string]*bool
+	pluginDrafts        map[string]*string
+	pluginSettingStatus map[string][]plugin.SettingStatus
+	pluginLogsOpen      map[string]bool
+	pluginNotice        string
+	provenanceLocked    []plugin.Installed
+	pluginView          pluginPageState
+	pluginGen           int
 
 	// 安装后验证只保存当前进程中的安全元数据，不复用普通页面的签名能力。
 	installationVerifications        map[string]*installationVerification
@@ -546,6 +547,9 @@ func (a *App) setNetwork(id string) {
 		return
 	}
 	a.settings.NetworkID = id
+	// A connection is for the network that was current. A NEAR testnet
+	// approval must not silently become a mainnet connection.
+	a.dappConnected = map[string]bool{}
 	a.settings.RPCURL = ""
 	a.rpcDraft = ""
 	a.settings = a.settings.Validate()

@@ -16,7 +16,8 @@ func TestRPCFamilyAllowlistAndDefaultDeny(t *testing.T) {
 		{"eip155:8453", "eth_gasPrice", true}, {"eip155:1", "eth_blockNumber", true},
 		{"near:testnet", "query", true}, {"near:mainnet", "block", true},
 		{"eip155:1", "eth_sign", false}, {"eip155:1", "eth_sendRawTransaction", false},
-		{"near:testnet", "broadcast_tx_commit", false}, {"near:testnet", "eth_gasPrice", false},
+		{"near:testnet", "broadcast_tx_commit", false}, {"near:testnet", "tx", false},
+		{"near:testnet", "eth_gasPrice", false},
 		{"eip155:1", "query", false}, {"eip155:1", "wallet_switchEthereumChain", false},
 		{"eip155:1", "brandNewUnknownMethod", false}, {"eip155:1", "ETH_GASPRICE", false},
 	} {

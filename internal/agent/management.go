@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/davirain-su/lintel/internal/i18n"
 	"github.com/davirain-su/lintel/internal/plugin"
 )
 
@@ -36,7 +37,7 @@ func (s *Server) managed(w http.ResponseWriter) (Management, *plugin.Manager) {
 			return data, manager
 		}
 	}
-	writeCodeError(w, http.StatusServiceUnavailable, "MANAGEMENT_UNAVAILABLE", "此宿主尚未启用应用管理")
+	writeCodeError(w, http.StatusServiceUnavailable, "MANAGEMENT_UNAVAILABLE", "this host has not enabled app management")
 	return nil, nil
 }
 
@@ -52,7 +53,7 @@ func (s *Server) example(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	pkg, hash, err := plugin.OfficialPackage(id)
 	if err != nil {
-		writeCodeError(w, http.StatusNotFound, "EXAMPLE_NOT_FOUND", "没有这个官方模板")
+		writeCodeError(w, http.StatusNotFound, "EXAMPLE_NOT_FOUND", "no such official example")
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"id": id, "package": pkg, "packageHash": hash})
@@ -61,21 +62,21 @@ func (s *Server) example(w http.ResponseWriter, r *http.Request) {
 func decodeRequest(w http.ResponseWriter, r *http.Request, limit int64, out any) bool {
 	media, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
 	if err != nil || media != "application/json" {
-		writeCodeError(w, http.StatusUnsupportedMediaType, "JSON_REQUIRED", "请求必须使用 application/json")
+		writeCodeError(w, http.StatusUnsupportedMediaType, "JSON_REQUIRED", "the request must use application/json")
 		return false
 	}
 	data, err := io.ReadAll(http.MaxBytesReader(w, r.Body, limit))
 	if err != nil {
 		var tooLarge *http.MaxBytesError
 		if errors.As(err, &tooLarge) {
-			writeCodeError(w, http.StatusRequestEntityTooLarge, "REQUEST_TOO_LARGE", "请求正文超限")
+			writeCodeError(w, http.StatusRequestEntityTooLarge, "REQUEST_TOO_LARGE", "the request body is too large")
 		} else {
-			writeCodeError(w, http.StatusBadRequest, "INVALID_JSON", "无法读取请求正文")
+			writeCodeError(w, http.StatusBadRequest, "INVALID_JSON", "the request body could not be read")
 		}
 		return false
 	}
 	if err := plugin.DecodeJSON(data, out); err != nil {
-		writeCodeError(w, http.StatusBadRequest, "INVALID_JSON", "请求包含非法、未知、重复字段或尾随 JSON")
+		writeCodeError(w, http.StatusBadRequest, "INVALID_JSON", "the request contains invalid, unknown or duplicate fields, or trailing JSON")
 		return false
 	}
 	return true
@@ -117,7 +118,7 @@ func (s *Server) propose(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodPut {
 		operation = "update"
 	} else if req.ExpectedHash != "" {
-		writeCodeError(w, http.StatusBadRequest, "INVALID_BASE", "新安装不接受更新基线")
+		writeCodeError(w, http.StatusBadRequest, "INVALID_BASE", "a new installation does not accept an update baseline")
 		return
 	}
 	job, err := manager.Propose(req.Source, operation, id, req.ExpectedHash, "local-api")
@@ -131,6 +132,10 @@ func (s *Server) propose(w http.ResponseWriter, r *http.Request) {
 }
 
 func writeInstallation(w http.ResponseWriter, status int, job plugin.Installation) {
+	// 安装记录里的错误文案按码换成 API 的英文，不把插件层内部文本带出去。
+	if key, ok := i18n.PluginErrorKey(job.Code); ok {
+		job.Error = i18n.T(i18n.English, key)
+	}
 	writeJSON(w, status, struct {
 		plugin.Installation
 		StatusURL string `json:"statusUrl"`
@@ -175,7 +180,7 @@ func (s *Server) settings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if req.Values == nil {
-		writeCodeError(w, http.StatusBadRequest, "VALUES_REQUIRED", "需要 values 对象")
+		writeCodeError(w, http.StatusBadRequest, "VALUES_REQUIRED", "a values object is required")
 		return
 	}
 	id := r.PathValue("id")
@@ -236,25 +241,29 @@ func writeManagementError(w http.ResponseWriter, err error) {
 		if status == http.StatusTooManyRequests {
 			w.Header().Set("Retry-After", "2")
 		}
+		if key, ok := i18n.PluginErrorKey(known.Code); ok {
+			writeCodeError(w, status, known.Code, i18n.T(i18n.English, key))
+			return
+		}
 		writeCodeError(w, status, known.Code, known.Message)
 		return
 	}
 	var partial *plugin.SettingsWriteError
 	if errors.As(err, &partial) {
 		writeJSON(w, http.StatusInternalServerError, map[string]any{
-			"error": "部分设置未能写入，请检查配置状态", "code": "SETTINGS_WRITE_FAILED",
+			"error": "some settings could not be written; check their status", "code": "SETTINGS_WRITE_FAILED",
 			"appliedKeys": partial.AppliedKeys, "failedKeys": partial.FailedKeys,
 		})
 		return
 	}
 	switch {
 	case errors.Is(err, plugin.ErrNotInstalled), errors.Is(err, ErrNotFound):
-		writeCodeError(w, http.StatusNotFound, "APP_NOT_FOUND", "应用不存在")
+		writeCodeError(w, http.StatusNotFound, "APP_NOT_FOUND", "no such app")
 	case errors.Is(err, ErrDisabled), errors.Is(err, ErrNoPages):
-		writeCodeError(w, http.StatusConflict, "APP_UNAVAILABLE", "应用已禁用或没有可用页面")
+		writeCodeError(w, http.StatusConflict, "APP_UNAVAILABLE", "the app is disabled or has no available page")
 	default:
 		// 运行时或上游异常可能含有应用读过的凭据，不能原样回传。
-		writeCodeError(w, http.StatusBadGateway, "APP_EXECUTION_FAILED", "应用执行失败，请在壳中检查状态")
+		writeCodeError(w, http.StatusBadGateway, "APP_EXECUTION_FAILED", "the app failed to execute; check its status in the shell")
 	}
 }
 

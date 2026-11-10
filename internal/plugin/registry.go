@@ -267,6 +267,9 @@ func readLimited(r io.Reader, max int64) ([]byte, error) {
 // manager leaves behind are not part of it, so enabling a plugin or opening
 // its folder does not change what was signed.
 func DigestDir(dir string) (string, error) {
+	if err := rejectSymlinkRoot(dir); err != nil {
+		return "", err
+	}
 	files, err := pluginFiles(dir)
 	if err != nil {
 		return "", err
