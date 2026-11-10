@@ -154,6 +154,7 @@ func (a *App) refreshLoop() {
 		mygo.RunOnMain(func() {
 			a.lockIfIdle()
 			a.requestRefresh()
+			a.updateTray()
 		})
 	}
 }

@@ -423,6 +423,8 @@ const (
 	StorePermStorage     Key = "storePermStorage"
 	StorePermSettings    Key = "storePermSettings"
 	StoreFrom            Key = "storeFrom"
+	TrayOpenApp          Key = "trayOpenApp"
+	TrayRefresh          Key = "trayRefresh"
 	StoreNewPerms        Key = "storeNewPerms"
 	StoreInstallBody     Key = "storeInstallBody"
 	StoreUnsignedWarn    Key = "storeUnsignedWarn"
@@ -920,6 +922,8 @@ var messages = map[Key]map[string]string{
 	StorePermStorage:     {English: "Store %d KB of data", Chinese: "存储 %d KB 数据"},
 	StorePermSettings:    {English: "Settings: %d", Chinese: "设置：%d"},
 	StoreFrom:            {English: "From: %s", Chinese: "来源：%s"},
+	TrayOpenApp:          {English: "Open Lintel", Chinese: "打开 Lintel"},
+	TrayRefresh:          {English: "Refresh data", Chinese: "刷新数据"},
 	StoreNewPerms:        {English: "New permissions: %s", Chinese: "新增权限：%s"},
 	StoreInstallBody:     {English: "Only what is listed here is granted. A plugin never sees your keys.", Chinese: "只授予上面列出的权限。插件永远看不到你的私钥。"},
 	StoreUnsignedWarn:    {English: "This plugin is not signed. Install it only if you trust where it came from.", Chinese: "该插件未签名，只有在你信任来源时才安装。"},

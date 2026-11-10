@@ -260,6 +260,15 @@ type App struct {
 	intentsAccepted      bool
 	intentsNotice        string
 	approveIntents       func(intentsApprovalRequest) bool
+
+	// The menu bar tray: the icon, each enabled app's first stat, and the
+	// signature of the menu the last applyTray drew. All tray state changes
+	// on the main thread. newTray creates the native tray; tests replace it.
+	tray          trayHandle
+	trayGen       int
+	trayEntries   map[string]trayEntry
+	trayLayoutSig string
+	newTray       func(mygo.TrayOptions) (trayHandle, error)
 }
 
 // appUserDataDir, appRunOnMain and appGoAsync are the startup hooks. Tests
@@ -289,6 +298,7 @@ func New() (*App, error) {
 		storeURLDraft:  settings.PluginStoreURL,
 		agentPortDraft: strconv.Itoa(settings.AgentPort),
 		dappConnected:  map[string]bool{},
+		trayEntries:    map[string]trayEntry{},
 	}
 	a.newReader()
 	a.initPlugins(dir)
@@ -349,6 +359,10 @@ func (a *App) Ready() {
 	a.applyLocale()
 	a.registerDappScheme()
 	a.createWindow()
+	a.createTray()
+	// The tray shows values within seconds of launch instead of waiting
+	// for the refresh loop's first tick.
+	a.updateTray()
 	a.startAgent()
 	// The Dock icon, or launching the app again, brings the window back.
 	mygo.App.OnActivate(func(bool) { a.showWindow() })
