@@ -23,7 +23,8 @@ type Page struct {
 }
 
 // Section is one block of a page. A section may hold one of each block,
-// drawn in the order stats, table, cards, links, text, divider, chart.
+// drawn in the order stats, table, cards, links, text, divider, chart,
+// gauge.
 type Section struct {
 	Title   string `json:"title,omitempty"`
 	Stats   []Stat `json:"stats,omitempty"`
@@ -33,12 +34,25 @@ type Section struct {
 	Text    string `json:"text,omitempty"`
 	Divider bool   `json:"divider,omitempty"`
 	Chart   *Chart `json:"chart,omitempty"`
+	Gauge   *Gauge `json:"gauge,omitempty"`
 }
 
-// Stat is a labelled number.
+// Stat is a labelled number. Trend says where the number is heading —
+// "up" or "down"; the shell colors it — and Sparkline is the shape behind
+// the number, oldest first, drawn without axes.
 type Stat struct {
-	Label string `json:"label"`
-	Value string `json:"value"`
+	Label     string    `json:"label"`
+	Value     string    `json:"value"`
+	Trend     string    `json:"trend,omitempty"`
+	Sparkline []float64 `json:"sparkline,omitempty"`
+}
+
+// Gauge is one reading against its scale, from empty at 0 to full at 100.
+// Text is the short reading beside the label, "62%" or "healthy".
+type Gauge struct {
+	Label string  `json:"label,omitempty"`
+	Value float64 `json:"value"`
+	Text  string  `json:"text,omitempty"`
 }
 
 // Table is a grid of plain text.
@@ -87,6 +101,9 @@ const (
 	maxCards     = 32
 	maxLinks     = 16
 	maxPoints    = 60
+	// maxSparkline caps the shape behind one stat: enough to see a week's
+	// hourly readings, small enough that a stat card stays a stat card.
+	maxSparkline = 32
 )
 
 var linkPage = regexp.MustCompile(`^[a-z][a-z0-9-]{0,31}$`)
@@ -154,6 +171,14 @@ func (s Section) validate() error {
 		if err := checkText("stat value", st.Value, 80); err != nil {
 			return err
 		}
+		switch st.Trend {
+		case "", "up", "down":
+		default:
+			return fmt.Errorf("stat trend %q is neither up nor down", st.Trend)
+		}
+		if len(st.Sparkline) > maxSparkline {
+			return fmt.Errorf("more than %d sparkline points", maxSparkline)
+		}
 	}
 	if s.Table != nil {
 		if err := s.Table.validate(); err != nil {
@@ -191,6 +216,17 @@ func (s Section) validate() error {
 	if s.Chart != nil {
 		if err := s.Chart.validate(); err != nil {
 			return err
+		}
+	}
+	if s.Gauge != nil {
+		if err := checkText("gauge label", s.Gauge.Label, 40); err != nil {
+			return err
+		}
+		if err := checkText("gauge text", s.Gauge.Text, 20); err != nil {
+			return err
+		}
+		if s.Gauge.Value < 0 || s.Gauge.Value > 100 {
+			return fmt.Errorf("gauge value %g is outside 0 to 100", s.Gauge.Value)
 		}
 	}
 	return nil
