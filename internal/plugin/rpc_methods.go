@@ -13,7 +13,9 @@ var rpcQueryMethods = map[string][]string{
 		"eth_getLogs", "eth_getProof", "eth_syncing", "net_version",
 	},
 	"near": {
-		// "tx" 是 broadcast_tx_commit 的别名，会提交交易，绝不列入。
+		// nearcore 里 "tx" 与 "EXPERIMENTAL_tx_status" 共用 tx_status_common 这一个查询处理器。
+		// "tx" 不是 broadcast_tx_commit 的别名；带 signed_tx_base64 时只做校验、不进交易池。
+		// 仍不把 "tx" 暴露给插件，状态查询继续用 EXPERIMENTAL_tx_status。
 		"status", "query", "block", "chunk", "gas_price", "validators",
 		"EXPERIMENTAL_protocol_config", "EXPERIMENTAL_changes", "EXPERIMENTAL_changes_in_block",
 		"EXPERIMENTAL_tx_status", "light_client_proof", "next_light_client_block",

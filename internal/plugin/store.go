@@ -287,6 +287,12 @@ func (s *Store) RemoveAt(dir string) error {
 	if os.RemoveAll(clean) != nil {
 		return managementError("REMOVE_FAILED", "无法删除应用目录", 500)
 	}
+	// 与 remove 一样丢掉来源记录。破损目录删掉后若留下 provenance:<id>，
+	// 同一 id 的后续安装会被旧摘要挡住。
+	if validatePluginID(id) == nil {
+		s.forgetSeenHash(id)
+		return s.reportProvenanceDelete(id)
+	}
 	return nil
 }
 

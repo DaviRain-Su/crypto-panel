@@ -377,53 +377,56 @@ const (
 
 	CreatorCustomAgent Key = "creatorCustomAgent"
 
-	PluginErrAppBusy                Key = "pluginErrAppBusy"
-	PluginErrBroken                 Key = "pluginErrBroken"
-	PluginErrInvalidID              Key = "pluginErrInvalidID"
-	PluginErrManagerClosed          Key = "pluginErrManagerClosed"
-	PluginErrNotFound               Key = "pluginErrNotFound"
-	PluginErrStoreUnavailable       Key = "pluginErrStoreUnavailable"
-	PluginErrCandidateConflict      Key = "pluginErrCandidateConflict"
-	PluginErrExpectedHashRequired   Key = "pluginErrExpectedHashRequired"
-	PluginErrInvalidExpectedHash    Key = "pluginErrInvalidExpectedHash"
-	PluginErrInstallationFailed     Key = "pluginErrInstallationFailed"
-	PluginErrInstallationNotFound   Key = "pluginErrInstallationNotFound"
-	PluginErrInstallationNotPending Key = "pluginErrInstallationNotPending"
-	PluginErrInvalidOperation       Key = "pluginErrInvalidOperation"
-	PluginErrInvalidStore           Key = "pluginErrInvalidStore"
-	PluginErrInvalidVia             Key = "pluginErrInvalidVia"
-	PluginErrPersonalNamespace      Key = "pluginErrPersonalNamespace"
-	PluginErrIDMismatch             Key = "pluginErrIDMismatch"
-	PluginErrProposalCancelled      Key = "pluginErrProposalCancelled"
-	PluginErrQueueFull              Key = "pluginErrQueueFull"
-	PluginErrSettingsWriteFailed    Key = "pluginErrSettingsWriteFailed"
-	PluginErrRequestID              Key = "pluginErrRequestID"
-	PluginErrTargetRequired         Key = "pluginErrTargetRequired"
-	PluginErrValidationFailed       Key = "pluginErrValidationFailed"
-	PluginErrSettingsTooLarge       Key = "pluginErrSettingsTooLarge"
-	PluginErrSettingTooLarge        Key = "pluginErrSettingTooLarge"
-	PluginErrSettingsUnavailable    Key = "pluginErrSettingsUnavailable"
-	PluginErrUndeclaredSetting      Key = "pluginErrUndeclaredSetting"
-	PluginErrInvalidDir             Key = "pluginErrInvalidDir"
-	PluginErrRemoveFailed           Key = "pluginErrRemoveFailed"
-	PluginErrBaseChanged            Key = "pluginErrBaseChanged"
-	PluginErrCandidateChanged       Key = "pluginErrCandidateChanged"
-	PluginErrCredentialsUnavailable Key = "pluginErrCredentialsUnavailable"
-	PluginErrExists                 Key = "pluginErrExists"
-	PluginErrRecoveryFailed         Key = "pluginErrRecoveryFailed"
-	PluginErrRecoveryRequired       Key = "pluginErrRecoveryRequired"
-	PluginErrSettingsMigration      Key = "pluginErrSettingsMigration"
-	PluginErrSourceNotAllowed       Key = "pluginErrSourceNotAllowed"
-	PluginErrStorageQuota           Key = "pluginErrStorageQuota"
-	PluginErrVersionConflict        Key = "pluginErrVersionConflict"
-	PluginErrExampleNotFound        Key = "pluginErrExampleNotFound"
-	PluginErrExampleUnavailable     Key = "pluginErrExampleUnavailable"
-	PluginErrHashUnavailable        Key = "pluginErrHashUnavailable"
-	PluginErrInvalidSource          Key = "pluginErrInvalidSource"
-	PluginErrPackageTooLarge        Key = "pluginErrPackageTooLarge"
-	PluginErrSourceNotFound         Key = "pluginErrSourceNotFound"
-	PluginErrSourceUnavailable      Key = "pluginErrSourceUnavailable"
-	PluginErrSourceUnreadable       Key = "pluginErrSourceUnreadable"
+	PluginErrAppBusy                     Key = "pluginErrAppBusy"
+	PluginErrBroken                      Key = "pluginErrBroken"
+	PluginErrInvalidID                   Key = "pluginErrInvalidID"
+	PluginErrManagerClosed               Key = "pluginErrManagerClosed"
+	PluginErrNotFound                    Key = "pluginErrNotFound"
+	PluginErrStoreUnavailable            Key = "pluginErrStoreUnavailable"
+	PluginErrCandidateConflict           Key = "pluginErrCandidateConflict"
+	PluginErrExpectedHashRequired        Key = "pluginErrExpectedHashRequired"
+	PluginErrInvalidExpectedHash         Key = "pluginErrInvalidExpectedHash"
+	PluginErrInstallationFailed          Key = "pluginErrInstallationFailed"
+	PluginErrInstallationNotFound        Key = "pluginErrInstallationNotFound"
+	PluginErrInstallationNotPending      Key = "pluginErrInstallationNotPending"
+	PluginErrInvalidOperation            Key = "pluginErrInvalidOperation"
+	PluginErrInvalidStore                Key = "pluginErrInvalidStore"
+	PluginErrInvalidVia                  Key = "pluginErrInvalidVia"
+	PluginErrPersonalNamespace           Key = "pluginErrPersonalNamespace"
+	PluginErrIDMismatch                  Key = "pluginErrIDMismatch"
+	PluginErrProposalCancelled           Key = "pluginErrProposalCancelled"
+	PluginErrQueueFull                   Key = "pluginErrQueueFull"
+	PluginErrSettingsWriteFailed         Key = "pluginErrSettingsWriteFailed"
+	PluginErrRequestID                   Key = "pluginErrRequestID"
+	PluginErrTargetRequired              Key = "pluginErrTargetRequired"
+	PluginErrValidationFailed            Key = "pluginErrValidationFailed"
+	PluginErrSettingsTooLarge            Key = "pluginErrSettingsTooLarge"
+	PluginErrSettingTooLarge             Key = "pluginErrSettingTooLarge"
+	PluginErrSettingsUnavailable         Key = "pluginErrSettingsUnavailable"
+	PluginErrUndeclaredSetting           Key = "pluginErrUndeclaredSetting"
+	PluginErrInvalidDir                  Key = "pluginErrInvalidDir"
+	PluginErrRemoveFailed                Key = "pluginErrRemoveFailed"
+	PluginErrBaseChanged                 Key = "pluginErrBaseChanged"
+	PluginErrCandidateChanged            Key = "pluginErrCandidateChanged"
+	PluginErrCredentialsUnavailable      Key = "pluginErrCredentialsUnavailable"
+	PluginErrExists                      Key = "pluginErrExists"
+	PluginErrRecoveryFailed              Key = "pluginErrRecoveryFailed"
+	PluginErrRecoveryRequired            Key = "pluginErrRecoveryRequired"
+	PluginErrSettingsMigration           Key = "pluginErrSettingsMigration"
+	PluginErrSourceNotAllowed            Key = "pluginErrSourceNotAllowed"
+	PluginErrStorageQuota                Key = "pluginErrStorageQuota"
+	PluginErrVersionConflict             Key = "pluginErrVersionConflict"
+	PluginErrExampleNotFound             Key = "pluginErrExampleNotFound"
+	PluginErrExampleUnavailable          Key = "pluginErrExampleUnavailable"
+	PluginErrHashUnavailable             Key = "pluginErrHashUnavailable"
+	PluginErrInvalidSource               Key = "pluginErrInvalidSource"
+	PluginErrPackageTooLarge             Key = "pluginErrPackageTooLarge"
+	PluginErrSourceNotFound              Key = "pluginErrSourceNotFound"
+	PluginErrSourceUnavailable           Key = "pluginErrSourceUnavailable"
+	PluginErrSourceUnreadable            Key = "pluginErrSourceUnreadable"
+	PluginErrAPIMutationForbidden        Key = "pluginErrAPIMutationForbidden"
+	PluginErrInstallationOriginForbidden Key = "pluginErrInstallationOriginForbidden"
+	PluginErrProvenanceDeleteFailed      Key = "pluginErrProvenanceDeleteFailed"
 
 	VerifyWaitingSettings Key = "verifyWaitingSettings"
 	VerifyRunning         Key = "verifyRunning"
@@ -942,53 +945,56 @@ var messages = map[Key]map[string]string{
 
 	CreatorCustomAgent: {English: "Custom ACP agent", Chinese: "自定义 ACP Agent"},
 
-	PluginErrAppBusy:                {English: "The app is busy; try again shortly.", Chinese: "应用正忙，请稍后重试。"},
-	PluginErrBroken:                 {English: "The app's content or manifest is damaged.", Chinese: "应用内容或清单已损坏。"},
-	PluginErrInvalidID:              {English: "The app id is invalid.", Chinese: "应用 id 无效。"},
-	PluginErrManagerClosed:          {English: "App management is closed.", Chinese: "应用生命周期服务已关闭。"},
-	PluginErrNotFound:               {English: "The app is not installed.", Chinese: "应用未安装。"},
-	PluginErrStoreUnavailable:       {English: "The app folder is unavailable.", Chinese: "应用目录不可用。"},
-	PluginErrCandidateConflict:      {English: "The app already has another pending candidate.", Chinese: "该应用已有其他待处理候选。"},
-	PluginErrExpectedHashRequired:   {English: "An update must include the installed package digest.", Chinese: "更新必须指定已安装包的摘要。"},
-	PluginErrInvalidExpectedHash:    {English: "A new installation cannot carry an update baseline.", Chinese: "新安装不能携带更新基线。"},
-	PluginErrInstallationFailed:     {English: "The installation did not finish; the previous version is kept.", Chinese: "安装未完成，旧版已保留。"},
-	PluginErrInstallationNotFound:   {English: "No such installation task.", Chinese: "安装任务不存在。"},
-	PluginErrInstallationNotPending: {English: "The installation task is no longer pending.", Chinese: "安装任务已不在待确认状态。"},
-	PluginErrInvalidOperation:       {English: "The installation operation is invalid.", Chinese: "安装操作无效。"},
-	PluginErrInvalidStore:           {English: "The app store is unavailable.", Chinese: "应用存储不可用。"},
-	PluginErrInvalidVia:             {English: "The proposal source is invalid.", Chinese: "提议来源无效。"},
-	PluginErrPersonalNamespace:      {English: "Personal apps must use the local.<owner>.<slug> namespace.", Chinese: "个人应用必须使用 local.<owner>.<slug> 命名空间。"},
-	PluginErrIDMismatch:             {English: "The target id does not match the candidate manifest.", Chinese: "目标 id 与候选清单不一致。"},
-	PluginErrProposalCancelled:      {English: "The proposal was cancelled or its source closed; propose again.", Chinese: "提议已取消或来源已关闭，请重新提议。"},
-	PluginErrQueueFull:              {English: "Too many pending operations; try again shortly.", Chinese: "待处理操作过多，请稍后重试。"},
-	PluginErrSettingsWriteFailed:    {English: "The app state could not be saved.", Chinese: "无法保存应用状态。"},
-	PluginErrRequestID:              {English: "The installation task could not be created.", Chinese: "无法创建安装任务。"},
-	PluginErrTargetRequired:         {English: "An update must name the app id.", Chinese: "更新必须指定应用 id。"},
-	PluginErrValidationFailed:       {English: "The candidate app failed validation.", Chinese: "候选应用未通过校验。"},
-	PluginErrSettingsTooLarge:       {English: "The settings batch exceeds the size limit.", Chinese: "设置批次超过大小上限。"},
-	PluginErrSettingTooLarge:        {English: "A setting value exceeds the size limit.", Chinese: "设置值超过大小上限。"},
-	PluginErrSettingsUnavailable:    {English: "The app settings could not be read.", Chinese: "无法读取应用设置。"},
-	PluginErrUndeclaredSetting:      {English: "The request contains an undeclared setting key.", Chinese: "请求包含未声明的设置键。"},
-	PluginErrInvalidDir:             {English: "The app folder cannot be a symlink.", Chinese: "应用目录不能是符号链接。"},
-	PluginErrRemoveFailed:           {English: "The app could not be removed cleanly; try again.", Chinese: "应用未能完整删除，请重试。"},
-	PluginErrBaseChanged:            {English: "The installed app's content or state changed; read it again and propose.", Chinese: "已安装应用的内容或状态已变化，请重新读取后提议。"},
-	PluginErrCandidateChanged:       {English: "The candidate snapshot changed; propose again.", Chinese: "候选快照已改变，请重新提议。"},
-	PluginErrCredentialsUnavailable: {English: "The old credentials could not be checked; the update was not committed.", Chinese: "无法检查旧凭据，更新未提交。"},
-	PluginErrExists:                 {English: "The app id is already installed; propose an update.", Chinese: "应用 id 已安装，请明确提议更新。"},
-	PluginErrRecoveryFailed:         {English: "Installation recovery failed; the previous version or transaction is kept.", Chinese: "安装恢复失败，旧版或事务已保留。"},
-	PluginErrRecoveryRequired:       {English: "The installation transaction needs recovery at startup.", Chinese: "安装事务需要启动恢复核对。"},
-	PluginErrSettingsMigration:      {English: "The update changes settings in a way that needs a migration; clear the affected values first.", Chinese: "更新改变了设置定义，需要先清空受影响的设置值。"},
-	PluginErrSourceNotAllowed:       {English: "Only unsigned personal apps can be updated.", Chinese: "只能更新个人 Unsigned 应用。"},
-	PluginErrStorageQuota:           {English: "The new storage quota is below current usage.", Chinese: "新存储额度低于当前数据占用。"},
-	PluginErrVersionConflict:        {English: "The new version must be higher than the installed version.", Chinese: "新版本必须高于已安装版本。"},
-	PluginErrExampleNotFound:        {English: "No such official example.", Chinese: "官方模板不存在。"},
-	PluginErrExampleUnavailable:     {English: "The official example is unavailable.", Chinese: "官方模板不可用。"},
-	PluginErrHashUnavailable:        {English: "The app digest could not be computed.", Chinese: "无法计算应用摘要。"},
-	PluginErrInvalidSource:          {English: "The app source is invalid.", Chinese: "应用来源无效。"},
-	PluginErrPackageTooLarge:        {English: "The app source exceeds the size or file-count limit.", Chinese: "应用来源超过大小或文件数量上限。"},
-	PluginErrSourceNotFound:         {English: "The app source does not exist.", Chinese: "应用来源不存在。"},
-	PluginErrSourceUnavailable:      {English: "The candidate snapshot could not be created.", Chinese: "无法创建候选快照。"},
-	PluginErrSourceUnreadable:       {English: "The app source could not be read.", Chinese: "无法读取应用来源。"},
+	PluginErrAppBusy:                     {English: "The app is busy; try again shortly.", Chinese: "应用正忙，请稍后重试。"},
+	PluginErrBroken:                      {English: "The app's content or manifest is damaged.", Chinese: "应用内容或清单已损坏。"},
+	PluginErrInvalidID:                   {English: "The app id is invalid.", Chinese: "应用 id 无效。"},
+	PluginErrManagerClosed:               {English: "App management is closed.", Chinese: "应用生命周期服务已关闭。"},
+	PluginErrNotFound:                    {English: "The app is not installed.", Chinese: "应用未安装。"},
+	PluginErrStoreUnavailable:            {English: "The app folder is unavailable.", Chinese: "应用目录不可用。"},
+	PluginErrCandidateConflict:           {English: "The app already has another pending candidate.", Chinese: "该应用已有其他待处理候选。"},
+	PluginErrExpectedHashRequired:        {English: "An update must include the installed package digest.", Chinese: "更新必须指定已安装包的摘要。"},
+	PluginErrInvalidExpectedHash:         {English: "A new installation cannot carry an update baseline.", Chinese: "新安装不能携带更新基线。"},
+	PluginErrInstallationFailed:          {English: "The installation did not finish; the previous version is kept.", Chinese: "安装未完成，旧版已保留。"},
+	PluginErrInstallationNotFound:        {English: "No such installation task.", Chinese: "安装任务不存在。"},
+	PluginErrInstallationNotPending:      {English: "The installation task is no longer pending.", Chinese: "安装任务已不在待确认状态。"},
+	PluginErrInvalidOperation:            {English: "The installation operation is invalid.", Chinese: "安装操作无效。"},
+	PluginErrInvalidStore:                {English: "The app store is unavailable.", Chinese: "应用存储不可用。"},
+	PluginErrInvalidVia:                  {English: "The proposal source is invalid.", Chinese: "提议来源无效。"},
+	PluginErrPersonalNamespace:           {English: "Personal apps must use the local.<owner>.<slug> namespace.", Chinese: "个人应用必须使用 local.<owner>.<slug> 命名空间。"},
+	PluginErrIDMismatch:                  {English: "The target id does not match the candidate manifest.", Chinese: "目标 id 与候选清单不一致。"},
+	PluginErrProposalCancelled:           {English: "The proposal was cancelled or its source closed; propose again.", Chinese: "提议已取消或来源已关闭，请重新提议。"},
+	PluginErrQueueFull:                   {English: "Too many pending operations; try again shortly.", Chinese: "待处理操作过多，请稍后重试。"},
+	PluginErrSettingsWriteFailed:         {English: "The app state could not be saved.", Chinese: "无法保存应用状态。"},
+	PluginErrRequestID:                   {English: "The installation task could not be created.", Chinese: "无法创建安装任务。"},
+	PluginErrTargetRequired:              {English: "An update must name the app id.", Chinese: "更新必须指定应用 id。"},
+	PluginErrValidationFailed:            {English: "The candidate app failed validation.", Chinese: "候选应用未通过校验。"},
+	PluginErrSettingsTooLarge:            {English: "The settings batch exceeds the size limit.", Chinese: "设置批次超过大小上限。"},
+	PluginErrSettingTooLarge:             {English: "A setting value exceeds the size limit.", Chinese: "设置值超过大小上限。"},
+	PluginErrSettingsUnavailable:         {English: "The app settings could not be read.", Chinese: "无法读取应用设置。"},
+	PluginErrUndeclaredSetting:           {English: "The request contains an undeclared setting key.", Chinese: "请求包含未声明的设置键。"},
+	PluginErrInvalidDir:                  {English: "The app folder cannot be a symlink.", Chinese: "应用目录不能是符号链接。"},
+	PluginErrRemoveFailed:                {English: "The app could not be removed cleanly; try again.", Chinese: "应用未能完整删除，请重试。"},
+	PluginErrBaseChanged:                 {English: "The installed app's content or state changed; read it again and propose.", Chinese: "已安装应用的内容或状态已变化，请重新读取后提议。"},
+	PluginErrCandidateChanged:            {English: "The candidate snapshot changed; propose again.", Chinese: "候选快照已改变，请重新提议。"},
+	PluginErrCredentialsUnavailable:      {English: "The old credentials could not be checked; the update was not committed.", Chinese: "无法检查旧凭据，更新未提交。"},
+	PluginErrExists:                      {English: "The app id is already installed; propose an update.", Chinese: "应用 id 已安装，请明确提议更新。"},
+	PluginErrRecoveryFailed:              {English: "Installation recovery failed; the previous version or transaction is kept.", Chinese: "安装恢复失败，旧版或事务已保留。"},
+	PluginErrRecoveryRequired:            {English: "The installation transaction needs recovery at startup.", Chinese: "安装事务需要启动恢复核对。"},
+	PluginErrSettingsMigration:           {English: "The update changes settings in a way that needs a migration; clear the affected values first.", Chinese: "更新改变了设置定义，需要先清空受影响的设置值。"},
+	PluginErrSourceNotAllowed:            {English: "Only unsigned personal apps can be updated.", Chinese: "只能更新个人 Unsigned 应用。"},
+	PluginErrStorageQuota:                {English: "The new storage quota is below current usage.", Chinese: "新存储额度低于当前数据占用。"},
+	PluginErrVersionConflict:             {English: "The new version must be higher than the installed version.", Chinese: "新版本必须高于已安装版本。"},
+	PluginErrExampleNotFound:             {English: "No such official example.", Chinese: "官方模板不存在。"},
+	PluginErrExampleUnavailable:          {English: "The official example is unavailable.", Chinese: "官方模板不可用。"},
+	PluginErrHashUnavailable:             {English: "The app digest could not be computed.", Chinese: "无法计算应用摘要。"},
+	PluginErrInvalidSource:               {English: "The app source is invalid.", Chinese: "应用来源无效。"},
+	PluginErrPackageTooLarge:             {English: "The app source exceeds the size or file-count limit.", Chinese: "应用来源超过大小或文件数量上限。"},
+	PluginErrSourceNotFound:              {English: "The app source does not exist.", Chinese: "应用来源不存在。"},
+	PluginErrSourceUnavailable:           {English: "The candidate snapshot could not be created.", Chinese: "无法创建候选快照。"},
+	PluginErrSourceUnreadable:            {English: "The app source could not be read.", Chinese: "无法读取应用来源。"},
+	PluginErrAPIMutationForbidden:        {English: "The local API can change only unsigned local.* personal apps whose host record matches the files on disk.", Chinese: "本机 API 只能修改宿主安装记录与磁盘一致的未签名 local.* 个人应用。"},
+	PluginErrInstallationOriginForbidden: {English: "The local API cannot cancel an installation from another source.", Chinese: "本机 API 不能取消其他来源的安装任务。"},
+	PluginErrProvenanceDeleteFailed:      {English: "The app was removed, but its provenance record could not be deleted from the credential store.", Chinese: "应用已删除，但来源记录未能从凭据服务移除。"},
 
 	VerifyWaitingSettings: {English: "Waiting for settings to be saved.", Chinese: "等待保存设置后验证"},
 	VerifyRunning:         {English: "Checking the first page…", Chinese: "正在验证首页…"},

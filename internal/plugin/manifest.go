@@ -57,8 +57,10 @@ type Permissions struct {
 type SettingField struct {
 	Key   string `json:"key"`
 	Label string `json:"label"`
-	// Secret 始终序列化：设置状态接口的客户端按键存在性判断属性。
-	Secret bool   `json:"secret"`
+	// Secret stays omitempty so json.Marshal(Manifest) — the canonical
+	// package hash — stays byte-identical to installs recorded before this
+	// field was always emitted. The settings-status API uses settingStatusDTO.
+	Secret bool   `json:"secret,omitempty"`
 	Help   string `json:"help,omitempty"`
 	Link   string `json:"link,omitempty"`
 }

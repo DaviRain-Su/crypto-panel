@@ -3,7 +3,9 @@ package app
 import (
 	"encoding/json"
 	"errors"
+	"net/http"
 	"path/filepath"
+	"strconv"
 	"testing"
 
 	"github.com/davirain-su/lintel/internal/agent"
@@ -103,16 +105,51 @@ func TestDisablingAPICancelsOnlyItsOwnPendingJobs(t *testing.T) {
 
 func TestPortChangeKeepsPendingAPISubmissions(t *testing.T) {
 	a := newTestApp(t)
+	a.agentSecrets = memStore{}
+	a.settings.AgentEnabled = true
+	a.settings.AgentPort = freePort(t)
+	a.startAgent()
+	if a.agentSrv == nil || a.agentAddr == "" {
+		t.Fatalf("the API did not start: %s", a.agentErr)
+	}
+	t.Cleanup(a.stopAgent)
 	job, err := a.ApplicationManager().Propose(personalSource(t, "local.personal.port", "1.0.0"), "install", "", "", "local-api")
 	if err != nil {
 		t.Fatal(err)
 	}
-	a.settings.AgentEnabled = true
-	a.agentPortDraft = "9999"
+	next := freePort(t)
+	a.agentPortDraft = strconv.Itoa(next)
 	a.applyAgentPort()
+	if a.agentErr != "" || a.agentSrv == nil || a.agentAddr == "" {
+		t.Fatalf("port change did not restart the API: %s", a.agentErr)
+	}
+	req, err := http.NewRequest(http.MethodGet, "http://"+a.agentAddr+"/v0/portfolio", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Authorization", "Bearer "+a.agentToken)
+	res, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("restarted API status %d on %s", res.StatusCode, a.agentAddr)
+	}
 	got, err := a.ApplicationManager().GetInstallation(job.RequestID)
 	if err != nil || got.Status != "pending" {
 		t.Fatalf("端口变化撤销了待确认任务：%s %v", got.Status, err)
+	}
+	a.rotateAgentToken()
+	if a.agentErr != "" || a.agentSrv == nil {
+		t.Fatalf("token rotation did not restart the API: %s", a.agentErr)
+	}
+	got, err = a.ApplicationManager().GetInstallation(job.RequestID)
+	if err != nil || got.Status != "cancelled" {
+		t.Fatalf("轮换 token 没有撤销 local-api 任务：%s %v", got.Status, err)
+	}
+	if _, err := a.ApplicationManager().Propose(personalSource(t, "local.personal.port2", "1.0.0"), "install", "", "", "local-api"); err != nil {
+		t.Fatalf("startAgent 没有重新开放 local-api：%v", err)
 	}
 }
 
@@ -125,8 +162,10 @@ func TestManagedRefreshRejectsUndeclaredPageAndBusy(t *testing.T) {
 		t.Fatal(err)
 	}
 	a.refreshPlugins()
-	if _, err := a.RefreshPage(m.ID, "not-declared"); err == nil {
-		t.Fatal("执行了未声明页面")
+	_, err = a.RefreshPage(m.ID, "not-declared")
+	var missing *plugin.Error
+	if !errors.As(err, &missing) || missing.Code != "PAGE_NOT_FOUND" || missing.Status != 400 {
+		t.Fatalf("未声明页面应返回 PAGE_NOT_FOUND/400：%v", err)
 	}
 	release, err := a.ApplicationManager().TryExecution(m.ID)
 	if err != nil {

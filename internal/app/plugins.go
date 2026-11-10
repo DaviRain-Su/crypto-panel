@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/egoist/mygo"
@@ -287,21 +288,35 @@ func (a *App) installPluginZip() {
 	})
 }
 
+// confirmPluginRemoval asks before a native uninstall. Tests replace it so
+// they can approve the removal without a window.
+var confirmPluginRemoval = func(title, message, remove, cancel string) bool {
+	res, err := mygo.Dialog.Message(mygo.MessageOptions{
+		Type:               mygo.MessageWarning,
+		Title:              title,
+		Message:            message,
+		Buttons:            []string{remove, cancel},
+		CancelButton:       1,
+		DestructiveButtons: []int{0},
+	})
+	return err == nil && res.Button == 0
+}
+
+func (a *App) clearPluginDrafts(id string) {
+	for key := range a.pluginDrafts {
+		if strings.HasPrefix(key, id+"/") {
+			delete(a.pluginDrafts, key)
+		}
+	}
+}
+
 // removeBrokenPlugin deletes a folder the store could not read.
 func (a *App) removeBrokenPlugin(dir string) {
 	if a.plugins == nil {
 		return
 	}
 	name := filepath.Base(dir)
-	res, err := mygo.Dialog.Message(mygo.MessageOptions{
-		Type:               mygo.MessageWarning,
-		Title:              a.t(i18n.PluginRemoveTitle),
-		Message:            a.t(i18n.PluginRemoveBody, name),
-		Buttons:            []string{a.t(i18n.Remove), a.t(i18n.Cancel)},
-		CancelButton:       1,
-		DestructiveButtons: []int{0},
-	})
-	if err != nil || res.Button != 0 {
+	if !confirmPluginRemoval(a.t(i18n.PluginRemoveTitle), a.t(i18n.PluginRemoveBody, name), a.t(i18n.Remove), a.t(i18n.Cancel)) {
 		return
 	}
 	remove := a.plugins.RemoveAt
@@ -315,6 +330,7 @@ func (a *App) removeBrokenPlugin(dir string) {
 	}
 	a.stopRunner(name)
 	delete(a.pluginLogs, name)
+	a.clearPluginDrafts(name)
 	a.pluginNotice = a.t(i18n.PluginRemoved, name)
 	a.refreshPlugins()
 	a.refreshProvenanceLocks()
@@ -332,15 +348,7 @@ func (a *App) removePlugin(id string) {
 		a.invalidate()
 		return
 	}
-	res, err := mygo.Dialog.Message(mygo.MessageOptions{
-		Type:               mygo.MessageWarning,
-		Title:              a.t(i18n.PluginRemoveTitle),
-		Message:            a.t(i18n.PluginRemoveBody, inst.Manifest.Name),
-		Buttons:            []string{a.t(i18n.Remove), a.t(i18n.Cancel)},
-		CancelButton:       1,
-		DestructiveButtons: []int{0},
-	})
-	if err != nil || res.Button != 0 {
+	if !confirmPluginRemoval(a.t(i18n.PluginRemoveTitle), a.t(i18n.PluginRemoveBody, inst.Manifest.Name), a.t(i18n.Remove), a.t(i18n.Cancel)) {
 		return
 	}
 	remove := a.plugins.Remove
@@ -354,6 +362,7 @@ func (a *App) removePlugin(id string) {
 	}
 	a.stopRunner(id)
 	delete(a.pluginLogs, id)
+	a.clearPluginDrafts(id)
 	a.pluginNotice = a.t(i18n.PluginRemoved, inst.Manifest.Name)
 	a.refreshPlugins()
 	a.refreshProvenanceLocks()
