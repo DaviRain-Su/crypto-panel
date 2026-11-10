@@ -373,6 +373,7 @@ func (a *App) Ready() {
 	mygo.App.OnActivate(func(bool) { a.showWindow() })
 	mygo.App.OnSecondInstance(func([]string, string) { a.showWindow() })
 	mygo.App.OnBeforeQuit(func(*mygo.QuitEvent) {
+		a.closeTray()
 		a.cancelPasskeyOperations()
 		a.quitting = true
 		if a.coding.cancel != nil {

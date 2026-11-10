@@ -8,7 +8,10 @@ import (
 	"image/png"
 	"log"
 	"sort"
+	"strings"
 	"sync"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/egoist/mygo"
 
@@ -28,7 +31,12 @@ type trayHandle interface {
 	SetTitle(title string)
 	SetToolTip(tip string)
 	SetMenu(menu *mygo.Menu)
+	Destroy()
 }
+
+// trayLineLimit is how much of a stat the menu bar will show. It is shorter
+// than the 80-character value and 40-character label a page may carry.
+const trayLineLimit = 32
 
 // trayEntry is one app's glanceable value, from the first stat of its first
 // page.
@@ -78,19 +86,46 @@ func trayCandidates(items []plugin.Installed) []plugin.Installed {
 	return out
 }
 
+// breaksTrayLine reports a character that would put a menu-bar string onto
+// a second line. pages.PlainText allows these, so the tray folds them itself.
+func breaksTrayLine(r rune) bool {
+	switch r {
+	case '\n', '\r', '\t', '\v', '\f', '\u0085', '\u2028', '\u2029':
+		return true
+	}
+	return unicode.Is(unicode.Zl, r) || unicode.Is(unicode.Zp, r)
+}
+
+// trayLine makes s one short line: line breaks become a space, other
+// control characters are dropped, and the result is cut to trayLineLimit.
+func trayLine(s string) string {
+	s = strings.Join(strings.FieldsFunc(s, breaksTrayLine), " ")
+	s = strings.Map(func(r rune) rune {
+		if unicode.IsControl(r) {
+			return -1
+		}
+		return r
+	}, s)
+	if utf8.RuneCountInString(s) <= trayLineLimit {
+		return s
+	}
+	return string([]rune(s)[:trayLineLimit])
+}
+
 // trayLayoutOf arranges entries the way the tray shows them: entries sorted
 // by name, the first one's value beside the icon, and a menu row per entry.
+// Every string is a single short line before it can reach the native tray.
 func trayLayoutOf(entries []trayEntry) trayLayout {
 	sorted := append([]trayEntry(nil), entries...)
 	sort.Slice(sorted, func(i, j int) bool { return sorted[i].name < sorted[j].name })
 	var out trayLayout
 	if len(sorted) > 0 {
-		out.title = sorted[0].value
-		out.tip = sorted[0].name + " · " + sorted[0].label
+		out.title = trayLine(sorted[0].value)
+		out.tip = trayLine(sorted[0].name + " · " + sorted[0].label)
 	}
 	for _, e := range sorted {
 		out.items = append(out.items, trayMenuItem{
-			label: fmt.Sprintf("%s · %s", e.name, e.value),
+			label: trayLine(fmt.Sprintf("%s · %s", e.name, e.value)),
 			id:    e.id,
 			page:  e.page,
 		})
@@ -152,8 +187,11 @@ func roundedSquare(x, y, s, radius int) bool {
 }
 
 // createTray puts the icon in the menu bar. It runs on the main thread once
-// the app is ready.
+// the app is ready. A second call leaves the existing tray in place.
 func (a *App) createTray() {
+	if a.tray != nil {
+		return
+	}
 	if a.newTray == nil {
 		a.newTray = func(opts mygo.TrayOptions) (trayHandle, error) { return mygo.NewTray(opts) }
 	}
@@ -169,6 +207,19 @@ func (a *App) createTray() {
 	}
 	a.tray = tray
 	a.applyTray()
+}
+
+// closeTray removes the icon and drops any refresh that has not painted
+// yet. A late callback still holds the old generation, and the handle is
+// gone, so it cannot SetTitle or SetMenu after the app has closed the tray.
+func (a *App) closeTray() {
+	a.trayGen++
+	tray := a.tray
+	a.tray = nil
+	a.trayLayoutSig = ""
+	if tray != nil {
+		tray.Destroy()
+	}
 }
 
 // updateTray re-reads every candidate app's first page and refreshes the

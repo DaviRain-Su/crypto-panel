@@ -6,7 +6,9 @@ import (
 	"image/png"
 	"path/filepath"
 	"sort"
+	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/egoist/mygo"
 
@@ -19,14 +21,34 @@ func nav(page string) []plugin.NavItem { return []plugin.NavItem{{Page: page}} }
 
 // fakeTray records what the app paints onto the native tray.
 type fakeTray struct {
-	title string
-	tip   string
-	menus int
+	title     string
+	tip       string
+	menus     int
+	menu      *mygo.Menu
+	destroyed int
+	// painted is every string handed to SetTitle, SetToolTip, or a menu item.
+	painted []string
 }
 
-func (f *fakeTray) SetTitle(title string)   { f.title = title }
-func (f *fakeTray) SetToolTip(tip string)   { f.tip = tip }
-func (f *fakeTray) SetMenu(menu *mygo.Menu) { f.menus++ }
+func (f *fakeTray) SetTitle(title string) {
+	f.title = title
+	f.painted = append(f.painted, title)
+}
+func (f *fakeTray) SetToolTip(tip string) {
+	f.tip = tip
+	f.painted = append(f.painted, tip)
+}
+func (f *fakeTray) SetMenu(menu *mygo.Menu) {
+	f.menus++
+	f.menu = menu
+	if menu == nil {
+		return
+	}
+	for _, it := range menu.Items() {
+		f.painted = append(f.painted, it.Label)
+	}
+}
+func (f *fakeTray) Destroy() { f.destroyed++ }
 
 // stubTray returns a newTray hook that hands back fake.
 func stubTray(fake *fakeTray) func(mygo.TrayOptions) (trayHandle, error) {
@@ -124,7 +146,9 @@ func TestCreateTrayRegistersOnce(t *testing.T) {
 	a := newTestApp(t)
 	fake := &fakeTray{}
 	var opts *mygo.TrayOptions
+	calls := 0
 	a.newTray = func(o mygo.TrayOptions) (trayHandle, error) {
+		calls++
 		opts = &o
 		return fake, nil
 	}
@@ -144,8 +168,12 @@ func TestCreateTrayRegistersOnce(t *testing.T) {
 	if fake.menus != 1 {
 		t.Fatalf("createTray painted the menu %d times", fake.menus)
 	}
-	// A second call must not create another tray.
+	// A second call must not create another tray. The menu is not repainted
+	// when nothing changed, so the creation count is what shows the leak.
 	a.createTray()
+	if calls != 1 {
+		t.Fatalf("newTray calls = %d, want 1", calls)
+	}
 	if fake.menus != 1 {
 		t.Fatal("createTray recreated an existing tray")
 	}
@@ -264,5 +292,125 @@ func TestTrayMenuOpensAppPage(t *testing.T) {
 	a.openTrayApp("com.example.tray", "overview")
 	if a.route.kind != "plugin" || a.route.id != "com.example.tray" || a.route.page != "overview" {
 		t.Fatalf("openTrayApp routed to %+v", a.route)
+	}
+}
+
+func TestTrayFoldsNewlinesBeforeTheNativeTray(t *testing.T) {
+	a := newTestApp(t)
+	removeAllPlugins(t, a)
+	dir := filepath.Join(t.TempDir(), "tray")
+	// The page layer accepts these. The tray must not.
+	writeAgentPlugin(t, dir, "com.example.tray", `export function page() {
+  return { title: 'Overview', sections: [{ stats: [{ label: 'Inde\tx', value: '42\nClick\tAllow\u2028now' }] }] };
+}`)
+	if _, err := a.plugins.Install(dir); err != nil {
+		t.Fatalf("installing: %v", err)
+	}
+	a.refreshPlugins()
+	fake := syncTrayApp(t, a)
+	a.updateTray()
+	for _, s := range fake.painted {
+		for _, r := range s {
+			if r == '\n' || r == '\t' || r == '\r' || r == '\u2028' || r == '\u2029' {
+				t.Fatalf("native tray text contains %q in %q", r, s)
+			}
+		}
+	}
+	if fake.title != "42 Click Allow now" {
+		t.Fatalf("title = %q", fake.title)
+	}
+	if fake.tip != "Agent test · Inde x" {
+		t.Fatalf("tooltip = %q", fake.tip)
+	}
+	if fake.menu == nil || len(fake.menu.Items()) == 0 {
+		t.Fatal("the tray has no menu")
+	}
+	item := fake.menu.Items()[0]
+	if strings.Contains(item.Label, "\n") || strings.Contains(item.Label, "\t") {
+		t.Fatalf("menu label = %q", item.Label)
+	}
+	// The click target is the manifest id and the declared page, captured
+	// when the menu was built, not the stat text or the display name.
+	item.Click(item, nil)
+	if a.route.kind != "plugin" || a.route.id != "com.example.tray" || a.route.page != "overview" {
+		t.Fatalf("menu click opened %+v", a.route)
+	}
+}
+
+func TestTrayTitleIsShorterThanAPageValue(t *testing.T) {
+	a := newTestApp(t)
+	removeAllPlugins(t, a)
+	dir := filepath.Join(t.TempDir(), "tray")
+	value := strings.Repeat("a", 80)
+	writeAgentPlugin(t, dir, "com.example.tray", `export function page() {
+  return { title: 'Overview', sections: [{ stats: [{ label: 'Index', value: '`+value+`' }] }] };
+}`)
+	if _, err := a.plugins.Install(dir); err != nil {
+		t.Fatalf("installing: %v", err)
+	}
+	a.refreshPlugins()
+	fake := syncTrayApp(t, a)
+	a.updateTray()
+	if utf8.RuneCountInString(fake.title) != trayLineLimit || fake.title != value[:trayLineLimit] {
+		t.Fatalf("title = %q, want %d characters", fake.title, trayLineLimit)
+	}
+	for _, s := range fake.painted {
+		if utf8.RuneCountInString(s) > trayLineLimit {
+			t.Fatalf("tray text is %d characters: %q", utf8.RuneCountInString(s), s)
+		}
+	}
+}
+
+func TestStaleTrayCallbackDoesNotPaint(t *testing.T) {
+	a := newTestApp(t)
+	installTrayApp(t, a)
+	fake := syncTrayApp(t, a)
+	a.updateTray()
+	a.trayEntries["com.example.tray"] = trayEntry{
+		id: "com.example.tray", name: "Agent test", page: "overview", label: "Index", value: "kept",
+	}
+	a.applyTray()
+	if fake.title != "kept" {
+		t.Fatalf("title = %q", fake.title)
+	}
+	var queued []func()
+	a.goAsync = func(fn func()) { queued = append(queued, fn) }
+	a.updateTray()
+	if len(queued) != 1 {
+		t.Fatalf("queued refreshes = %d", len(queued))
+	}
+	a.trayGen++
+	painted := len(fake.painted)
+	queued[0]()
+	if fake.title != "kept" || len(fake.painted) != painted {
+		t.Fatalf("stale callback painted %q", fake.title)
+	}
+}
+
+func TestCloseTrayDestroysAndBlocksLatePaint(t *testing.T) {
+	a := newTestApp(t)
+	installTrayApp(t, a)
+	fake := syncTrayApp(t, a)
+	a.updateTray()
+	var queued []func()
+	a.goAsync = func(fn func()) { queued = append(queued, fn) }
+	a.updateTray()
+	gen := a.trayGen
+	a.closeTray()
+	if a.tray != nil {
+		t.Fatal("closeTray left the handle set")
+	}
+	if fake.destroyed != 1 {
+		t.Fatalf("Destroy calls = %d, want 1", fake.destroyed)
+	}
+	if a.trayGen == gen {
+		t.Fatal("closeTray did not retire in-flight callbacks")
+	}
+	painted := len(fake.painted)
+	for _, fn := range queued {
+		fn()
+	}
+	if len(fake.painted) != painted {
+		t.Fatal("a callback painted the tray after it was closed")
 	}
 }
