@@ -66,10 +66,31 @@ type Installation struct {
 }
 
 // SettingStatus 对秘密字段只公布是否配置，永远不携带其值。
+// JSON 走 settingStatusDTO：secret 始终出现，客户端靠键是否存在区分普通字段。
+// 这与清单的 omitempty 分开，避免改写已安装应用的规范包摘要。
 type SettingStatus struct {
 	SettingField
 	Value      *string `json:"value,omitempty"`
 	Configured *bool   `json:"configured,omitempty"`
+}
+
+// settingStatusDTO is the settings-status API shape only. It is not the
+// manifest, and it is not an input to the package hash.
+type settingStatusDTO struct {
+	Key        string  `json:"key"`
+	Label      string  `json:"label"`
+	Secret     bool    `json:"secret"`
+	Help       string  `json:"help,omitempty"`
+	Link       string  `json:"link,omitempty"`
+	Value      *string `json:"value,omitempty"`
+	Configured *bool   `json:"configured,omitempty"`
+}
+
+func (s SettingStatus) MarshalJSON() ([]byte, error) {
+	return json.Marshal(settingStatusDTO{
+		Key: s.Key, Label: s.Label, Secret: s.Secret, Help: s.Help, Link: s.Link,
+		Value: s.Value, Configured: s.Configured,
+	})
 }
 
 // SettingsWriteError 只描述部分写入结果，不暴露凭据服务原始错误。

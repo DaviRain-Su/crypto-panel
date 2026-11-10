@@ -53,7 +53,7 @@ func (a *App) reviewInstallation(requestID string) {
 			result, err := a.pluginManager.Decide(requestID, allow)
 			a.runOnMain(func() {
 				if err != nil {
-					a.pluginNotice = err.Error()
+					a.pluginNotice = a.pluginErrorText(err)
 				} else {
 					a.pluginNotice = job.Manifest.Name + " · " + result.Status
 				}
@@ -80,7 +80,7 @@ func (a *App) cancelInstallation(id string) {
 		return
 	}
 	if _, err := a.pluginManager.Cancel(id); err != nil {
-		a.pluginNotice = err.Error()
+		a.pluginNotice = a.pluginErrorText(err)
 	}
 	a.invalidate()
 }
@@ -122,7 +122,7 @@ func (a *App) clearPluginSecret(id, key string) {
 		return
 	}
 	if _, err := a.pluginManager.SetSettings(id, map[string]string{key: ""}); err != nil {
-		a.pluginNotice = err.Error()
+		a.pluginNotice = a.pluginErrorText(err)
 		a.invalidate()
 		return
 	}
@@ -132,6 +132,7 @@ func (a *App) clearPluginSecret(id, key string) {
 		a.pluginView = pluginPageState{}
 	}
 	a.stopRunner(id)
+	a.loadPluginSettingStatus(id)
 	if draft := a.pluginDrafts[id+"/"+key]; draft != nil {
 		*draft = ""
 	}
