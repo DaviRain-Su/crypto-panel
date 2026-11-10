@@ -567,6 +567,10 @@ const (
 	CodingCanceled            Key = "codingCanceled"
 	CodingIncomplete          Key = "codingIncomplete"
 	CodingValidated           Key = "codingValidated"
+	CodingPreview             Key = "codingPreview"
+	CodingPreviewTitle        Key = "codingPreviewTitle"
+	CodingPreviewNotice       Key = "codingPreviewNotice"
+	CodingPreviewBack         Key = "codingPreviewBack"
 	CodingCanceling           Key = "codingCanceling"
 	CodingWindowTitle         Key = "codingWindowTitle"
 	EditApp                   Key = "editApp"
@@ -1121,7 +1125,7 @@ var messages = map[Key]map[string]string{
 	PendingLine:               {English: "%s · %s v%s", Chinese: "%s · %s v%s"},
 	PendingMeta:               {English: "%s · %s · %s", Chinese: "%s · %s · %s"},
 	PendingUnsigned:           {English: "Unsigned · %s", Chinese: "未签名 · %s"},
-	PendingExpires:            {English: "Nothing runs until you confirm. Expires %s", Chinese: "确认前不会运行。到期时间 %s"},
+	PendingExpires:            {English: "Preview is signing-disabled. Installation needs confirmation. Expires %s", Chinese: "预览已禁用签名，安装仍需确认。到期时间 %s"},
 	PendingReview:             {English: "Review permissions", Chinese: "审阅权限"},
 	PendingCancel:             {English: "Cancel request", Chinese: "取消请求"},
 	BrokenManifest:            {English: "The app manifest could not be read.", Chinese: "应用清单无法读取或无效。"},
@@ -1142,7 +1146,11 @@ var messages = map[Key]map[string]string{
 	CodingSlugInvalid:         {English: "Use lowercase letters, digits and hyphens, at most 64 characters.", Chinese: "短名只能使用小写字母、数字和连字符，最多 64 字符"},
 	CodingCanceled:            {English: "Generation canceled.", Chinese: "已取消生成"},
 	CodingIncomplete:          {English: "Generation did not finish: %s", Chinese: "生成未完成：%s"},
-	CodingValidated:           {English: "%s v%s passed validation. Review its permissions before it is installed.", Chinese: "%s v%s 已通过校验，请在待确认区域审阅权限"},
+	CodingValidated:           {English: "%s v%s passed validation. Preview the frozen candidate, then review its permissions before installation.", Chinese: "%s v%s 已通过校验，可预览冻结候选，再于安装前审阅权限"},
+	CodingPreview:             {English: "Preview", Chinese: "预览"},
+	CodingPreviewTitle:        {English: "Candidate preview", Chinese: "候选应用预览"},
+	CodingPreviewNotice:       {English: "This is a frozen pending candidate. Signing is disabled. Previewing does not install or approve it.", Chinese: "这是冻结的待确认候选，签名已禁用。预览不会安装或批准该应用。"},
+	CodingPreviewBack:         {English: "Back to creator", Chinese: "返回创建"},
 	CodingCanceling:           {English: "Canceling…", Chinese: "正在取消…"},
 	CodingWindowTitle:         {English: "Coding tool permission", Chinese: "编码工具许可"},
 	EditApp:                   {English: "Edit app", Chinese: "修改应用"},

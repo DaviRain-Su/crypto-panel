@@ -17,6 +17,7 @@ func TestManagementRoutesKeepTheSameAccessWall(t *testing.T) {
 		{"GET", "/v0/examples/com.example.gas"},
 		{"POST", "/v0/plugins/validate"},
 		{"POST", "/v0/plugins"},
+		{"POST", "/v0/installations/request/preview"},
 		{"PUT", "/v0/plugins/local.personal.demo"},
 		{"GET", "/v0/installations/request"},
 		{"DELETE", "/v0/installations/request"},

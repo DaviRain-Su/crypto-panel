@@ -245,6 +245,29 @@ func (m *Manager) Installations() []Installation {
 	return out
 }
 
+// PendingCandidate returns the frozen package and verified digest for a pending
+// job owned by via. Callers hold the app execution lease and recheck pending
+// state for the entire preview so review cannot commit or remove it.
+func (m *Manager) PendingCandidate(id, via string) (Installed, string, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.pruneLocked(time.Now().UTC())
+	task, ok := m.tasks[id]
+	if !ok || m.closed {
+		return Installed{}, "", managementError("INSTALLATION_NOT_FOUND", "安装任务不存在", 404)
+	}
+	if task.record.Via != via {
+		return Installed{}, "", managementError("INSTALLATION_ORIGIN_FORBIDDEN", "当前入口不能读取其他来源的候选应用", 403)
+	}
+	if task.record.Status != "pending" {
+		return Installed{}, "", managementError("INSTALLATION_NOT_PENDING", "安装任务已不在待确认状态", 409)
+	}
+	if err := checkFrozen(task.dir, task.record.PackageHash, task.record.Manifest); err != nil {
+		return Installed{}, "", err
+	}
+	return Installed{Manifest: cloneManifest(task.record.Manifest), Dir: task.dir, Enabled: true}, task.record.PackageHash, nil
+}
+
 // Decide 只供宿主原生事件调用。状态锁外提交，绝不执行任何批准回调。
 func (m *Manager) Decide(id string, allow bool) (Installation, error) {
 	m.mu.Lock()

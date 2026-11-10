@@ -23,6 +23,11 @@ type Management interface {
 	RefreshPage(id, page string) (PageResult, error)
 }
 
+// CandidatePreview is optional for hosts that expose pending candidates.
+type CandidatePreview interface {
+	PreviewInstallationPage(requestID, page, via string) (PageResult, error)
+}
+
 // PageResult 的元数据放在响应头中，保持原来的页面 JSON 兼容。
 type PageResult struct {
 	Page        any
@@ -166,6 +171,24 @@ func (s *Server) installation(w http.ResponseWriter, r *http.Request) {
 		data.ApplicationsChanged("")
 	}
 	writeInstallation(w, http.StatusOK, job)
+}
+
+func (s *Server) preview(w http.ResponseWriter, r *http.Request) {
+	if _, manager := s.managed(w); manager == nil {
+		return
+	}
+	data, ok := s.data.(CandidatePreview)
+	if !ok {
+		writeCodeError(w, http.StatusServiceUnavailable, "PREVIEW_UNAVAILABLE", "this host has not enabled candidate preview")
+		return
+	}
+	result, err := data.PreviewInstallationPage(r.PathValue("requestId"), r.URL.Query().Get("page"), "local-api")
+	if err != nil {
+		writeManagementError(w, err)
+		return
+	}
+	setRefreshMeta(w, result)
+	writeJSON(w, http.StatusOK, result.Page)
 }
 
 func (s *Server) settings(w http.ResponseWriter, r *http.Request) {

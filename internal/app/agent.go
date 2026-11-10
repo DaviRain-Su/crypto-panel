@@ -417,6 +417,60 @@ func (a *App) readOnlyPage(id, page string, options readOnlyPageOptions) (agent.
 	return result, err
 }
 
+// PreviewInstallationPage executes one declared page of a frozen candidate.
+// The execution lease prevents review, cancellation or removal from changing
+// the candidate while it runs; the final check discards a stale result.
+func (a *App) PreviewInstallationPage(requestID, page, via string) (agent.PageResult, error) {
+	var result agent.PageResult
+	if a.pluginManager == nil {
+		return result, &plugin.Error{Code: "MANAGEMENT_UNAVAILABLE", Message: "app management is unavailable", Status: 503}
+	}
+	candidate, _, err := a.pluginManager.PendingCandidate(requestID, via)
+	if err != nil {
+		return result, err
+	}
+	release, err := a.pluginManager.TryExecution(candidate.Manifest.ID)
+	if err != nil {
+		return result, err
+	}
+	defer release()
+	candidate, hash, err := a.pluginManager.PendingCandidate(requestID, via)
+	if err != nil {
+		return result, err
+	}
+	if page == "" {
+		if len(candidate.Manifest.Navigation) == 0 {
+			return result, agent.ErrNoPages
+		}
+		page = candidate.Manifest.Navigation[0].Page
+	}
+	declared := false
+	for _, nav := range candidate.Manifest.Navigation {
+		if nav.Page == page {
+			declared = true
+			break
+		}
+	}
+	if !declared {
+		return result, &plugin.Error{Code: "PAGE_NOT_FOUND", Message: "the page is not declared by the app", Status: 400}
+	}
+	result.PackageHash = hash
+	runner, err := a.agentRunner(candidate, readOnlyPageOptions{})
+	if err != nil {
+		return result, err
+	}
+	defer runner.Close()
+	result.Page, err = runner.Page(page)
+	if err != nil {
+		return result, err
+	}
+	if _, _, err := a.pluginManager.PendingCandidate(requestID, via); err != nil {
+		return agent.PageResult{}, err
+	}
+	result.EvaluatedAt = time.Now().UTC()
+	return result, nil
+}
+
 // agentRunner builds a runtime for one API request. The host is the app's,
 // with both signing functions replaced by a refusal.
 func (a *App) agentRunner(inst plugin.Installed, options readOnlyPageOptions) (*plugin.Runner, error) {

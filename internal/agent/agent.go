@@ -195,6 +195,7 @@ func (s *Server) handler() http.Handler {
 	mux.HandleFunc("PUT /v0/plugins/{id}", s.guard(s.propose))
 	mux.HandleFunc("GET /v0/installations/{requestId}", s.guard(s.installation))
 	mux.HandleFunc("DELETE /v0/installations/{requestId}", s.guard(s.installation))
+	mux.HandleFunc("POST /v0/installations/{requestId}/preview", s.guard(s.preview))
 	mux.HandleFunc("PUT /v0/plugins/{id}/settings", s.guard(s.settings))
 	mux.HandleFunc("DELETE /v0/plugins/{id}", s.guard(s.remove))
 	mux.HandleFunc("POST /v0/plugins/{id}/refresh", s.guard(s.refresh))

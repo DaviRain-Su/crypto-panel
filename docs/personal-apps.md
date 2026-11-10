@@ -9,7 +9,7 @@ Lintel 的个人应用仍是沙箱 JS 与原生页面数据。编码 agent 负�
 3. 测试连接会执行 initialize 与 session/new，显示 agent 身份、版本及它公布的模型 / 配置选项，不发送付费生成 prompt。选择只来自对端广告值；配置不兼容时会报错。
 4. Apps → 创建应用，填短名和需求，点击开始生成。不要在需求里写私钥、Local API token 或 API key。
 5. 工具若请求许可，壳会显示独立的原生工具窗口。检查路径和命令；拒绝或关闭会按取消处理。工作目录不是操作系统沙箱，本机编码程序仍具有自己的系统权限。
-6. 生成只在 session/prompt 真正返回成功完成后进入静态校验，最多三轮修复。通过后成为 Apps 的待确认任务。点击审阅权限，原生窗口里确认才会安装。
+6. 生成只在 session/prompt 真正返回成功完成后进入静态校验，最多三轮修复。通过后成为 Apps 的待确认任务。创建页提供独立的“预览”和“审阅权限”操作：预览在禁止 EVM / NEAR 签名的 runtime 中执行冻结候选的声明页面，展示实际原生页面，不安装、不批准也不修改候选；点击审阅权限，原生窗口里确认才会安装。
 7. 安装后若有设置项，先填写 API key 等字段并保存，壳随后验证首页；也可点击“验证首页”跳过可选设置。秘密字段只显示是否配置；留空保存保留旧秘密，使用清除按钮才删除。
 8. 没有设置项时，安装后自动验证首页。应用设置和启动器显示等待设置、验证中、通过或失败；失败不会移除已安装应用，可以调整设置或修改应用后重试。验证使用禁止 EVM / NEAR 签名的独立 runtime，检查页面执行和结构；通过后仍需打开应用核对数据。
 
@@ -35,12 +35,15 @@ Lintel 的个人应用仍是沙箱 JS 与原生页面数据。编码 agent 负�
 | `POST /v0/plugins` | 新安装提议，202 + pending |
 | `PUT /v0/plugins/{id}` | 同 id 更新提议，附 expectedHash，202 + pending |
 | `GET /v0/installations/{requestId}` | 查询安装状态 |
+| `POST /v0/installations/{requestId}/preview?page=overview` | 执行本机 API 自己的 pending 冻结候选，重新核对包摘要、清单和声明页面，返回页面 JSON 与执行元数据头。ACP、未知、非 pending 或被改写的候选拒绝执行；不安装、不批准，签名仍禁用 |
 | `DELETE /v0/installations/{requestId}` | 取消本机 API 的 pending。ACP 任务返回 403 `INSTALLATION_ORIGIN_FORBIDDEN`，列表和查询不暴露其 requestId |
 | `PUT /v0/plugins/{id}/settings` | 部分更新未签名 `local.*` 应用的已声明设置。宿主把安装来源记在现有凭据服务 `crypto-panel-plugins` 的账户 `provenance:<id>` 里，不记在应用目录或可被改写的索引文件中。记录必须存在、可解析，并与磁盘上的包摘要和 `install.json` 一致。记录缺失、校验失败、摘要不一致，或 `install.json` 被替换成普通伪造文件、硬链接、符号链接、目录、管道或无法解析时，返回 403 `API_MUTATION_FORBIDDEN`，凭据保持不变 |
 | `POST /v0/plugins/{id}/refresh` | 执行已安装应用的一个声明页面 |
 | `DELETE /v0/plugins/{id}` | 卸载未签名 `local.*` 应用与宿主状态。条件与设置接口相同：必须有匹配且已确认的宿主安装记录。伪造的普通 `install.json`、硬链接或不匹配同样返回 403 `API_MUTATION_FORBIDDEN`。升级前的可解析普通 `install.json` 只会在凭据服务成功落下记录之后迁移一次；缺失、链接、目录、读错误或写入超时不会被当成未签名。没确认的应用保持 403，直到原生界面重新安装。凭据服务删不掉来源账户时，卸载仍会删掉应用目录并报告该失败 |
 
-没有 HTTP approve、钱包签名、广播或密钥接口。refresh 禁用 EVM / NEAR 签名，但声明范围内的 host.fetch 和 KV 写入仍可能产生副作用，不能代替静态 validate。
+catalog 的 `page` schema 与原生页面一致：stat 可用 `trend: "up" | "down"` 和最多 32 个数值的 `sparkline`，section 可用 `gauge`，其 `value` 必须为 0–100；对应 `limits` 为 `sparklinePoints`、`gaugeMin` 和 `gaugeMax`。
+
+没有 HTTP approve、钱包签名、广播或密钥接口。refresh 和候选 preview 禁用 EVM / NEAR 签名，但声明范围内的 host.fetch 和 KV 写入仍可能产生副作用，不能代替静态 validate。预览运行的是候选而不是已安装目录，状态仍是 pending；预览结果绝不构成安装批准。
 
 原生确认安装后，`GET /v0/plugins` 可返回当前包的可选 `verification`：requestId、packageHash、page、status（waiting_settings / running / passed / failed）、固定原因 code 及完成时间 checkedAt。它与安装任务的 installed 状态分开；passed 只表示首页执行与结构检查通过。完整保存设置且没有清除秘密时，会自动验证已跟踪的安装；清除秘密使旧结果失效并等待配置，部分保存失败不会执行。验证不记录插件日志或回传页面、异常原文。记录只存在于当前进程，重启后没有该字段；需要时继续显式 refresh。
 

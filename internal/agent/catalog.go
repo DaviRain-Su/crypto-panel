@@ -84,7 +84,8 @@ func Catalog(managed bool) map[string]any {
 			"packageBytes": plugin.MaxPackageBytes, "applicationRequestBytes": maxApplicationRequest,
 			"settingsRequestBytes": maxSettingsRequest, "settingValueBytes": 8192, "pageBytes": 256 << 10,
 			"sections": 32, "stats": 12, "tableColumns": 8, "tableRows": 200, "cards": 32, "links": 16,
-			"chartPoints": 60, "settings": 20, "navigation": 8, "kvValueBytes": 64 << 10,
+			"chartPoints": 60, "sparklinePoints": 32, "gaugeMin": 0, "gaugeMax": 100,
+			"settings": 20, "navigation": 8, "kvValueBytes": 64 << 10,
 			"memoryBytes": 256 << 20, "executionSeconds": 30, "fetchSeconds": 30, "fetchResponseBytes": 8 << 20,
 			"pendingTasks": 5, "pendingSeconds": 1800,
 		},
@@ -153,12 +154,20 @@ func applicationSchemas(chainIDs []string) map[string]any {
 	points["minItems"] = 1
 	section := schemaObject(map[string]any{
 		"title": schemaString(0, 120),
-		"stats": schemaArray(schemaObject(map[string]any{"label": schemaString(0, 40), "value": schemaString(0, 80)}, "label", "value"), 12),
+		"stats": schemaArray(schemaObject(map[string]any{
+			"label": schemaString(0, 40), "value": schemaString(0, 80),
+			"trend":     schemaEnum("", "up", "down"),
+			"sparkline": schemaArray(map[string]any{"type": "number"}, 32),
+		}, "label", "value"), 12),
 		"table": schemaObject(map[string]any{"columns": columns, "rows": schemaArray(schemaArray(schemaString(0, 200), 8), 200)}, "columns", "rows"),
 		"cards": schemaArray(schemaObject(map[string]any{"title": schemaString(0, 80), "subtitle": schemaString(0, 120), "body": schemaString(0, 500)}, "title"), 32),
 		"links": schemaArray(schemaObject(map[string]any{"title": schemaString(0, 60), "page": pageName}, "title", "page"), 16),
 		"text":  schemaString(0, 2000), "divider": map[string]any{"type": "boolean"},
 		"chart": schemaObject(map[string]any{"kind": schemaEnum("", "line", "bar"), "points": points}, "points"),
+		"gauge": schemaObject(map[string]any{
+			"label": schemaString(0, 40), "text": schemaString(0, 20),
+			"value": map[string]any{"type": "number", "minimum": float64(0), "maximum": float64(100)},
+		}, "value"),
 	})
 	page := schemaObject(map[string]any{"title": schemaString(0, 120), "subtitle": schemaString(0, 160), "sections": schemaArray(section, 32)}, "sections")
 	pkgManifest := map[string]any{}

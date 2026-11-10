@@ -30,6 +30,13 @@ func (d *managedData) RefreshPage(id, page string) (PageResult, error) {
 	p, err := d.Refresh(id)
 	return PageResult{Page: p}, err
 }
+func (d *managedData) PreviewInstallationPage(requestID, page, via string) (PageResult, error) {
+	candidate, hash, err := d.manager.PendingCandidate(requestID, via)
+	if err != nil {
+		return PageResult{}, err
+	}
+	return PageResult{Page: d.pages[candidate.Manifest.ID], PackageHash: hash, EvaluatedAt: time.Now().UTC()}, nil
+}
 
 type credentialMemory map[string][]byte
 
@@ -137,6 +144,43 @@ func TestHTTPLifecycleRequiresNativeDecision(t *testing.T) {
 		t.Fatalf("remove: %d", removed.Code)
 	}
 }
+func TestPreviewRouteReturnsOnlyOwnedPendingPage(t *testing.T) {
+	s, manager, _ := managementServer(t)
+	data := s.data.(*managedData)
+	data.pages["local.personal.http"] = map[string]any{"title": "Pending preview", "sections": []any{}}
+	proposed := jsonRequest(t, s, "POST", "/v0/plugins", httpPackage(t, "1.0.0"))
+	var job plugin.Installation
+	if err := json.Unmarshal(proposed.Body.Bytes(), &job); err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range []string{"/v0/installations/missing/preview", "/v0/installations/" + job.RequestID + "/preview"} {
+		rec := do(t, s, "POST", path, "test-token")
+		if path == "/v0/installations/missing/preview" {
+			if rec.Code != http.StatusNotFound {
+				t.Fatalf("unknown preview: %d %s", rec.Code, rec.Body)
+			}
+			continue
+		}
+		if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "Pending preview") || rec.Header().Get("X-Lintel-Package-Hash") != job.PackageHash {
+			t.Fatalf("preview: %d %s", rec.Code, rec.Body)
+		}
+	}
+	manifest := json.RawMessage(`{"id":"local.personal.acp-preview","name":"ACP preview","version":"1.0.0","main":"index.js","navigation":[{"title":"Overview","page":"overview"}]}`)
+	acp, err := manager.Propose(plugin.Source{Kind: "inline", Package: &plugin.Package{Plugin: manifest, Main: `export function page() { return { title: "ACP", sections: [] }; }`}}, "install", "", "", "acp")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rec := do(t, s, "POST", "/v0/installations/"+acp.RequestID+"/preview", "test-token"); rec.Code != http.StatusForbidden || codeOf(t, rec) != "INSTALLATION_ORIGIN_FORBIDDEN" {
+		t.Fatalf("cross-origin preview: %d %s", rec.Code, rec.Body)
+	}
+	if _, err := manager.Decide(job.RequestID, true); err != nil {
+		t.Fatal(err)
+	}
+	if rec := do(t, s, "POST", "/v0/installations/"+job.RequestID+"/preview", "test-token"); rec.Code != http.StatusConflict {
+		t.Fatalf("installed preview: %d %s", rec.Code, rec.Body)
+	}
+}
+
 func TestManagementRejectsMalformedBodiesBeforeProposing(t *testing.T) {
 	s, manager, _ := managementServer(t)
 	for _, body := range []string{`null`, `{}`, `{"source":{},"approve":true}`, `{"source":{},"source":{}}`, `{"source":{}} {}`, `{"source":{"kind":"inline","package":{"plugin":{},"main":""},"path":"/tmp"}}`} {

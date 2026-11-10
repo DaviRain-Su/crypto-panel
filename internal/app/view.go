@@ -411,6 +411,8 @@ func (a *App) pageTitle() (title, subtitle string) {
 		return a.t(i18n.NavIntents), a.t(i18n.IntentsSubtitle)
 	case "plugins":
 		return a.t(i18n.NavApps), a.pluginSummary()
+	case "preview":
+		return a.t(i18n.CodingPreviewTitle), a.coding.preview.manifest.Name
 	case "settings":
 		return a.t(i18n.NavSettings), ""
 	case "plugin":
@@ -463,6 +465,8 @@ func (a *App) pageBody(c *ui.Context) {
 		a.intentsBody(c)
 	case "plugins":
 		a.pluginsView(c)
+	case "preview":
+		a.generatedPreviewView(c)
 	case "settings":
 		a.settingsView(c)
 	case "plugin":
