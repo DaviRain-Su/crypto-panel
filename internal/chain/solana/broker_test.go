@@ -35,7 +35,9 @@ type fakeRPC struct {
 	mu            sync.Mutex
 	genesis       string
 	balances      map[string]uint64
-	tokenAccounts map[string][]tokenAccount // keyed by token program
+	accounts      map[string]bool            // getAccountInfo: true when the account exists
+	accountBodies map[string]json.RawMessage // raw getAccountInfo result, when set
+	tokenAccounts map[string][]tokenAccount  // keyed by token program
 	programErr    map[string]*RPCError
 	fail          map[string]*RPCError
 	slot          uint64
@@ -46,6 +48,8 @@ func newFakeRPC() *fakeRPC {
 	return &fakeRPC{
 		genesis:       testGenesis,
 		balances:      map[string]uint64{},
+		accounts:      map[string]bool{},
+		accountBodies: map[string]json.RawMessage{},
 		tokenAccounts: map[string][]tokenAccount{},
 		programErr:    map[string]*RPCError{},
 		fail:          map[string]*RPCError{},
@@ -89,6 +93,22 @@ func (f *fakeRPC) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		f.mu.Lock()
 		value := f.balances[addr]
 		f.mu.Unlock()
+		writeRPC(w, req.ID, map[string]any{"context": map[string]any{"slot": 1}, "value": value}, nil)
+	case "getAccountInfo":
+		var addr string
+		_ = json.Unmarshal(req.Params[0], &addr)
+		f.mu.Lock()
+		exists := f.accounts[addr]
+		rawBody, rawOK := f.accountBodies[addr]
+		f.mu.Unlock()
+		if rawOK {
+			writeRPC(w, req.ID, rawBody, nil)
+			return
+		}
+		var value any
+		if exists {
+			value = map[string]any{"data": []string{"", "base64"}, "lamports": 1}
+		}
 		writeRPC(w, req.ID, map[string]any{"context": map[string]any{"slot": 1}, "value": value}, nil)
 	case "getTokenAccountsByOwner":
 		var opts struct {
@@ -186,6 +206,52 @@ func TestNativeBalance(t *testing.T) {
 	}
 	if got.String() != "2500000000" {
 		t.Fatalf("balance = %s", got)
+	}
+}
+
+func TestAccountExists(t *testing.T) {
+	fake := newFakeRPC()
+	fake.accounts[testAddr] = true
+	srv := httptest.NewServer(fake)
+	defer srv.Close()
+
+	b := testBroker()
+	ep := Endpoint{URL: srv.URL, Genesis: testGenesis}
+	exists, err := b.AccountExists(context.Background(), ep, testAddr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !exists {
+		t.Fatal("existing account reported absent")
+	}
+	// An address the cluster has never seen answers value null: the account
+	// is not there, which is not an error.
+	exists, err = b.AccountExists(context.Background(), ep, "Fresh11111111111111111111111111111111111111")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if exists {
+		t.Fatal("unknown address reported as existing")
+	}
+	// A failed endpoint is an error, not an answer.
+	fake.fail["getAccountInfo"] = &RPCError{Code: -32000, Message: "boom"}
+	if _, err := b.AccountExists(context.Background(), ep, testAddr); err == nil {
+		t.Fatal("endpoint error reported as an answer")
+	}
+}
+
+func TestAccountExistsRejectsMalformedResults(t *testing.T) {
+	fake := newFakeRPC()
+	srv := httptest.NewServer(fake)
+	defer srv.Close()
+	b := testBroker()
+	ep := Endpoint{URL: srv.URL, Genesis: testGenesis}
+	for _, body := range []string{`null`, `{}`, `{"context":{"slot":1}}`, `[]`, `"nope"`} {
+		fake.accountBodies["Bad1111111111111111111111111111111111111111"] = json.RawMessage(body)
+		exists, err := b.AccountExists(context.Background(), ep, "Bad1111111111111111111111111111111111111111")
+		if err == nil || exists {
+			t.Fatalf("result %s: exists=%v err=%v", body, exists, err)
+		}
 	}
 }
 

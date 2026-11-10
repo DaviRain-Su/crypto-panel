@@ -149,52 +149,54 @@ const (
 	WalletNearSendView           Key = "walletNearSendView"
 	ApproveWalletWarning         Key = "approveWalletWarning"
 
-	PasskeyTitle          Key = "passkeyTitle"
-	PasskeyBadge          Key = "passkeyBadge"
-	PasskeyBody           Key = "passkeyBody"
-	PasskeyCreate         Key = "passkeyCreate"
-	PasskeyWaiting        Key = "passkeyWaiting"
-	PasskeyFine           Key = "passkeyFine"
-	PasskeyCreated        Key = "passkeyCreated"
-	PasskeyPreparedTitle  Key = "passkeyPreparedTitle"
-	PasskeyPreparedBody   Key = "passkeyPreparedBody"
-	PasskeyPreparedFoot   Key = "passkeyPreparedFoot"
-	PasskeyFailed         Key = "passkeyFailed"
-	PasskeyUnavailable    Key = "passkeyUnavailable"
-	PasskeyNearAccount    Key = "passkeyNearAccount"
-	PasskeyEVMAccount     Key = "passkeyEVMAccount"
-	PasskeyEVMNote        Key = "passkeyEVMNote"
-	PasskeySolanaAccount  Key = "passkeySolanaAccount"
-	PasskeySolanaNote     Key = "passkeySolanaNote"
-	PasskeyDeriving       Key = "passkeyDeriving"
-	PasskeyMainnetOnly    Key = "passkeyMainnetOnly"
-	PasskeyDeploy         Key = "passkeyDeploy"
-	PasskeyDeployHint     Key = "passkeyDeployHint"
-	PasskeyDeployNote     Key = "passkeyDeployNote"
-	PasskeyDeployed       Key = "passkeyDeployed"
-	PasskeyAlreadyOnChain Key = "passkeyAlreadyOnChain"
-	PasskeySend           Key = "passkeySend"
-	PasskeySendNote       Key = "passkeySendNote"
-	PasskeyNoRelayer      Key = "passkeyNoRelayer"
-	PasskeyRelayerLocked  Key = "passkeyRelayerLocked"
-	PasskeyRejected       Key = "passkeyRejected"
-	PasskeyForget         Key = "passkeyForget"
-	PasskeyForgetTitle    Key = "passkeyForgetTitle"
-	PasskeyForgetBody     Key = "passkeyForgetBody"
-	PasskeySettingsTitle  Key = "passkeySettingsTitle"
-	PasskeySettingsBody   Key = "passkeySettingsBody"
-	PasskeySettingsHave   Key = "passkeySettingsHave"
-	PasskeyCanceled       Key = "passkeyCanceled"
-	PasskeyExport         Key = "passkeyExport"
-	PasskeyExportTitle    Key = "passkeyExportTitle"
-	PasskeyExported       Key = "passkeyExported"
-	PasskeyExportForget   Key = "passkeyExportForget"
-	PasskeyRestore        Key = "passkeyRestore"
-	PasskeyRestoreTitle   Key = "passkeyRestoreTitle"
-	PasskeyRestored       Key = "passkeyRestored"
-	PasskeyRecoveryHint   Key = "passkeyRecoveryHint"
-	PasskeyRecoveryFile   Key = "passkeyRecoveryFile"
-	PasskeyRecoveryFailed Key = "passkeyRecoveryFailed"
+	PasskeyTitle           Key = "passkeyTitle"
+	PasskeyBadge           Key = "passkeyBadge"
+	PasskeyBody            Key = "passkeyBody"
+	PasskeyCreate          Key = "passkeyCreate"
+	PasskeyWaiting         Key = "passkeyWaiting"
+	PasskeyFine            Key = "passkeyFine"
+	PasskeyCreated         Key = "passkeyCreated"
+	PasskeyPreparedTitle   Key = "passkeyPreparedTitle"
+	PasskeyPreparedBody    Key = "passkeyPreparedBody"
+	PasskeyPreparedFoot    Key = "passkeyPreparedFoot"
+	PasskeyFailed          Key = "passkeyFailed"
+	PasskeyUnavailable     Key = "passkeyUnavailable"
+	PasskeyNearAccount     Key = "passkeyNearAccount"
+	PasskeyEVMAccount      Key = "passkeyEVMAccount"
+	PasskeyEVMNote         Key = "passkeyEVMNote"
+	PasskeySolanaAccount   Key = "passkeySolanaAccount"
+	PasskeySolanaNote      Key = "passkeySolanaNote"
+	PasskeySolanaClaimed   Key = "passkeySolanaClaimed"
+	PasskeySolanaUnchecked Key = "passkeySolanaUnchecked"
+	PasskeyDeriving        Key = "passkeyDeriving"
+	PasskeyMainnetOnly     Key = "passkeyMainnetOnly"
+	PasskeyDeploy          Key = "passkeyDeploy"
+	PasskeyDeployHint      Key = "passkeyDeployHint"
+	PasskeyDeployNote      Key = "passkeyDeployNote"
+	PasskeyDeployed        Key = "passkeyDeployed"
+	PasskeyAlreadyOnChain  Key = "passkeyAlreadyOnChain"
+	PasskeySend            Key = "passkeySend"
+	PasskeySendNote        Key = "passkeySendNote"
+	PasskeyNoRelayer       Key = "passkeyNoRelayer"
+	PasskeyRelayerLocked   Key = "passkeyRelayerLocked"
+	PasskeyRejected        Key = "passkeyRejected"
+	PasskeyForget          Key = "passkeyForget"
+	PasskeyForgetTitle     Key = "passkeyForgetTitle"
+	PasskeyForgetBody      Key = "passkeyForgetBody"
+	PasskeySettingsTitle   Key = "passkeySettingsTitle"
+	PasskeySettingsBody    Key = "passkeySettingsBody"
+	PasskeySettingsHave    Key = "passkeySettingsHave"
+	PasskeyCanceled        Key = "passkeyCanceled"
+	PasskeyExport          Key = "passkeyExport"
+	PasskeyExportTitle     Key = "passkeyExportTitle"
+	PasskeyExported        Key = "passkeyExported"
+	PasskeyExportForget    Key = "passkeyExportForget"
+	PasskeyRestore         Key = "passkeyRestore"
+	PasskeyRestoreTitle    Key = "passkeyRestoreTitle"
+	PasskeyRestored        Key = "passkeyRestored"
+	PasskeyRecoveryHint    Key = "passkeyRecoveryHint"
+	PasskeyRecoveryFile    Key = "passkeyRecoveryFile"
+	PasskeyRecoveryFailed  Key = "passkeyRecoveryFailed"
 
 	AuthTouchID      Key = "authTouchID"
 	AuthFaceID       Key = "authFaceID"
@@ -344,35 +346,106 @@ const (
 	Seconds Key = "seconds"
 	Minutes Key = "minutes"
 
-	PluginCount         Key = "pluginCount"
-	PluginInstall       Key = "pluginInstall"
-	PluginInstallTitle  Key = "pluginInstallTitle"
-	PluginInstalled     Key = "pluginInstalled"
-	PluginInstallFailed Key = "pluginInstallFailed"
-	PluginEmpty         Key = "pluginEmpty"
-	PluginEmptyWhy      Key = "pluginEmptyWhy"
-	PluginOpenStore     Key = "pluginOpenStore"
-	PluginUnsigned      Key = "pluginUnsigned"
-	PluginOfficial      Key = "pluginOfficial"
-	PluginLogs          Key = "pluginLogs"
-	PluginLogsEmpty     Key = "pluginLogsEmpty"
-	PluginRemoveTitle   Key = "pluginRemoveTitle"
-	PluginRemoveBody    Key = "pluginRemoveBody"
-	PluginRemoved       Key = "pluginRemoved"
-	PluginRestarted     Key = "pluginRestarted"
-	PluginSettingsSaved Key = "pluginSettingsSaved"
-	PluginSave          Key = "pluginSave"
-	PluginBack          Key = "pluginBack"
-	PluginDisabled      Key = "pluginDisabled"
-	AppOpen             Key = "appOpen"
-	AppSettings         Key = "appSettings"
-	AppAll              Key = "appAll"
-	AppOff              Key = "appOff"
-	AppNoPages          Key = "appNoPages"
-	AppBroken           Key = "appBroken"
-	AppZip              Key = "appZip"
-	AppZipTitle         Key = "appZipTitle"
-	Cancel              Key = "cancel"
+	PluginCount               Key = "pluginCount"
+	PluginInstall             Key = "pluginInstall"
+	PluginInstallTitle        Key = "pluginInstallTitle"
+	PluginInstalled           Key = "pluginInstalled"
+	PluginInstallFailed       Key = "pluginInstallFailed"
+	PluginEmpty               Key = "pluginEmpty"
+	PluginEmptyWhy            Key = "pluginEmptyWhy"
+	PluginOpenStore           Key = "pluginOpenStore"
+	PluginUnsigned            Key = "pluginUnsigned"
+	PluginOfficial            Key = "pluginOfficial"
+	PluginLogs                Key = "pluginLogs"
+	PluginLogsEmpty           Key = "pluginLogsEmpty"
+	PluginRemoveTitle         Key = "pluginRemoveTitle"
+	PluginRemoveBody          Key = "pluginRemoveBody"
+	PluginRemoved             Key = "pluginRemoved"
+	PluginRestarted           Key = "pluginRestarted"
+	PluginSettingsSaved       Key = "pluginSettingsSaved"
+	PluginSettingsWriteFailed Key = "pluginSettingsWriteFailed"
+	PluginSave                Key = "pluginSave"
+	PluginBack                Key = "pluginBack"
+	PluginDisabled            Key = "pluginDisabled"
+	AppOpen                   Key = "appOpen"
+	AppSettings               Key = "appSettings"
+	AppAll                    Key = "appAll"
+	AppOff                    Key = "appOff"
+	AppNoPages                Key = "appNoPages"
+	AppBroken                 Key = "appBroken"
+	AppZip                    Key = "appZip"
+	AppZipTitle               Key = "appZipTitle"
+	Cancel                    Key = "cancel"
+
+	CreatorCustomAgent Key = "creatorCustomAgent"
+
+	PluginErrAppBusy                     Key = "pluginErrAppBusy"
+	PluginErrBroken                      Key = "pluginErrBroken"
+	PluginErrInvalidID                   Key = "pluginErrInvalidID"
+	PluginErrManagerClosed               Key = "pluginErrManagerClosed"
+	PluginErrNotFound                    Key = "pluginErrNotFound"
+	PluginErrStoreUnavailable            Key = "pluginErrStoreUnavailable"
+	PluginErrCandidateConflict           Key = "pluginErrCandidateConflict"
+	PluginErrExpectedHashRequired        Key = "pluginErrExpectedHashRequired"
+	PluginErrInvalidExpectedHash         Key = "pluginErrInvalidExpectedHash"
+	PluginErrInstallationFailed          Key = "pluginErrInstallationFailed"
+	PluginErrInstallationNotFound        Key = "pluginErrInstallationNotFound"
+	PluginErrInstallationNotPending      Key = "pluginErrInstallationNotPending"
+	PluginErrInvalidOperation            Key = "pluginErrInvalidOperation"
+	PluginErrInvalidStore                Key = "pluginErrInvalidStore"
+	PluginErrInvalidVia                  Key = "pluginErrInvalidVia"
+	PluginErrPersonalNamespace           Key = "pluginErrPersonalNamespace"
+	PluginErrIDMismatch                  Key = "pluginErrIDMismatch"
+	PluginErrProposalCancelled           Key = "pluginErrProposalCancelled"
+	PluginErrQueueFull                   Key = "pluginErrQueueFull"
+	PluginErrSettingsWriteFailed         Key = "pluginErrSettingsWriteFailed"
+	PluginErrRequestID                   Key = "pluginErrRequestID"
+	PluginErrTargetRequired              Key = "pluginErrTargetRequired"
+	PluginErrValidationFailed            Key = "pluginErrValidationFailed"
+	PluginErrSettingsTooLarge            Key = "pluginErrSettingsTooLarge"
+	PluginErrSettingTooLarge             Key = "pluginErrSettingTooLarge"
+	PluginErrSettingsUnavailable         Key = "pluginErrSettingsUnavailable"
+	PluginErrUndeclaredSetting           Key = "pluginErrUndeclaredSetting"
+	PluginErrInvalidDir                  Key = "pluginErrInvalidDir"
+	PluginErrRemoveFailed                Key = "pluginErrRemoveFailed"
+	PluginErrBaseChanged                 Key = "pluginErrBaseChanged"
+	PluginErrCandidateChanged            Key = "pluginErrCandidateChanged"
+	PluginErrCredentialsUnavailable      Key = "pluginErrCredentialsUnavailable"
+	PluginErrExists                      Key = "pluginErrExists"
+	PluginErrRecoveryFailed              Key = "pluginErrRecoveryFailed"
+	PluginErrRecoveryRequired            Key = "pluginErrRecoveryRequired"
+	PluginErrSettingsMigration           Key = "pluginErrSettingsMigration"
+	PluginErrSourceNotAllowed            Key = "pluginErrSourceNotAllowed"
+	PluginErrStorageQuota                Key = "pluginErrStorageQuota"
+	PluginErrVersionConflict             Key = "pluginErrVersionConflict"
+	PluginErrExampleNotFound             Key = "pluginErrExampleNotFound"
+	PluginErrExampleUnavailable          Key = "pluginErrExampleUnavailable"
+	PluginErrHashUnavailable             Key = "pluginErrHashUnavailable"
+	PluginErrInvalidSource               Key = "pluginErrInvalidSource"
+	PluginErrPackageTooLarge             Key = "pluginErrPackageTooLarge"
+	PluginErrSourceNotFound              Key = "pluginErrSourceNotFound"
+	PluginErrSourceUnavailable           Key = "pluginErrSourceUnavailable"
+	PluginErrSourceUnreadable            Key = "pluginErrSourceUnreadable"
+	PluginErrAPIMutationForbidden        Key = "pluginErrAPIMutationForbidden"
+	PluginErrInstallationOriginForbidden Key = "pluginErrInstallationOriginForbidden"
+	PluginErrProvenanceDeleteFailed      Key = "pluginErrProvenanceDeleteFailed"
+
+	VerifyWaitingSettings Key = "verifyWaitingSettings"
+	VerifyRunning         Key = "verifyRunning"
+	VerifyPassed          Key = "verifyPassed"
+	VerifyBusy            Key = "verifyBusy"
+	VerifyDisabled        Key = "verifyDisabled"
+	VerifyNoPages         Key = "verifyNoPages"
+	VerifySettingsFailed  Key = "verifySettingsFailed"
+	VerifyHostChanged     Key = "verifyHostChanged"
+	VerifyContentChanged  Key = "verifyContentChanged"
+	VerifyFailed          Key = "verifyFailed"
+	VerifyTitle           Key = "verifyTitle"
+	VerifyBody            Key = "verifyBody"
+	VerifyCheckedAt       Key = "verifyCheckedAt"
+	VerifyButton          Key = "verifyButton"
+	VerifyAgain           Key = "verifyAgain"
+	InstalledNotice       Key = "installedNotice"
 
 	InstalledTab       Key = "installedTab"
 	StoreTab           Key = "storeTab"
@@ -423,6 +496,8 @@ const (
 	StorePermStorage     Key = "storePermStorage"
 	StorePermSettings    Key = "storePermSettings"
 	StoreFrom            Key = "storeFrom"
+	StoreInstallID       Key = "storeInstallID"
+	StoreChanged         Key = "storeChanged"
 	TrayOpenApp          Key = "trayOpenApp"
 	TrayRefresh          Key = "trayRefresh"
 	StoreNewPerms        Key = "storeNewPerms"
@@ -647,52 +722,54 @@ var messages = map[Key]map[string]string{
 	WalletNearSendView:           {English: "View transaction", Chinese: "查看交易"},
 	ApproveWalletWarning:         {English: "This transfer comes from your own wallet. Check the recipient and the amount before you approve.", Chinese: "这笔转账来自你自己的钱包。批准前请核对收款账户和金额。"},
 
-	PasskeyTitle:          {English: "Passkey wallet", Chinese: "Passkey 钱包"},
-	PasskeyBadge:          {English: "NEAR + EVM + Solana", Chinese: "NEAR + EVM + Solana"},
-	PasskeyBody:           {English: "One passkey, held by your device or password manager, controls a NEAR account, an EVM smart account at the same address on every EVM chain, and a Solana vault.", Chinese: "一个由设备或密码管理器保管的 Passkey，控制一个 NEAR 账户、在所有 EVM 链上地址相同的 EVM 智能账户，以及一个 Solana 金库。"},
-	PasskeyCreate:         {English: "Create passkey", Chinese: "创建 Passkey"},
-	PasskeyWaiting:        {English: "Waiting for your passkey…", Chinese: "等待 Passkey 确认…"},
-	PasskeyFine:           {English: "The private key never leaves the authenticator. Lintel stores only the public key. To restore this wallet later, keep the original passkey and an exported public recovery file.", Chinese: "私钥不会离开认证器。门厅只保存公钥。以后恢复此钱包时，必须同时保留原 Passkey 和导出的公开恢复文件。"},
-	PasskeyCreated:        {English: "Passkey created. Export the public recovery file before funding the NEAR account. The Solana vault is not on chain — do not send SOL there.", Chinese: "Passkey 已创建。请先导出公开恢复文件，再为 NEAR 账户充值。Solana 金库尚未在链上创建——不要向那里发送 SOL。"},
-	PasskeyPreparedTitle:  {English: "One passkey, every network", Chinese: "一把 Passkey，覆盖每个网络"},
-	PasskeyPreparedBody:   {English: "These addresses were prepared together. The private key never left the authenticator.", Chinese: "这些地址是一起准备好的。私钥没有离开认证器。"},
-	PasskeyPreparedFoot:   {English: "Ethereum and Base share one smart-account address. Both NEAR networks share one account. The Solana vault is not created on chain — do not send SOL there. Sending from the EVM account is not wired.", Chinese: "Ethereum 和 Base 共用一个智能账户地址。两个 NEAR 网络共用一个账户。Solana 金库尚未在链上创建——不要向那里发送 SOL。EVM 账户的发送尚未接入。"},
-	PasskeyFailed:         {English: "The passkey ceremony failed:", Chinese: "Passkey 流程失败："},
-	PasskeyUnavailable:    {English: "Passkeys are unavailable in this build.", Chinese: "此版本无法使用 Passkey。"},
-	PasskeyNearAccount:    {English: "NEAR account", Chinese: "NEAR 账户"},
-	PasskeyEVMAccount:     {English: "EVM account", Chinese: "EVM 账户"},
-	PasskeyEVMNote:        {English: "Sending from this smart account needs a bundler and is not wired.", Chinese: "从这个智能账户发送需要 bundler，当前尚未接入。"},
-	PasskeySolanaAccount:  {English: "Solana vault", Chinese: "Solana 金库"},
-	PasskeySolanaNote:     {English: "LazorKit v1 vault on Solana mainnet, derived from this passkey. Creating the account and sending SOL are not wired — do not send funds here yet.", Chinese: "由这把 Passkey 推导出的 Solana 主网 LazorKit v1 金库。创建账户和发送 SOL 都尚未接入——先不要往这里转账。"},
-	PasskeyDeriving:       {English: "Reading from the factory…", Chinese: "正在从工厂合约读取…"},
-	PasskeyMainnetOnly:    {English: "The NEAR passkey wallet contract is on mainnet. Switch to NEAR mainnet to create or send.", Chinese: "NEAR Passkey 钱包合约部署在主网。请切换到 NEAR 主网后再创建或发送。"},
-	PasskeyDeploy:         {English: "Create account", Chinese: "创建账户"},
-	PasskeyDeployHint:     {English: "The relayer pays the storage and gas; the passkey authorizes the account.", Chinese: "中继账户支付存储和 gas，Passkey 授权该账户。"},
-	PasskeyDeployNote:     {English: "Create the passkey's NEAR account. %s relays the transaction and pays its fee; the passkey's key authorizes the account's StateInit.", Chinese: "创建 Passkey 的 NEAR 账户。%s 负责中继并支付手续费；Passkey 的密钥授权该账户的 StateInit。"},
-	PasskeyDeployed:       {English: "Account created. Transaction %s", Chinese: "账户已创建。交易 %s"},
-	PasskeyAlreadyOnChain: {English: "The account is already on chain.", Chinese: "该账户已经在链上了。"},
-	PasskeySend:           {English: "Sign and send", Chinese: "签名并发送"},
-	PasskeySendNote:       {English: "Send from the passkey account. %s relays the transaction and pays its fee; the passkey signs the transfer in your browser.", Chinese: "从 Passkey 账户发送。%s 负责中继并支付手续费；Passkey 会在浏览器中签署这笔转账。"},
-	PasskeyNoRelayer:      {English: "Add and unlock a NEAR account first; it relays the passkey's transactions.", Chinese: "请先添加并解锁一个 NEAR 账户，它负责中继 Passkey 的交易。"},
-	PasskeyRelayerLocked:  {English: "The relaying account was locked before it could sign.", Chinese: "中继账户在签名前被锁定了。"},
-	PasskeyRejected:       {English: "The transaction was rejected. Nothing was signed or sent.", Chinese: "交易已被拒绝。没有签名，也没有发送任何东西。"},
-	PasskeyForget:         {English: "Forget passkey", Chinese: "移除 Passkey"},
-	PasskeyForgetTitle:    {English: "Forget this passkey?", Chinese: "移除此 Passkey？"},
-	PasskeyForgetBody:     {English: "This removes the app's credential id, public key and account mapping. Export the public recovery file first. Restoring the same account requires both that file and the original passkey, including a synced copy. A synced passkey alone cannot restore it in this app. The credential itself stays in your authenticator.", Chinese: "此操作会删除应用保存的凭据 ID、公钥和账户映射。请先导出公开恢复文件。恢复同一账户必须同时拥有该文件和原 Passkey（可使用已同步的副本）。本应用无法仅凭已同步的 Passkey 恢复。凭据本身仍留在认证器中。"},
-	PasskeySettingsTitle:  {English: "Passkey wallet", Chinese: "Passkey 钱包"},
-	PasskeySettingsBody:   {English: "Create a passkey that owns a NEAR account, an EVM smart account, and a Solana vault.", Chinese: "创建一个同时拥有 NEAR 账户、EVM 智能账户和 Solana 金库的 Passkey。"},
-	PasskeySettingsHave:   {English: "Controlled by the passkey for %s, plus an EVM smart account and a Solana vault.", Chinese: "由 %s 的 Passkey 控制，同时还有一个 EVM 智能账户和一个 Solana 金库。"},
-	PasskeyCanceled:       {English: "The pending passkey operation was canceled. Start a new operation to continue.", Chinese: "等待中的 Passkey 操作已撤销。如需继续，请重新发起。"},
-	PasskeyExport:         {English: "Export recovery file", Chinese: "导出恢复文件"},
-	PasskeyExportTitle:    {English: "Export public passkey recovery data", Chinese: "导出 Passkey 公开恢复资料"},
-	PasskeyExported:       {English: "Public recovery file exported. Keep it with access to your original passkey; it contains account identifiers, but no private key.", Chinese: "公开恢复文件已导出。请同时保留原 Passkey 的访问权；文件含账户标识，不含私钥。"},
-	PasskeyExportForget:   {English: "Export, then forget", Chinese: "导出后移除"},
-	PasskeyRestore:        {English: "Restore passkey", Chinese: "恢复 Passkey"},
-	PasskeyRestoreTitle:   {English: "Choose public passkey recovery data", Chinese: "选择 Passkey 公开恢复资料"},
-	PasskeyRestored:       {English: "Original passkey verified. The same wallet account is restored.", Chinese: "原 Passkey 已验证，已恢复同一钱包账户。"},
-	PasskeyRecoveryHint:   {English: "Recovery requires the original passkey (or its synced copy) AND an exported public recovery file. Neither works alone. If the public data is lost after forgetting the wallet, this app cannot reconstruct the original account.", Chinese: "恢复必须同时拥有原 Passkey（或已同步的副本）和导出的公开恢复文件，缺一不可。移除钱包后若公开资料也丢失，本应用无法重建原账户。"},
-	PasskeyRecoveryFile:   {English: "Public passkey recovery JSON", Chinese: "Passkey 公开恢复 JSON"},
-	PasskeyRecoveryFailed: {English: "Passkey recovery data: %s", Chinese: "Passkey 恢复资料：%s"},
+	PasskeyTitle:           {English: "Passkey wallet", Chinese: "Passkey 钱包"},
+	PasskeyBadge:           {English: "NEAR + EVM + Solana", Chinese: "NEAR + EVM + Solana"},
+	PasskeyBody:            {English: "One passkey, held by your device or password manager, controls a NEAR account, an EVM smart account at the same address on every EVM chain, and a Solana vault.", Chinese: "一个由设备或密码管理器保管的 Passkey，控制一个 NEAR 账户、在所有 EVM 链上地址相同的 EVM 智能账户，以及一个 Solana 金库。"},
+	PasskeyCreate:          {English: "Create passkey", Chinese: "创建 Passkey"},
+	PasskeyWaiting:         {English: "Waiting for your passkey…", Chinese: "等待 Passkey 确认…"},
+	PasskeyFine:            {English: "The private key never leaves the authenticator. Lintel stores only the public key. To restore this wallet later, keep the original passkey and an exported public recovery file.", Chinese: "私钥不会离开认证器。门厅只保存公钥。以后恢复此钱包时，必须同时保留原 Passkey 和导出的公开恢复文件。"},
+	PasskeyCreated:         {English: "Passkey created. Export the public recovery file before funding the NEAR account. The Solana vault is not on chain — do not send SOL there.", Chinese: "Passkey 已创建。请先导出公开恢复文件，再为 NEAR 账户充值。Solana 金库尚未在链上创建——不要向那里发送 SOL。"},
+	PasskeyPreparedTitle:   {English: "One passkey, every network", Chinese: "一把 Passkey，覆盖每个网络"},
+	PasskeyPreparedBody:    {English: "These addresses were prepared together. The private key never left the authenticator.", Chinese: "这些地址是一起准备好的。私钥没有离开认证器。"},
+	PasskeyPreparedFoot:    {English: "Ethereum and Base share one smart-account address. Both NEAR networks share one account. The Solana vault is not created on chain — do not send SOL there. Sending from the EVM account is not wired.", Chinese: "Ethereum 和 Base 共用一个智能账户地址。两个 NEAR 网络共用一个账户。Solana 金库尚未在链上创建——不要向那里发送 SOL。EVM 账户的发送尚未接入。"},
+	PasskeyFailed:          {English: "The passkey ceremony failed:", Chinese: "Passkey 流程失败："},
+	PasskeyUnavailable:     {English: "Passkeys are unavailable in this build.", Chinese: "此版本无法使用 Passkey。"},
+	PasskeyNearAccount:     {English: "NEAR account", Chinese: "NEAR 账户"},
+	PasskeyEVMAccount:      {English: "EVM account", Chinese: "EVM 账户"},
+	PasskeyEVMNote:         {English: "Sending from this smart account needs a bundler and is not wired.", Chinese: "从这个智能账户发送需要 bundler，当前尚未接入。"},
+	PasskeySolanaAccount:   {English: "Solana vault", Chinese: "Solana 金库"},
+	PasskeySolanaNote:      {English: "LazorKit v1 vault on Solana mainnet, derived from this passkey. Creating the account and sending SOL are not wired — do not send funds here yet.", Chinese: "由这把 Passkey 推导出的 Solana 主网 LazorKit v1 金库。创建账户和发送 SOL 都尚未接入——先不要往这里转账。"},
+	PasskeySolanaClaimed:   {English: "This vault address already has an account on this network. It may not be yours — do not send funds here.", Chinese: "这个金库地址在当前网络上已有账户，可能不是你的——不要往这里转账。"},
+	PasskeySolanaUnchecked: {English: "Couldn't check whether this vault address is already taken. No balance is shown until the check succeeds.", Chinese: "无法确认这个金库地址是否已被占用。在确认之前不显示余额。"},
+	PasskeyDeriving:        {English: "Reading from the factory…", Chinese: "正在从工厂合约读取…"},
+	PasskeyMainnetOnly:     {English: "The NEAR passkey wallet contract is on mainnet. Switch to NEAR mainnet to create or send.", Chinese: "NEAR Passkey 钱包合约部署在主网。请切换到 NEAR 主网后再创建或发送。"},
+	PasskeyDeploy:          {English: "Create account", Chinese: "创建账户"},
+	PasskeyDeployHint:      {English: "The relayer pays the storage and gas; the passkey authorizes the account.", Chinese: "中继账户支付存储和 gas，Passkey 授权该账户。"},
+	PasskeyDeployNote:      {English: "Create the passkey's NEAR account. %s relays the transaction and pays its fee; the passkey's key authorizes the account's StateInit.", Chinese: "创建 Passkey 的 NEAR 账户。%s 负责中继并支付手续费；Passkey 的密钥授权该账户的 StateInit。"},
+	PasskeyDeployed:        {English: "Account created. Transaction %s", Chinese: "账户已创建。交易 %s"},
+	PasskeyAlreadyOnChain:  {English: "The account is already on chain.", Chinese: "该账户已经在链上了。"},
+	PasskeySend:            {English: "Sign and send", Chinese: "签名并发送"},
+	PasskeySendNote:        {English: "Send from the passkey account. %s relays the transaction and pays its fee; the passkey signs the transfer in your browser.", Chinese: "从 Passkey 账户发送。%s 负责中继并支付手续费；Passkey 会在浏览器中签署这笔转账。"},
+	PasskeyNoRelayer:       {English: "Add and unlock a NEAR account first; it relays the passkey's transactions.", Chinese: "请先添加并解锁一个 NEAR 账户，它负责中继 Passkey 的交易。"},
+	PasskeyRelayerLocked:   {English: "The relaying account was locked before it could sign.", Chinese: "中继账户在签名前被锁定了。"},
+	PasskeyRejected:        {English: "The transaction was rejected. Nothing was signed or sent.", Chinese: "交易已被拒绝。没有签名，也没有发送任何东西。"},
+	PasskeyForget:          {English: "Forget passkey", Chinese: "移除 Passkey"},
+	PasskeyForgetTitle:     {English: "Forget this passkey?", Chinese: "移除此 Passkey？"},
+	PasskeyForgetBody:      {English: "This removes the app's credential id, public key and account mapping. Export the public recovery file first. Restoring the same account requires both that file and the original passkey, including a synced copy. A synced passkey alone cannot restore it in this app. The credential itself stays in your authenticator.", Chinese: "此操作会删除应用保存的凭据 ID、公钥和账户映射。请先导出公开恢复文件。恢复同一账户必须同时拥有该文件和原 Passkey（可使用已同步的副本）。本应用无法仅凭已同步的 Passkey 恢复。凭据本身仍留在认证器中。"},
+	PasskeySettingsTitle:   {English: "Passkey wallet", Chinese: "Passkey 钱包"},
+	PasskeySettingsBody:    {English: "Create a passkey that owns a NEAR account, an EVM smart account, and a Solana vault.", Chinese: "创建一个同时拥有 NEAR 账户、EVM 智能账户和 Solana 金库的 Passkey。"},
+	PasskeySettingsHave:    {English: "Controlled by the passkey for %s, plus an EVM smart account and a Solana vault.", Chinese: "由 %s 的 Passkey 控制，同时还有一个 EVM 智能账户和一个 Solana 金库。"},
+	PasskeyCanceled:        {English: "The pending passkey operation was canceled. Start a new operation to continue.", Chinese: "等待中的 Passkey 操作已撤销。如需继续，请重新发起。"},
+	PasskeyExport:          {English: "Export recovery file", Chinese: "导出恢复文件"},
+	PasskeyExportTitle:     {English: "Export public passkey recovery data", Chinese: "导出 Passkey 公开恢复资料"},
+	PasskeyExported:        {English: "Public recovery file exported. Keep it with access to your original passkey; it contains account identifiers, but no private key.", Chinese: "公开恢复文件已导出。请同时保留原 Passkey 的访问权；文件含账户标识，不含私钥。"},
+	PasskeyExportForget:    {English: "Export, then forget", Chinese: "导出后移除"},
+	PasskeyRestore:         {English: "Restore passkey", Chinese: "恢复 Passkey"},
+	PasskeyRestoreTitle:    {English: "Choose public passkey recovery data", Chinese: "选择 Passkey 公开恢复资料"},
+	PasskeyRestored:        {English: "Original passkey verified. The same wallet account is restored.", Chinese: "原 Passkey 已验证，已恢复同一钱包账户。"},
+	PasskeyRecoveryHint:    {English: "Recovery requires the original passkey (or its synced copy) AND an exported public recovery file. Neither works alone. If the public data is lost after forgetting the wallet, this app cannot reconstruct the original account.", Chinese: "恢复必须同时拥有原 Passkey（或已同步的副本）和导出的公开恢复文件，缺一不可。移除钱包后若公开资料也丢失，本应用无法重建原账户。"},
+	PasskeyRecoveryFile:    {English: "Public passkey recovery JSON", Chinese: "Passkey 公开恢复 JSON"},
+	PasskeyRecoveryFailed:  {English: "Passkey recovery data: %s", Chinese: "Passkey 恢复资料：%s"},
 
 	AuthTouchID:      {English: "Touch ID", Chinese: "触控 ID"},
 	AuthFaceID:       {English: "Face ID", Chinese: "面容 ID"},
@@ -843,35 +920,106 @@ var messages = map[Key]map[string]string{
 	Seconds: {English: "%ds", Chinese: "%d 秒"},
 	Minutes: {English: "%dm", Chinese: "%d 分钟"},
 
-	PluginCount:         {English: "%d apps · %d on", Chinese: "%d 个应用 · %d 个已启用"},
-	PluginInstall:       {English: "Install from folder…", Chinese: "从文件夹安装…"},
-	PluginInstallTitle:  {English: "Choose an app folder", Chinese: "选择应用文件夹"},
-	PluginInstalled:     {English: "Installed %s.", Chinese: "已安装 %s。"},
-	PluginInstallFailed: {English: "Install failed: %s", Chinese: "安装失败：%s"},
-	PluginEmpty:         {English: "No apps yet", Chinese: "还没有应用"},
-	PluginEmptyWhy:      {English: "An app is a plugin: a folder with plugin.json and a JavaScript file. Install one from a folder, a zip, or the store.", Chinese: "应用就是插件：包含 plugin.json 和 JavaScript 文件的文件夹。可以从文件夹、zip 或商店安装。"},
-	PluginOpenStore:     {English: "Open store", Chinese: "打开商店"},
-	PluginUnsigned:      {English: "Unsigned", Chinese: "未签名"},
-	PluginOfficial:      {English: "Official", Chinese: "官方"},
-	PluginLogs:          {English: "Logs", Chinese: "日志"},
-	PluginLogsEmpty:     {English: "Nothing logged yet.", Chinese: "还没有日志。"},
-	PluginRemoveTitle:   {English: "Remove app?", Chinese: "移除应用？"},
-	PluginRemoveBody:    {English: "Remove %s? Its folder and saved settings are deleted.", Chinese: "移除 %s？它的文件夹和已保存的设置都会被删除。"},
-	PluginRemoved:       {English: "Removed %s.", Chinese: "已移除 %s。"},
-	PluginRestarted:     {English: "Restarted %d×", Chinese: "已重启 %d 次"},
-	PluginSettingsSaved: {English: "Settings saved.", Chinese: "设置已保存。"},
-	PluginSave:          {English: "Save", Chinese: "保存"},
-	PluginBack:          {English: "Back", Chinese: "返回"},
-	PluginDisabled:      {English: "This app is turned off.", Chinese: "该应用已停用。"},
-	AppOpen:             {English: "Open", Chinese: "打开"},
-	AppSettings:         {English: "App settings", Chinese: "应用设置"},
-	AppAll:              {English: "All apps", Chinese: "全部应用"},
-	AppOff:              {English: "Off", Chinese: "已关闭"},
-	AppNoPages:          {English: "This app has no page to open.", Chinese: "这个应用没有可打开的页面。"},
-	AppBroken:           {English: "This app could not be loaded.", Chinese: "这个应用无法加载。"},
-	AppZip:              {English: "Install from zip…", Chinese: "从 zip 安装…"},
-	AppZipTitle:         {English: "Choose an app zip", Chinese: "选择应用 zip 文件"},
-	Cancel:              {English: "Cancel", Chinese: "取消"},
+	PluginCount:               {English: "%d apps · %d on", Chinese: "%d 个应用 · %d 个已启用"},
+	PluginInstall:             {English: "Install from folder…", Chinese: "从文件夹安装…"},
+	PluginInstallTitle:        {English: "Choose an app folder", Chinese: "选择应用文件夹"},
+	PluginInstalled:           {English: "Installed %s.", Chinese: "已安装 %s。"},
+	PluginInstallFailed:       {English: "Install failed: %s", Chinese: "安装失败：%s"},
+	PluginEmpty:               {English: "No apps yet", Chinese: "还没有应用"},
+	PluginEmptyWhy:            {English: "An app is a plugin: a folder with plugin.json and a JavaScript file. Install one from a folder, a zip, or the store.", Chinese: "应用就是插件：包含 plugin.json 和 JavaScript 文件的文件夹。可以从文件夹、zip 或商店安装。"},
+	PluginOpenStore:           {English: "Open store", Chinese: "打开商店"},
+	PluginUnsigned:            {English: "Unsigned", Chinese: "未签名"},
+	PluginOfficial:            {English: "Official", Chinese: "官方"},
+	PluginLogs:                {English: "Logs", Chinese: "日志"},
+	PluginLogsEmpty:           {English: "Nothing logged yet.", Chinese: "还没有日志。"},
+	PluginRemoveTitle:         {English: "Remove app?", Chinese: "移除应用？"},
+	PluginRemoveBody:          {English: "Remove %s? Its folder and saved settings are deleted.", Chinese: "移除 %s？它的文件夹和已保存的设置都会被删除。"},
+	PluginRemoved:             {English: "Removed %s.", Chinese: "已移除 %s。"},
+	PluginRestarted:           {English: "Restarted %d×", Chinese: "已重启 %d 次"},
+	PluginSettingsSaved:       {English: "Settings saved.", Chinese: "设置已保存。"},
+	PluginSettingsWriteFailed: {English: "Some settings could not be saved.", Chinese: "部分设置未能保存。"},
+	PluginSave:                {English: "Save", Chinese: "保存"},
+	PluginBack:                {English: "Back", Chinese: "返回"},
+	PluginDisabled:            {English: "This app is turned off.", Chinese: "该应用已停用。"},
+	AppOpen:                   {English: "Open", Chinese: "打开"},
+	AppSettings:               {English: "App settings", Chinese: "应用设置"},
+	AppAll:                    {English: "All apps", Chinese: "全部应用"},
+	AppOff:                    {English: "Off", Chinese: "已关闭"},
+	AppNoPages:                {English: "This app has no page to open.", Chinese: "这个应用没有可打开的页面。"},
+	AppBroken:                 {English: "This app could not be loaded.", Chinese: "这个应用无法加载。"},
+	AppZip:                    {English: "Install from zip…", Chinese: "从 zip 安装…"},
+	AppZipTitle:               {English: "Choose an app zip", Chinese: "选择应用 zip 文件"},
+	Cancel:                    {English: "Cancel", Chinese: "取消"},
+
+	CreatorCustomAgent: {English: "Custom ACP agent", Chinese: "自定义 ACP Agent"},
+
+	PluginErrAppBusy:                     {English: "The app is busy; try again shortly.", Chinese: "应用正忙，请稍后重试。"},
+	PluginErrBroken:                      {English: "The app's content or manifest is damaged.", Chinese: "应用内容或清单已损坏。"},
+	PluginErrInvalidID:                   {English: "The app id is invalid.", Chinese: "应用 id 无效。"},
+	PluginErrManagerClosed:               {English: "App management is closed.", Chinese: "应用生命周期服务已关闭。"},
+	PluginErrNotFound:                    {English: "The app is not installed.", Chinese: "应用未安装。"},
+	PluginErrStoreUnavailable:            {English: "The app folder is unavailable.", Chinese: "应用目录不可用。"},
+	PluginErrCandidateConflict:           {English: "The app already has another pending candidate.", Chinese: "该应用已有其他待处理候选。"},
+	PluginErrExpectedHashRequired:        {English: "An update must include the installed package digest.", Chinese: "更新必须指定已安装包的摘要。"},
+	PluginErrInvalidExpectedHash:         {English: "A new installation cannot carry an update baseline.", Chinese: "新安装不能携带更新基线。"},
+	PluginErrInstallationFailed:          {English: "The installation did not finish; the previous version is kept.", Chinese: "安装未完成，旧版已保留。"},
+	PluginErrInstallationNotFound:        {English: "No such installation task.", Chinese: "安装任务不存在。"},
+	PluginErrInstallationNotPending:      {English: "The installation task is no longer pending.", Chinese: "安装任务已不在待确认状态。"},
+	PluginErrInvalidOperation:            {English: "The installation operation is invalid.", Chinese: "安装操作无效。"},
+	PluginErrInvalidStore:                {English: "The app store is unavailable.", Chinese: "应用存储不可用。"},
+	PluginErrInvalidVia:                  {English: "The proposal source is invalid.", Chinese: "提议来源无效。"},
+	PluginErrPersonalNamespace:           {English: "Personal apps must use the local.<owner>.<slug> namespace.", Chinese: "个人应用必须使用 local.<owner>.<slug> 命名空间。"},
+	PluginErrIDMismatch:                  {English: "The target id does not match the candidate manifest.", Chinese: "目标 id 与候选清单不一致。"},
+	PluginErrProposalCancelled:           {English: "The proposal was cancelled or its source closed; propose again.", Chinese: "提议已取消或来源已关闭，请重新提议。"},
+	PluginErrQueueFull:                   {English: "Too many pending operations; try again shortly.", Chinese: "待处理操作过多，请稍后重试。"},
+	PluginErrSettingsWriteFailed:         {English: "The app state could not be saved.", Chinese: "无法保存应用状态。"},
+	PluginErrRequestID:                   {English: "The installation task could not be created.", Chinese: "无法创建安装任务。"},
+	PluginErrTargetRequired:              {English: "An update must name the app id.", Chinese: "更新必须指定应用 id。"},
+	PluginErrValidationFailed:            {English: "The candidate app failed validation.", Chinese: "候选应用未通过校验。"},
+	PluginErrSettingsTooLarge:            {English: "The settings batch exceeds the size limit.", Chinese: "设置批次超过大小上限。"},
+	PluginErrSettingTooLarge:             {English: "A setting value exceeds the size limit.", Chinese: "设置值超过大小上限。"},
+	PluginErrSettingsUnavailable:         {English: "The app settings could not be read.", Chinese: "无法读取应用设置。"},
+	PluginErrUndeclaredSetting:           {English: "The request contains an undeclared setting key.", Chinese: "请求包含未声明的设置键。"},
+	PluginErrInvalidDir:                  {English: "The app folder cannot be a symlink.", Chinese: "应用目录不能是符号链接。"},
+	PluginErrRemoveFailed:                {English: "The app could not be removed cleanly; try again.", Chinese: "应用未能完整删除，请重试。"},
+	PluginErrBaseChanged:                 {English: "The installed app's content or state changed; read it again and propose.", Chinese: "已安装应用的内容或状态已变化，请重新读取后提议。"},
+	PluginErrCandidateChanged:            {English: "The candidate snapshot changed; propose again.", Chinese: "候选快照已改变，请重新提议。"},
+	PluginErrCredentialsUnavailable:      {English: "The old credentials could not be checked; the update was not committed.", Chinese: "无法检查旧凭据，更新未提交。"},
+	PluginErrExists:                      {English: "The app id is already installed; propose an update.", Chinese: "应用 id 已安装，请明确提议更新。"},
+	PluginErrRecoveryFailed:              {English: "Installation recovery failed; the previous version or transaction is kept.", Chinese: "安装恢复失败，旧版或事务已保留。"},
+	PluginErrRecoveryRequired:            {English: "The installation transaction needs recovery at startup.", Chinese: "安装事务需要启动恢复核对。"},
+	PluginErrSettingsMigration:           {English: "The update changes settings in a way that needs a migration; clear the affected values first.", Chinese: "更新改变了设置定义，需要先清空受影响的设置值。"},
+	PluginErrSourceNotAllowed:            {English: "Only unsigned personal apps can be updated.", Chinese: "只能更新个人 Unsigned 应用。"},
+	PluginErrStorageQuota:                {English: "The new storage quota is below current usage.", Chinese: "新存储额度低于当前数据占用。"},
+	PluginErrVersionConflict:             {English: "The new version must be higher than the installed version.", Chinese: "新版本必须高于已安装版本。"},
+	PluginErrExampleNotFound:             {English: "No such official example.", Chinese: "官方模板不存在。"},
+	PluginErrExampleUnavailable:          {English: "The official example is unavailable.", Chinese: "官方模板不可用。"},
+	PluginErrHashUnavailable:             {English: "The app digest could not be computed.", Chinese: "无法计算应用摘要。"},
+	PluginErrInvalidSource:               {English: "The app source is invalid.", Chinese: "应用来源无效。"},
+	PluginErrPackageTooLarge:             {English: "The app source exceeds the size or file-count limit.", Chinese: "应用来源超过大小或文件数量上限。"},
+	PluginErrSourceNotFound:              {English: "The app source does not exist.", Chinese: "应用来源不存在。"},
+	PluginErrSourceUnavailable:           {English: "The candidate snapshot could not be created.", Chinese: "无法创建候选快照。"},
+	PluginErrSourceUnreadable:            {English: "The app source could not be read.", Chinese: "无法读取应用来源。"},
+	PluginErrAPIMutationForbidden:        {English: "The local API can change only unsigned local.* personal apps whose host record matches the files on disk.", Chinese: "本机 API 只能修改宿主安装记录与磁盘一致的未签名 local.* 个人应用。"},
+	PluginErrInstallationOriginForbidden: {English: "The local API cannot cancel an installation from another source.", Chinese: "本机 API 不能取消其他来源的安装任务。"},
+	PluginErrProvenanceDeleteFailed:      {English: "The app was removed, but its provenance record could not be deleted from the credential store.", Chinese: "应用已删除，但来源记录未能从凭据服务移除。"},
+
+	VerifyWaitingSettings: {English: "Waiting for settings to be saved.", Chinese: "等待保存设置后验证"},
+	VerifyRunning:         {English: "Checking the first page…", Chinese: "正在验证首页…"},
+	VerifyPassed:          {English: "The first page passed the run check.", Chinese: "首页已通过运行检查"},
+	VerifyBusy:            {English: "The app or verification is busy; try again shortly.", Chinese: "应用或验证任务正忙，请稍后重试"},
+	VerifyDisabled:        {English: "The app is off; enable it to verify.", Chinese: "应用已禁用，启用后可验证"},
+	VerifyNoPages:         {English: "The app has no page to verify.", Chinese: "应用没有可验证的页面"},
+	VerifySettingsFailed:  {English: "Settings were not fully saved; save again to verify.", Chinese: "设置未完整保存，请重新保存后验证"},
+	VerifyHostChanged:     {English: "The runtime changed; verify again.", Chinese: "运行环境已变化，请重新验证"},
+	VerifyContentChanged:  {English: "The app's content changed; check the installation.", Chinese: "应用内容已变化，请检查安装状态"},
+	VerifyFailed:          {English: "First-page verification failed; check the settings or edit the app.", Chinese: "首页验证失败，请检查设置或修改应用"},
+	VerifyTitle:           {English: "Post-install run check", Chinese: "安装后运行验证"},
+	VerifyBody:            {English: "Checks first-page execution and page structure; open the app to confirm its data. Verification never requests a wallet signature.", Chinese: "检查首页执行和页面结构；请打开应用核对数据。验证不会请求钱包签名。"},
+	VerifyCheckedAt:       {English: "Checked at %s", Chinese: "检查时间 %s"},
+	VerifyButton:          {English: "Verify first page", Chinese: "验证首页"},
+	VerifyAgain:           {English: "Verify again", Chinese: "重新验证"},
+	InstalledNotice:       {English: "App installed · %s", Chinese: "应用已安装 · %s"},
 
 	InstalledTab:       {English: "Installed", Chinese: "已安装"},
 	StoreTab:           {English: "Store", Chinese: "商店"},
@@ -902,7 +1050,7 @@ var messages = map[Key]map[string]string{
 	AgentTitle:       {English: "Local agent API", Chinese: "本地 Agent API"},
 	AgentBody:        {English: "A loopback API for local agents to read data, validate apps and propose installs or updates. You review installation in Apps. The API cannot sign or approve.", Chinese: "供本机 Agent 读取数据、校验应用并提议安装或更新。安装需在应用页审阅确认；API 不能签名或批准，且只监听本机回环地址。"},
 	AgentPort:        {English: "Port", Chinese: "端口"},
-	AgentPortInvalid: {English: "The port must be 1 to 65535.", Chinese: "端口必须是 1 到 65535。"},
+	AgentPortInvalid: {English: "The port must be 1024 to 65535.", Chinese: "端口必须是 1024 到 65535。"},
 	AgentListening:   {English: "Listening on http://%s", Chinese: "正在监听 http://%s"},
 	AgentToken:       {English: "Bearer token", Chinese: "访问令牌"},
 	AgentRotate:      {English: "Rotate token", Chinese: "更换令牌"},
@@ -922,6 +1070,8 @@ var messages = map[Key]map[string]string{
 	StorePermStorage:     {English: "Store %d KB of data", Chinese: "存储 %d KB 数据"},
 	StorePermSettings:    {English: "Settings: %d", Chinese: "设置：%d"},
 	StoreFrom:            {English: "From: %s", Chinese: "来源：%s"},
+	StoreInstallID:       {English: "ID: %s", Chinese: "应用 ID：%s"},
+	StoreChanged:         {English: "The app changed after you approved it. Nothing was installed.", Chinese: "应用在你批准后发生了变化，未安装。"},
 	TrayOpenApp:          {English: "Open Lintel", Chinese: "打开 Lintel"},
 	TrayRefresh:          {English: "Refresh data", Chinese: "刷新数据"},
 	StoreNewPerms:        {English: "New permissions: %s", Chinese: "新增权限：%s"},

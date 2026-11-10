@@ -7,6 +7,8 @@ import (
 	"os"
 	"path/filepath"
 	"time"
+
+	"github.com/egoist/mygo"
 )
 
 func (m *Manager) checkTarget(manifest Manifest, operation, expectedHash string) (*Installed, error) {
@@ -60,7 +62,9 @@ func (m *Manager) checkMigration(old Installed, next Manifest) error {
 				return managementError("CREDENTIALS_UNAVAILABLE", "无法检查旧凭据，更新未提交", 503)
 			}
 			secret, err := m.store.secrets.Get(secretKey(old.Manifest.ID, field.Key))
-			if err != nil && !errors.Is(err, fs.ErrNotExist) {
+			// 文件型测试库用 ErrNotExist；系统钥匙串的 Get 对从未写入的项返回 ErrSecretNotFound。
+			// 两者都表示该秘密不存在，移除这个字段不是凭据服务故障。
+			if err != nil && !errors.Is(err, fs.ErrNotExist) && !errors.Is(err, mygo.ErrSecretNotFound) {
 				return managementError("CREDENTIALS_UNAVAILABLE", "无法检查旧凭据，更新未提交", 503)
 			}
 			value = string(secret)

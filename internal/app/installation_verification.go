@@ -8,6 +8,7 @@ import (
 	"github.com/egoist/mygo/ui"
 
 	"github.com/davirain-su/lintel/internal/agent"
+	"github.com/davirain-su/lintel/internal/i18n"
 	"github.com/davirain-su/lintel/internal/plugin"
 )
 
@@ -165,34 +166,34 @@ func (a *App) installationVerificationResult(id, hash string) *agent.Verificatio
 
 func (a *App) installationVerificationFeedback(result agent.Verification) {
 	if result.RequestID != "" && result.RequestID == a.coding.installationID {
-		a.coding.notice = "应用已安装 · " + installationVerificationMessage(result)
+		a.coding.notice = a.t(i18n.InstalledNotice, a.installationVerificationMessage(result))
 	}
 }
 
-func installationVerificationMessage(result agent.Verification) string {
+func (a *App) installationVerificationMessage(result agent.Verification) string {
 	switch result.Status {
 	case "waiting_settings":
-		return "等待保存设置后验证"
+		return a.t(i18n.VerifyWaitingSettings)
 	case "running":
-		return "正在验证首页…"
+		return a.t(i18n.VerifyRunning)
 	case "passed":
-		return "首页已通过运行检查"
+		return a.t(i18n.VerifyPassed)
 	}
 	switch result.Code {
 	case "APP_BUSY":
-		return "应用或验证任务正忙，请稍后重试"
+		return a.t(i18n.VerifyBusy)
 	case "APP_DISABLED":
-		return "应用已禁用，启用后可验证"
+		return a.t(i18n.VerifyDisabled)
 	case "NO_PAGES":
-		return "应用没有可验证的页面"
+		return a.t(i18n.VerifyNoPages)
 	case "SETTINGS_WRITE_FAILED":
-		return "设置未完整保存，请重新保存后验证"
+		return a.t(i18n.VerifySettingsFailed)
 	case "HOST_CHANGED":
-		return "运行环境已变化，请重新验证"
+		return a.t(i18n.VerifyHostChanged)
 	case "CONTENT_CHANGED", "APP_NOT_FOUND":
-		return "应用内容已变化，请检查安装状态"
+		return a.t(i18n.VerifyContentChanged)
 	default:
-		return "首页验证失败，请检查设置或修改应用"
+		return a.t(i18n.VerifyFailed)
 	}
 }
 
@@ -209,18 +210,18 @@ func (a *App) installationVerificationView(c *ui.Context, id string) {
 		color = p.danger
 	}
 	ui.Column(c).Gap(7).Padding(12).Radius(9).Background(p.inset).Children(func() {
-		ui.Text(c, "安装后运行验证").FontSize(12).FontWeight(600)
-		ui.Text(c, installationVerificationMessage(result)).FontSize(12).TextColor(color).MaxLines(3)
-		ui.Text(c, "检查首页执行和页面结构；请打开应用核对数据。验证不会请求钱包签名。").FontSize(11).TextColor(p.muted).MaxLines(3)
+		ui.Text(c, a.t(i18n.VerifyTitle)).FontSize(12).FontWeight(600)
+		ui.Text(c, a.installationVerificationMessage(result)).FontSize(12).TextColor(color).MaxLines(3)
+		ui.Text(c, a.t(i18n.VerifyBody)).FontSize(11).TextColor(p.muted).MaxLines(3)
 		if result.CheckedAt != nil {
-			ui.Text(c, "检查时间 "+result.CheckedAt.Local().Format("15:04:05")).FontSize(10.5).TextColor(p.faint)
+			ui.Text(c, a.t(i18n.VerifyCheckedAt, result.CheckedAt.Local().Format("15:04:05"))).FontSize(10.5).TextColor(p.faint)
 		}
 		if result.Status != "running" {
 			ui.Row(c).Gap(8).Wrap().Children(func() {
-				label := "验证首页"
+				label := a.t(i18n.VerifyButton)
 				if result.Status == "passed" {
-					label = "重新验证"
-					a.softButton(c, "打开应用", nil, p.text, func() { a.openPluginApp(id) })
+					label = a.t(i18n.VerifyAgain)
+					a.softButton(c, a.t(i18n.AppOpen), nil, p.text, func() { a.openPluginApp(id) })
 				}
 				a.softButton(c, label, nil, p.accent, func() { a.verifyInstalledApp(id) })
 			})

@@ -55,8 +55,11 @@ type Permissions struct {
 
 // SettingField is one row of the plugin's settings form.
 type SettingField struct {
-	Key    string `json:"key"`
-	Label  string `json:"label"`
+	Key   string `json:"key"`
+	Label string `json:"label"`
+	// Secret stays omitempty so json.Marshal(Manifest) — the canonical
+	// package hash — stays byte-identical to installs recorded before this
+	// field was always emitted. The settings-status API uses settingStatusDTO.
 	Secret bool   `json:"secret,omitempty"`
 	Help   string `json:"help,omitempty"`
 	Link   string `json:"link,omitempty"`

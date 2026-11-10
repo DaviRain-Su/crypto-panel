@@ -75,7 +75,7 @@ func TestDappHTTPRequiresDocumentCapabilityEvenWithConnectedTopPage(t *testing.T
 	w, replies := dappHTTP(t, a, b, binding.page, origin, t.Context(), dappRequest{
 		ID: "main", Method: "signAndSendTransaction", Params: params, Capability: binding.capability,
 	})
-	if w.Code != http.StatusNoContent || len(replies) != 1 || replies[0].Error != "" || rpc.broadcast == nil {
+	if w.Code != http.StatusNoContent || len(replies) != 1 || replies[0].Error != "" || replies[0].Origin != origin || rpc.broadcast == nil {
 		t.Fatalf("main-frame status=%d replies=%+v broadcast=%v", w.Code, replies, rpc.broadcast != nil)
 	}
 }

@@ -108,3 +108,26 @@ func TestPricesSkipsRequestForUnknownSymbols(t *testing.T) {
 		t.Fatalf("got %v with %d calls", got, calls.Load())
 	}
 }
+
+func TestPricesKnowsCbeth(t *testing.T) {
+	if !Known("cbETH") {
+		t.Fatal("cbETH is not known")
+	}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.URL.Query().Get("ids"); got != "coinbase-wrapped-staked-eth" {
+			t.Errorf("ids = %q", got)
+		}
+		_, _ = w.Write([]byte(`{"coinbase-wrapped-staked-eth":{"usd":2.4}}`))
+	}))
+	defer srv.Close()
+
+	c := New()
+	c.URL = srv.URL
+	got, err := c.Prices(context.Background(), []string{"cbETH"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got["CBETH"] != 2.4 {
+		t.Fatalf("prices = %v", got)
+	}
+}

@@ -143,7 +143,7 @@ func (a *App) storeCard(c *ui.Context, entry plugin.RegistryEntry) {
 			ui.Text(c, entry.Description).FontSize(12).TextColor(p.muted).MaxLines(3)
 		}
 		if inst != nil && inst.Err != "" {
-			ui.Text(c, inst.Err).FontSize(11).TextColor(p.danger).MaxLines(2)
+			ui.Text(c, a.pluginErrText(inst.Err)).FontSize(11).TextColor(p.danger).MaxLines(2)
 		}
 	})
 }
@@ -312,6 +312,9 @@ func (ip *installPrompt) view(c *ui.Context) {
 				ui.Text(c, ip.m.Name).FontSize(14).FontWeight(600).MaxLines(1)
 				ui.Text(c, "v"+ip.m.Version).FontSize(11).TextColor(p.muted)
 			})
+			if ip.m.ID != "" {
+				ui.Text(c, ip.t(i18n.StoreInstallID, ip.m.ID)).FontSize(11).TextColor(p.muted).MaxLines(1)
+			}
 			if ip.m.Author != "" {
 				ui.Text(c, ip.t(i18n.StoreBy, ip.m.Author)).FontSize(11).TextColor(p.faint).MaxLines(1)
 			}

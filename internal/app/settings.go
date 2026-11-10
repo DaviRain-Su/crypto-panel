@@ -79,6 +79,9 @@ const (
 	MaxRefreshSeconds = 3600
 	// DefaultAgentPort is the local API's port until the user picks another.
 	DefaultAgentPort = 8765
+	// MinAgentPort excludes the privileged range, which the listener can
+	// never bind without extra privileges.
+	MinAgentPort = 1024
 )
 
 // DefaultSettings is the state before the user changes anything.
@@ -181,7 +184,7 @@ func (s Settings) Validate() Settings {
 	if s.RefreshSeconds < MinRefreshSeconds || s.RefreshSeconds > MaxRefreshSeconds {
 		s.RefreshSeconds = DefaultRefreshSeconds
 	}
-	if s.AgentPort <= 0 || s.AgentPort > 65535 {
+	if s.AgentPort < MinAgentPort || s.AgentPort > 65535 {
 		s.AgentPort = DefaultAgentPort
 	}
 	seen := make(map[string]bool, len(s.Accounts))

@@ -196,7 +196,46 @@ func (s *Server) handler() http.Handler {
 	mux.HandleFunc("PUT /v0/plugins/{id}/settings", s.guard(s.settings))
 	mux.HandleFunc("DELETE /v0/plugins/{id}", s.guard(s.remove))
 	mux.HandleFunc("POST /v0/plugins/{id}/refresh", s.guard(s.refresh))
-	return mux
+	// ServeMux 的兜底 404/405 是纯文本；换成文档规定的 JSON 错误信封。
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fallback := &jsonFallback{ResponseWriter: w}
+		mux.ServeHTTP(fallback, r)
+		if !fallback.intercept {
+			return
+		}
+		message, code := "no such endpoint", "NOT_FOUND"
+		if fallback.status == http.StatusMethodNotAllowed {
+			message, code = "method not allowed", "METHOD_NOT_ALLOWED"
+		}
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": message, "code": code})
+	})
+}
+
+// jsonFallback 只接管 ServeMux 自己产生的纯文本 404/405；已经按 JSON
+// 应答的处理器（guard 先设置了 JSON Content-Type）保持原样。
+type jsonFallback struct {
+	http.ResponseWriter
+	intercept bool
+	status    int
+}
+
+func (w *jsonFallback) WriteHeader(status int) {
+	if (status == http.StatusNotFound || status == http.StatusMethodNotAllowed) &&
+		!strings.HasPrefix(w.Header().Get("Content-Type"), "application/json") {
+		w.intercept = true
+		w.status = status
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		w.Header().Set("Cache-Control", "no-store")
+	}
+	w.ResponseWriter.WriteHeader(status)
+}
+
+func (w *jsonFallback) Write(data []byte) (int, error) {
+	if w.intercept {
+		// 丢弃 http.Error 的纯文本正文，由外层写 JSON 信封。
+		return len(data), nil
+	}
+	return w.ResponseWriter.Write(data)
 }
 
 // guard is the whole access rule: a loopback host, no browser origins, a

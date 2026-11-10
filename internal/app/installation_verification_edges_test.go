@@ -34,7 +34,7 @@ export function page(){
 }`, plugin.SettingField{Key: "label", Label: "Optional label"}), "acp")
 	a.reviewInstallation(job.RequestID)
 	tt := ui.NewTester(a.view, windowWidth, windowHeight)
-	if err := tt.Click("验证首页"); err != nil {
+	if err := tt.Click("Verify first page"); err != nil {
 		t.Fatal(err)
 	}
 	if got := installedVerification(t, a, job.PluginID); got == nil || got.Status != "failed" {

@@ -53,7 +53,9 @@ func scanJSON(dec *json.Decoder, t reflect.Type, depth int) error {
 		return errors.New("JSON: invalid syntax")
 	}
 	if token == nil {
-		return errors.New("JSON: null is not a valid field value")
+		// encoding/json 语义：显式 null 对任何目标类型都是 no-op。
+		// Token 已消费整个 null，直接返回，不改变目标。
+		return nil
 	}
 	if delim, ok := token.(json.Delim); ok {
 		switch delim {
