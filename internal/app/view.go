@@ -527,9 +527,10 @@ func (a *App) portfolio(c *ui.Context) {
 func (a *App) heroCard(c *ui.Context) {
 	p := a.pal
 	value := "—"
-	total, known := a.totalUSD()
-	if known {
-		value = usdText(total)
+	if !a.settings.HideFiat {
+		if total, known := a.totalUSD(); known {
+			value = usdText(total)
+		}
 	}
 	ui.Column(c).Gap(10).Padding(22).Radius(16).Border(1, p.hairline).
 		Gradient(p.accentSoft, p.card, 115).Children(func() {
@@ -571,6 +572,9 @@ func (a *App) emptyPortfolio(c *ui.Context) {
 func (a *App) accountCard(c *ui.Context, acc wallet.Address, network chain.Network) {
 	p := a.pal
 	snap := a.accountSnapshot(acc.Addr)
+	if snap != nil && snap.network.ID != "" {
+		network = snap.network
+	}
 	ui.Column(c).Key(acc.Addr).Gap(12).Padding(16).Radius(14).
 		Background(p.card).Border(1, p.hairline).Shadow(0, 1, 2, 0, p.shadow).Children(func() {
 		ui.Row(c).AlignItems(ui.Center).Gap(12).Children(func() {

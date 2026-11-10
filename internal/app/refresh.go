@@ -5,6 +5,8 @@ import (
 	"errors"
 	"log"
 	"math/big"
+	"strings"
+	"sync"
 	"time"
 
 	"github.com/egoist/mygo"
@@ -12,6 +14,10 @@ import (
 	"github.com/davirain-su/lintel/internal/chain"
 	"github.com/davirain-su/lintel/internal/chains"
 )
+
+// familyReadTimeout is how long one family's read may take. Each family
+// has its own, so a stuck endpoint cannot cancel the chains beside it.
+var familyReadTimeout = 90 * time.Second
 
 // accountSnapshot is one address's balances in one refresh. network is the
 // preset the balances were read on: an address is watched once, but its
@@ -22,6 +28,8 @@ type accountSnapshot struct {
 	native  *big.Int
 	tokens  []chain.TokenBalance
 	err     string
+	// block is the height this family's reader reported for this refresh.
+	block uint64
 }
 
 // familyFetch is the work one chain family contributes to a refresh: the
@@ -30,6 +38,14 @@ type familyFetch struct {
 	network chain.Network
 	reader  chain.Reader
 	addrs   []string
+}
+
+// familyResult is what one family's read produced. The goroutines write
+// disjoint slots, and the refresh reads them only after every family returns.
+type familyResult struct {
+	accounts []accountSnapshot
+	block    uint64
+	err      error
 }
 
 // vaultState says whether the passkey's Solana vault address already has an
@@ -92,6 +108,9 @@ func (a *App) requestRefresh() {
 			continue
 		}
 		network := a.settings.NetworkFor(family)
+		if network.ID == "" {
+			continue
+		}
 		reader, err := a.settings.ReaderFor(network)
 		if err != nil {
 			log.Printf("lintel: %v", err)
@@ -122,7 +141,6 @@ func (a *App) requestRefresh() {
 func (a *App) fetch(gen int, jobs []familyFetch) {
 	// Read the main-thread state before the goroutine starts.
 	source := a.priceSource
-	hideFiat := a.settings.HideFiat
 	// The vault check is best-effort and only applies to the selected
 	// network. Another family's reader must not answer it: when Solana is
 	// not selected, the state stays unknown and the balance stays hidden.
@@ -141,31 +159,57 @@ func (a *App) fetch(gen int, jobs []familyFetch) {
 		}
 	}
 	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
-		defer cancel()
-		snap := &snapshot{at: time.Now()}
-		var firstErr error
-		for _, job := range jobs {
-			for _, addr := range job.addrs {
-				acct, err := job.reader.Account(ctx, addr)
-				s := accountSnapshot{addr: addr, network: job.network}
-				if err != nil {
-					s.err = err.Error()
-					if firstErr == nil {
-						firstErr = err
+		results := make([]familyResult, len(jobs))
+		var wg sync.WaitGroup
+		for i, job := range jobs {
+			wg.Add(1)
+			go func(i int, job familyFetch) {
+				defer wg.Done()
+				ctx, cancel := context.WithTimeout(context.Background(), familyReadTimeout)
+				defer cancel()
+				var res familyResult
+				for _, addr := range job.addrs {
+					acct, err := job.reader.Account(ctx, addr)
+					s := accountSnapshot{addr: addr, network: job.network}
+					if err != nil {
+						s.err = err.Error()
+						if res.err == nil {
+							res.err = err
+						}
+					} else {
+						s.native = acct.Native
+						s.tokens = acct.Tokens
+						if len(acct.Warnings) > 0 && res.err == nil {
+							res.err = errors.New(acct.Warnings[0])
+						}
 					}
-				} else {
-					s.native = acct.Native
-					s.tokens = acct.Tokens
-					if len(acct.Warnings) > 0 && firstErr == nil {
-						firstErr = errors.New(acct.Warnings[0])
+					res.accounts = append(res.accounts, s)
+				}
+				if block, err := job.reader.Block(ctx); err == nil {
+					res.block = block
+					for j := range res.accounts {
+						res.accounts[j].block = block
 					}
 				}
-				snap.accounts = append(snap.accounts, s)
+				results[i] = res
+			}(i, job)
+		}
+		wg.Wait()
+		snap := &snapshot{at: time.Now()}
+		var firstErr error
+		for i, res := range results {
+			snap.accounts = append(snap.accounts, res.accounts...)
+			if firstErr == nil && res.err != nil {
+				firstErr = res.err
+			}
+			if jobs[i].network.ID == selected.ID {
+				snap.block = res.block
 			}
 		}
 		if exister != nil && vaultAddr != "" {
+			ctx, cancel := context.WithTimeout(context.Background(), familyReadTimeout)
 			exists, err := exister.AccountExists(ctx, vaultAddr)
+			cancel()
 			switch {
 			case err != nil:
 				// Leave the check unknown. The card must not treat a failed
@@ -177,16 +221,8 @@ func (a *App) fetch(gen int, jobs []familyFetch) {
 				snap.vault = vaultAbsent
 			}
 		}
-		for _, job := range jobs {
-			if job.network.ID != selected.ID {
-				continue
-			}
-			if block, err := job.reader.Block(ctx); err == nil {
-				snap.block = block
-			}
-			break
-		}
-		if source != nil && !hideFiat {
+		if source != nil {
+			ctx, cancel := context.WithTimeout(context.Background(), familyReadTimeout)
 			var symbols []string
 			seen := map[string]bool{}
 			add := func(symbol string) {
@@ -208,6 +244,7 @@ func (a *App) fetch(gen int, jobs []familyFetch) {
 			} else {
 				snap.fiatErr = err.Error()
 			}
+			cancel()
 		}
 		runOnUI(func() {
 			a.loading = false
@@ -248,9 +285,15 @@ func (a *App) refreshLoop() {
 	}
 }
 
-// totalsPartial reports that the headline total leaves some watched
-// address out: its refresh failed, or it has no balance yet while another
-// address does.
+// countsInTotal reports that this account belongs in the fiat total.
+// A testnet balance is never priced in, even when that testnet is selected.
+func countsInTotal(acc accountSnapshot) bool {
+	return !testnetNetwork(acc.network)
+}
+
+// totalsPartial reports that the headline total leaves some mainnet address
+// out: its refresh failed, or it has no balance yet while another does.
+// Every chain failing is not partial — there is no total to qualify.
 func (a *App) totalsPartial() bool {
 	if a.snap == nil {
 		return false
@@ -258,6 +301,9 @@ func (a *App) totalsPartial() bool {
 	known := false
 	missing := false
 	for _, acc := range a.snap.accounts {
+		if !countsInTotal(acc) {
+			continue
+		}
 		if acc.err != "" || acc.native == nil {
 			missing = true
 			continue
@@ -267,33 +313,43 @@ func (a *App) totalsPartial() bool {
 	return known && missing
 }
 
-// totalUSD values every asset the last snapshot holds, in USD: the native
-// balances and tokens at the prices the refresh fetched. An asset no price
-// names counts as zero, and ok is false when the last refresh priced
-// nothing at all, so an empty total is never shown as a real number.
+// totalUSD values every mainnet asset the last snapshot holds, in USD.
+// A chain whose read failed is left out. When every counted chain failed,
+// or nothing was priced, ok is false so the headline stays an em dash
+// instead of $0.00. HideFiat does not change this sum; the view hides it.
 func (a *App) totalUSD() (float64, bool) {
-	if a.snap == nil || a.settings.HideFiat || len(a.snap.usd) == 0 {
+	if a.snap == nil || len(a.snap.usd) == 0 {
 		return 0, false
 	}
+	included := false
 	total := 0.0
 	for _, acc := range a.snap.accounts {
-		if acc.native != nil {
-			total += usdValue(acc.native, acc.network.Decimals, acc.network.Symbol, a.snap.usd)
+		if !countsInTotal(acc) || acc.err != "" || acc.native == nil {
+			continue
 		}
+		included = true
+		total += usdValue(acc.native, acc.network.Decimals, acc.network.Symbol, a.snap.usd)
 		for _, tb := range acc.tokens {
 			total += usdValue(tb.Amount, tb.Token.Decimals, tb.Token.Symbol, a.snap.usd)
 		}
+	}
+	if !included {
+		return 0, false
 	}
 	return total, true
 }
 
 // usdValue is amount's worth at the symbol's price, or zero when the price
-// is missing: a balance is never invented.
+// is missing: a balance is never invented. Price keys are upper case, so
+// cbETH matches CBETH.
 func usdValue(amount *big.Int, decimals int, symbol string, usd map[string]float64) float64 {
 	if amount == nil || amount.Sign() == 0 {
 		return 0
 	}
 	price := usd[symbol]
+	if price <= 0 {
+		price = usd[strings.ToUpper(symbol)]
+	}
 	if price <= 0 {
 		return 0
 	}

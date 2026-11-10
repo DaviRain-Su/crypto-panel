@@ -49,9 +49,14 @@ type Portfolio struct {
 
 // Account is one watched address. Native and Tokens carry amounts in their
 // smallest unit as decimal strings, so no precision is lost to JSON numbers.
+// Network, ChainID and Block are this account's own chain, not the network
+// selected in the app: one answer lists every family.
 type Account struct {
 	Address string   `json:"address"`
 	Label   string   `json:"label,omitempty"`
+	Network string   `json:"network,omitempty"`
+	ChainID string   `json:"chainId,omitempty"`
+	Block   uint64   `json:"block,omitempty"`
 	Native  Amount   `json:"native"`
 	Tokens  []Amount `json:"tokens,omitempty"`
 	Error   string   `json:"error,omitempty"`
