@@ -172,7 +172,7 @@ func (a *App) createWalletAccount() {
 // importWalletAccount adds the account of the key in the form.
 func (a *App) importWalletAccount() {
 	if a.keyring == nil {
-		a.walletErr = a.t(i18n.WalletUnavailable)
+		a.importErr = a.t(i18n.WalletUnavailable)
 		a.invalidate()
 		return
 	}
@@ -182,7 +182,7 @@ func (a *App) importWalletAccount() {
 	}
 	acc, err := a.keyring.Import(raw, a.draftWalletLabel)
 	if err != nil {
-		a.walletErr = a.walletFailure(err)
+		a.importErr = a.walletFailure(err)
 		a.invalidate()
 		return
 	}
@@ -190,7 +190,7 @@ func (a *App) importWalletAccount() {
 	a.settings = a.settings.Validate()
 	a.draftKey, a.draftWalletLabel = "", ""
 	a.save()
-	a.walletErr = ""
+	a.importErr = ""
 	a.walletNotice = a.t(i18n.WalletImported, wallet.Short(acc.Addr))
 	a.touch()
 	a.requestRefresh()

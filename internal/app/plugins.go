@@ -602,7 +602,7 @@ func (a *App) pluginKey() pluginPageKey {
 
 // openPluginPage selects one page of a plugin and loads it.
 func (a *App) openPluginPage(id, page string) {
-	a.route = route{kind: "plugin", id: id, page: page}
+	a.goTo(route{kind: "plugin", id: id, page: page})
 	a.loadPluginPage()
 }
 
@@ -613,7 +613,7 @@ func (a *App) closePluginPage() {
 	a.pluginView = pluginPageState{}
 	a.pluginDetail = ""
 	if a.route.kind == "plugin" {
-		a.route = routePlugins
+		a.goTo(routePlugins)
 	}
 	a.invalidate()
 }
@@ -641,7 +641,7 @@ func (a *App) openPluginDetail(id string) {
 	a.coding.open = false
 	a.pluginDetail = id
 	a.pluginTab = "installed"
-	a.route = routePlugins
+	a.goTo(routePlugins)
 	a.loadPluginSettingStatus(id)
 	a.invalidate()
 }
