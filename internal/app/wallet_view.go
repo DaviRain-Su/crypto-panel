@@ -36,15 +36,15 @@ func (a *App) walletView(c *ui.Context) {
 		a.passkeyPreparedCard(c)
 	case len(a.settings.Wallets) == 0 && !a.viewingPasskey():
 		a.emptyWallet(c)
-		a.walletImportForm(c)
+		a.walletImportSection(c)
 	case a.viewingPasskey():
 		a.passkeyChainCard(c)
-		a.walletImportForm(c)
+		a.walletImportSection(c)
 	default:
 		w, _, ok := a.activeKeyWallet()
 		if !ok {
 			a.emptyWallet(c)
-			a.walletImportForm(c)
+			a.walletImportSection(c)
 			break
 		}
 		kind := kindForFamily(a.network().Family)
@@ -61,7 +61,7 @@ func (a *App) walletView(c *ui.Context) {
 				a.walletAccountCard(c, *w.EVM)
 			}
 		}
-		a.walletImportForm(c)
+		a.walletImportSection(c)
 	}
 	a.walletSecurityCard(c)
 	if a.settings.Passkey == nil {
@@ -326,6 +326,22 @@ func (a *App) walletAccountCard(c *ui.Context, acc wallet.Account) {
 	})
 }
 
+// walletImportSection keeps the key form folded away until asked for:
+// importing is occasional, and the page leads with the accounts.
+func (a *App) walletImportSection(c *ui.Context) {
+	p := a.pal
+	ui.Row(c).Margin(0, 0, 14, 0).Children(func() {
+		a.softButton(c, a.t(i18n.WalletImport), iconKey, p.muted, func() {
+			a.walletImportOpen = !a.walletImportOpen
+			a.walletErr = ""
+			a.invalidate()
+		})
+	})
+	if a.walletImportOpen {
+		a.walletImportForm(c)
+	}
+}
+
 func (a *App) walletImportForm(c *ui.Context) {
 	p := a.pal
 	title := a.t(i18n.WalletImport)
@@ -348,13 +364,13 @@ func (a *App) walletImportForm(c *ui.Context) {
 			Password().
 			Placeholder(a.importKeyPlaceholder()).
 			Label(a.importKeyLabel()).
-			OnSubmit(a.importWalletKey)
+			OnSubmit(a.submitWalletImport)
 		ui.TextInput(c.Key("wallet-label"), &a.draftWalletLabel).
 			Placeholder(a.t(i18n.LabelPlaceholder)).
 			Label(a.t(i18n.LabelLabel))
 		ui.Row(c).AlignItems(ui.Center).Gap(10).Children(func() {
 			a.primaryButton(c, a.t(i18n.WalletImportButton), nil,
-				strings.TrimSpace(a.draftKey) == "", a.importWalletKey)
+				strings.TrimSpace(a.draftKey) == "", a.submitWalletImport)
 			errText := a.walletErr
 			if family == chain.Near && a.nearErr != "" {
 				errText = a.nearErr

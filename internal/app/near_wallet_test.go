@@ -145,11 +145,21 @@ func TestNearWalletPageShowsAccounts(t *testing.T) {
 	tt := ui.NewTester(a.view, windowWidth, windowHeight)
 	for _, want := range []string{
 		acc.AccountID, acc.PublicKey, "Unlocked",
-		"ed25519", "Account ID (optional)",
+		"ed25519",
 	} {
 		if !tt.HasText(want) {
 			t.Errorf("missing %q in %q", want, tt.Texts())
 		}
+	}
+	// The import form stays folded until the toggle opens it.
+	if tt.HasText("Account ID (optional)") {
+		t.Errorf("the import form is open before it was asked for: %q", tt.Texts())
+	}
+	if err := tt.Click("Import a private key"); err != nil {
+		t.Fatal(err)
+	}
+	if !tt.HasText("Account ID (optional)") {
+		t.Errorf("the import form did not open: %q", tt.Texts())
 	}
 	if tt.HasText("EVM accounts") || tt.HasText("NEAR accounts") {
 		t.Fatalf("the page is still split by chain section: %q", tt.Texts())

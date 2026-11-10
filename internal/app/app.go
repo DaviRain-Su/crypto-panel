@@ -92,6 +92,9 @@ type App struct {
 	draftWalletLabel string
 	walletErr        string
 	walletNotice     string
+	// walletImportOpen keeps the key-import form folded away: importing is
+	// occasional, and the wallet page leads with the accounts.
+	walletImportOpen bool
 	// nearKeyring holds the wallet's NEAR accounts and their ed25519 keys.
 	nearKeyring      *wallet.NearKeyring
 	draftNearKey     string

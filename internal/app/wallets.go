@@ -243,6 +243,16 @@ func (a *App) importWalletKey() {
 	}
 }
 
+// submitWalletImport runs the import and folds the form away when it
+// succeeded: every family clears the key draft on success, and an open
+// form with no key in it has nothing left to say.
+func (a *App) submitWalletImport() {
+	a.importWalletKey()
+	if a.draftKey == "" {
+		a.walletImportOpen = false
+	}
+}
+
 func (a *App) importSolanaAccount() {
 	if a.solanaKeyring == nil {
 		a.walletErr = a.t(i18n.WalletUnavailable)
