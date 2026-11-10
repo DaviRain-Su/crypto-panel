@@ -73,6 +73,9 @@ func ParseRegistration(clientDataJSON, attestationObject, challenge []byte, orig
 	if origin != "" && cd.Origin != origin {
 		return Registration{}, fmt.Errorf("webauthn: origin is %q, not %q", cd.Origin, origin)
 	}
+	if cd.CrossOrigin {
+		return Registration{}, errors.New("webauthn: the ceremony ran in a cross-origin frame")
+	}
 	if rpID == "" {
 		return Registration{}, errors.New("webauthn: empty relying party id")
 	}
@@ -239,6 +242,9 @@ func (a Assertion) Verify(cred Credential, challenge []byte, origin, rpID string
 	}
 	if origin != "" && cd.Origin != origin {
 		return fmt.Errorf("webauthn: origin is %q, not %q", cd.Origin, origin)
+	}
+	if cd.CrossOrigin {
+		return errors.New("webauthn: the ceremony ran in a cross-origin frame")
 	}
 	if rpID == "" {
 		return errors.New("webauthn: empty relying party id")

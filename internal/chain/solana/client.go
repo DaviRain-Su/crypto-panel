@@ -1,6 +1,7 @@
 package solana
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -62,6 +63,42 @@ func (c *Client) Block(ctx context.Context) (uint64, error) {
 // account: one misbehaving endpoint must not hide the rest.
 func (c *Client) Account(ctx context.Context, addr string) (chain.AccountBalances, error) {
 	return c.broker.Account(ctx, c.endpoint, c.network, addr)
+}
+
+// AccountExists reports whether an account exists on the cluster. An
+// address the program has never seen answers value null; that is not an
+// error, it is an account that is not there yet.
+func (c *Client) AccountExists(ctx context.Context, addr string) (bool, error) {
+	return c.broker.AccountExists(ctx, c.endpoint, addr)
+}
+
+// AccountExists reports whether an account exists on the cluster.
+func (b *Broker) AccountExists(ctx context.Context, ep Endpoint, addr string) (bool, error) {
+	raw, err := b.Call(ctx, ep, "getAccountInfo", []any{
+		addr,
+		map[string]string{"encoding": "base64", "commitment": "confirmed"},
+	})
+	if err != nil {
+		return false, err
+	}
+	// A missing account is {"value": null}. A null result, an empty object,
+	// or an object without value is not that answer: the check failed.
+	trimmed := bytes.TrimSpace(raw)
+	if len(trimmed) == 0 || string(trimmed) == "null" {
+		return false, fmt.Errorf("%s: getAccountInfo: missing account value", ep.Host())
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(trimmed, &fields); err != nil || fields == nil {
+		return false, fmt.Errorf("%s: getAccountInfo: unreadable answer", ep.Host())
+	}
+	value, ok := fields["value"]
+	if !ok || len(bytes.TrimSpace(value)) == 0 {
+		return false, fmt.Errorf("%s: getAccountInfo: missing account value", ep.Host())
+	}
+	if string(bytes.TrimSpace(value)) == "null" {
+		return false, nil
+	}
+	return true, nil
 }
 
 // Slot reads the endpoint's latest slot.

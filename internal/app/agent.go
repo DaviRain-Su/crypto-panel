@@ -97,7 +97,7 @@ func (a *App) setAgentEnabled(on bool) {
 func (a *App) applyAgentPort() {
 	raw := strings.TrimSpace(a.agentPortDraft)
 	port, err := strconv.Atoi(raw)
-	if err != nil || port < 1 || port > 65535 {
+	if err != nil || port < MinAgentPort || port > 65535 {
 		a.agentErr = a.t(i18n.AgentPortInvalid)
 		a.invalidate()
 		return

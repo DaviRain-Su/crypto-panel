@@ -34,7 +34,9 @@ const nearBridgeScript = `(() => {
   if (window.mygo && mygo.on) {
     mygo.on("cryptopanel:near", (msg) => {
       const p = pending.get(msg.id);
-      if (!p || msg.capability !== p.capability || msg.capability !== capability) return;
+      // An event that names another origin belongs to another document; a
+      // late answer after navigation must not be readable here.
+      if (!p || msg.origin !== origin || msg.capability !== p.capability || msg.capability !== capability) return;
       pending.delete(msg.id);
       stopTimer(p.timer);
       if (msg.error) p.reject(new Error(msg.error));

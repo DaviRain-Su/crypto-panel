@@ -149,52 +149,54 @@ const (
 	WalletNearSendView           Key = "walletNearSendView"
 	ApproveWalletWarning         Key = "approveWalletWarning"
 
-	PasskeyTitle          Key = "passkeyTitle"
-	PasskeyBadge          Key = "passkeyBadge"
-	PasskeyBody           Key = "passkeyBody"
-	PasskeyCreate         Key = "passkeyCreate"
-	PasskeyWaiting        Key = "passkeyWaiting"
-	PasskeyFine           Key = "passkeyFine"
-	PasskeyCreated        Key = "passkeyCreated"
-	PasskeyPreparedTitle  Key = "passkeyPreparedTitle"
-	PasskeyPreparedBody   Key = "passkeyPreparedBody"
-	PasskeyPreparedFoot   Key = "passkeyPreparedFoot"
-	PasskeyFailed         Key = "passkeyFailed"
-	PasskeyUnavailable    Key = "passkeyUnavailable"
-	PasskeyNearAccount    Key = "passkeyNearAccount"
-	PasskeyEVMAccount     Key = "passkeyEVMAccount"
-	PasskeyEVMNote        Key = "passkeyEVMNote"
-	PasskeySolanaAccount  Key = "passkeySolanaAccount"
-	PasskeySolanaNote     Key = "passkeySolanaNote"
-	PasskeyDeriving       Key = "passkeyDeriving"
-	PasskeyMainnetOnly    Key = "passkeyMainnetOnly"
-	PasskeyDeploy         Key = "passkeyDeploy"
-	PasskeyDeployHint     Key = "passkeyDeployHint"
-	PasskeyDeployNote     Key = "passkeyDeployNote"
-	PasskeyDeployed       Key = "passkeyDeployed"
-	PasskeyAlreadyOnChain Key = "passkeyAlreadyOnChain"
-	PasskeySend           Key = "passkeySend"
-	PasskeySendNote       Key = "passkeySendNote"
-	PasskeyNoRelayer      Key = "passkeyNoRelayer"
-	PasskeyRelayerLocked  Key = "passkeyRelayerLocked"
-	PasskeyRejected       Key = "passkeyRejected"
-	PasskeyForget         Key = "passkeyForget"
-	PasskeyForgetTitle    Key = "passkeyForgetTitle"
-	PasskeyForgetBody     Key = "passkeyForgetBody"
-	PasskeySettingsTitle  Key = "passkeySettingsTitle"
-	PasskeySettingsBody   Key = "passkeySettingsBody"
-	PasskeySettingsHave   Key = "passkeySettingsHave"
-	PasskeyCanceled       Key = "passkeyCanceled"
-	PasskeyExport         Key = "passkeyExport"
-	PasskeyExportTitle    Key = "passkeyExportTitle"
-	PasskeyExported       Key = "passkeyExported"
-	PasskeyExportForget   Key = "passkeyExportForget"
-	PasskeyRestore        Key = "passkeyRestore"
-	PasskeyRestoreTitle   Key = "passkeyRestoreTitle"
-	PasskeyRestored       Key = "passkeyRestored"
-	PasskeyRecoveryHint   Key = "passkeyRecoveryHint"
-	PasskeyRecoveryFile   Key = "passkeyRecoveryFile"
-	PasskeyRecoveryFailed Key = "passkeyRecoveryFailed"
+	PasskeyTitle           Key = "passkeyTitle"
+	PasskeyBadge           Key = "passkeyBadge"
+	PasskeyBody            Key = "passkeyBody"
+	PasskeyCreate          Key = "passkeyCreate"
+	PasskeyWaiting         Key = "passkeyWaiting"
+	PasskeyFine            Key = "passkeyFine"
+	PasskeyCreated         Key = "passkeyCreated"
+	PasskeyPreparedTitle   Key = "passkeyPreparedTitle"
+	PasskeyPreparedBody    Key = "passkeyPreparedBody"
+	PasskeyPreparedFoot    Key = "passkeyPreparedFoot"
+	PasskeyFailed          Key = "passkeyFailed"
+	PasskeyUnavailable     Key = "passkeyUnavailable"
+	PasskeyNearAccount     Key = "passkeyNearAccount"
+	PasskeyEVMAccount      Key = "passkeyEVMAccount"
+	PasskeyEVMNote         Key = "passkeyEVMNote"
+	PasskeySolanaAccount   Key = "passkeySolanaAccount"
+	PasskeySolanaNote      Key = "passkeySolanaNote"
+	PasskeySolanaClaimed   Key = "passkeySolanaClaimed"
+	PasskeySolanaUnchecked Key = "passkeySolanaUnchecked"
+	PasskeyDeriving        Key = "passkeyDeriving"
+	PasskeyMainnetOnly     Key = "passkeyMainnetOnly"
+	PasskeyDeploy          Key = "passkeyDeploy"
+	PasskeyDeployHint      Key = "passkeyDeployHint"
+	PasskeyDeployNote      Key = "passkeyDeployNote"
+	PasskeyDeployed        Key = "passkeyDeployed"
+	PasskeyAlreadyOnChain  Key = "passkeyAlreadyOnChain"
+	PasskeySend            Key = "passkeySend"
+	PasskeySendNote        Key = "passkeySendNote"
+	PasskeyNoRelayer       Key = "passkeyNoRelayer"
+	PasskeyRelayerLocked   Key = "passkeyRelayerLocked"
+	PasskeyRejected        Key = "passkeyRejected"
+	PasskeyForget          Key = "passkeyForget"
+	PasskeyForgetTitle     Key = "passkeyForgetTitle"
+	PasskeyForgetBody      Key = "passkeyForgetBody"
+	PasskeySettingsTitle   Key = "passkeySettingsTitle"
+	PasskeySettingsBody    Key = "passkeySettingsBody"
+	PasskeySettingsHave    Key = "passkeySettingsHave"
+	PasskeyCanceled        Key = "passkeyCanceled"
+	PasskeyExport          Key = "passkeyExport"
+	PasskeyExportTitle     Key = "passkeyExportTitle"
+	PasskeyExported        Key = "passkeyExported"
+	PasskeyExportForget    Key = "passkeyExportForget"
+	PasskeyRestore         Key = "passkeyRestore"
+	PasskeyRestoreTitle    Key = "passkeyRestoreTitle"
+	PasskeyRestored        Key = "passkeyRestored"
+	PasskeyRecoveryHint    Key = "passkeyRecoveryHint"
+	PasskeyRecoveryFile    Key = "passkeyRecoveryFile"
+	PasskeyRecoveryFailed  Key = "passkeyRecoveryFailed"
 
 	AuthTouchID      Key = "authTouchID"
 	AuthFaceID       Key = "authFaceID"
@@ -494,6 +496,8 @@ const (
 	StorePermStorage     Key = "storePermStorage"
 	StorePermSettings    Key = "storePermSettings"
 	StoreFrom            Key = "storeFrom"
+	StoreInstallID       Key = "storeInstallID"
+	StoreChanged         Key = "storeChanged"
 	StoreNewPerms        Key = "storeNewPerms"
 	StoreInstallBody     Key = "storeInstallBody"
 	StoreUnsignedWarn    Key = "storeUnsignedWarn"
@@ -716,52 +720,54 @@ var messages = map[Key]map[string]string{
 	WalletNearSendView:           {English: "View transaction", Chinese: "查看交易"},
 	ApproveWalletWarning:         {English: "This transfer comes from your own wallet. Check the recipient and the amount before you approve.", Chinese: "这笔转账来自你自己的钱包。批准前请核对收款账户和金额。"},
 
-	PasskeyTitle:          {English: "Passkey wallet", Chinese: "Passkey 钱包"},
-	PasskeyBadge:          {English: "NEAR + EVM + Solana", Chinese: "NEAR + EVM + Solana"},
-	PasskeyBody:           {English: "One passkey, held by your device or password manager, controls a NEAR account, an EVM smart account at the same address on every EVM chain, and a Solana vault.", Chinese: "一个由设备或密码管理器保管的 Passkey，控制一个 NEAR 账户、在所有 EVM 链上地址相同的 EVM 智能账户，以及一个 Solana 金库。"},
-	PasskeyCreate:         {English: "Create passkey", Chinese: "创建 Passkey"},
-	PasskeyWaiting:        {English: "Waiting for your passkey…", Chinese: "等待 Passkey 确认…"},
-	PasskeyFine:           {English: "The private key never leaves the authenticator. Lintel stores only the public key. To restore this wallet later, keep the original passkey and an exported public recovery file.", Chinese: "私钥不会离开认证器。门厅只保存公钥。以后恢复此钱包时，必须同时保留原 Passkey 和导出的公开恢复文件。"},
-	PasskeyCreated:        {English: "Passkey created. Export the public recovery file before funding the NEAR account. The Solana vault is not on chain — do not send SOL there.", Chinese: "Passkey 已创建。请先导出公开恢复文件，再为 NEAR 账户充值。Solana 金库尚未在链上创建——不要向那里发送 SOL。"},
-	PasskeyPreparedTitle:  {English: "One passkey, every network", Chinese: "一把 Passkey，覆盖每个网络"},
-	PasskeyPreparedBody:   {English: "These addresses were prepared together. The private key never left the authenticator.", Chinese: "这些地址是一起准备好的。私钥没有离开认证器。"},
-	PasskeyPreparedFoot:   {English: "Ethereum and Base share one smart-account address. Both NEAR networks share one account. The Solana vault is not created on chain — do not send SOL there. Sending from the EVM account is not wired.", Chinese: "Ethereum 和 Base 共用一个智能账户地址。两个 NEAR 网络共用一个账户。Solana 金库尚未在链上创建——不要向那里发送 SOL。EVM 账户的发送尚未接入。"},
-	PasskeyFailed:         {English: "The passkey ceremony failed:", Chinese: "Passkey 流程失败："},
-	PasskeyUnavailable:    {English: "Passkeys are unavailable in this build.", Chinese: "此版本无法使用 Passkey。"},
-	PasskeyNearAccount:    {English: "NEAR account", Chinese: "NEAR 账户"},
-	PasskeyEVMAccount:     {English: "EVM account", Chinese: "EVM 账户"},
-	PasskeyEVMNote:        {English: "Sending from this smart account needs a bundler and is not wired.", Chinese: "从这个智能账户发送需要 bundler，当前尚未接入。"},
-	PasskeySolanaAccount:  {English: "Solana vault", Chinese: "Solana 金库"},
-	PasskeySolanaNote:     {English: "LazorKit v1 vault on Solana mainnet, derived from this passkey. Creating the account and sending SOL are not wired — do not send funds here yet.", Chinese: "由这把 Passkey 推导出的 Solana 主网 LazorKit v1 金库。创建账户和发送 SOL 都尚未接入——先不要往这里转账。"},
-	PasskeyDeriving:       {English: "Reading from the factory…", Chinese: "正在从工厂合约读取…"},
-	PasskeyMainnetOnly:    {English: "The NEAR passkey wallet contract is on mainnet. Switch to NEAR mainnet to create or send.", Chinese: "NEAR Passkey 钱包合约部署在主网。请切换到 NEAR 主网后再创建或发送。"},
-	PasskeyDeploy:         {English: "Create account", Chinese: "创建账户"},
-	PasskeyDeployHint:     {English: "The relayer pays the storage and gas; the passkey authorizes the account.", Chinese: "中继账户支付存储和 gas，Passkey 授权该账户。"},
-	PasskeyDeployNote:     {English: "Create the passkey's NEAR account. %s relays the transaction and pays its fee; the passkey's key authorizes the account's StateInit.", Chinese: "创建 Passkey 的 NEAR 账户。%s 负责中继并支付手续费；Passkey 的密钥授权该账户的 StateInit。"},
-	PasskeyDeployed:       {English: "Account created. Transaction %s", Chinese: "账户已创建。交易 %s"},
-	PasskeyAlreadyOnChain: {English: "The account is already on chain.", Chinese: "该账户已经在链上了。"},
-	PasskeySend:           {English: "Sign and send", Chinese: "签名并发送"},
-	PasskeySendNote:       {English: "Send from the passkey account. %s relays the transaction and pays its fee; the passkey signs the transfer in your browser.", Chinese: "从 Passkey 账户发送。%s 负责中继并支付手续费；Passkey 会在浏览器中签署这笔转账。"},
-	PasskeyNoRelayer:      {English: "Add and unlock a NEAR account first; it relays the passkey's transactions.", Chinese: "请先添加并解锁一个 NEAR 账户，它负责中继 Passkey 的交易。"},
-	PasskeyRelayerLocked:  {English: "The relaying account was locked before it could sign.", Chinese: "中继账户在签名前被锁定了。"},
-	PasskeyRejected:       {English: "The transaction was rejected. Nothing was signed or sent.", Chinese: "交易已被拒绝。没有签名，也没有发送任何东西。"},
-	PasskeyForget:         {English: "Forget passkey", Chinese: "移除 Passkey"},
-	PasskeyForgetTitle:    {English: "Forget this passkey?", Chinese: "移除此 Passkey？"},
-	PasskeyForgetBody:     {English: "This removes the app's credential id, public key and account mapping. Export the public recovery file first. Restoring the same account requires both that file and the original passkey, including a synced copy. A synced passkey alone cannot restore it in this app. The credential itself stays in your authenticator.", Chinese: "此操作会删除应用保存的凭据 ID、公钥和账户映射。请先导出公开恢复文件。恢复同一账户必须同时拥有该文件和原 Passkey（可使用已同步的副本）。本应用无法仅凭已同步的 Passkey 恢复。凭据本身仍留在认证器中。"},
-	PasskeySettingsTitle:  {English: "Passkey wallet", Chinese: "Passkey 钱包"},
-	PasskeySettingsBody:   {English: "Create a passkey that owns a NEAR account, an EVM smart account, and a Solana vault.", Chinese: "创建一个同时拥有 NEAR 账户、EVM 智能账户和 Solana 金库的 Passkey。"},
-	PasskeySettingsHave:   {English: "Controlled by the passkey for %s, plus an EVM smart account and a Solana vault.", Chinese: "由 %s 的 Passkey 控制，同时还有一个 EVM 智能账户和一个 Solana 金库。"},
-	PasskeyCanceled:       {English: "The pending passkey operation was canceled. Start a new operation to continue.", Chinese: "等待中的 Passkey 操作已撤销。如需继续，请重新发起。"},
-	PasskeyExport:         {English: "Export recovery file", Chinese: "导出恢复文件"},
-	PasskeyExportTitle:    {English: "Export public passkey recovery data", Chinese: "导出 Passkey 公开恢复资料"},
-	PasskeyExported:       {English: "Public recovery file exported. Keep it with access to your original passkey; it contains account identifiers, but no private key.", Chinese: "公开恢复文件已导出。请同时保留原 Passkey 的访问权；文件含账户标识，不含私钥。"},
-	PasskeyExportForget:   {English: "Export, then forget", Chinese: "导出后移除"},
-	PasskeyRestore:        {English: "Restore passkey", Chinese: "恢复 Passkey"},
-	PasskeyRestoreTitle:   {English: "Choose public passkey recovery data", Chinese: "选择 Passkey 公开恢复资料"},
-	PasskeyRestored:       {English: "Original passkey verified. The same wallet account is restored.", Chinese: "原 Passkey 已验证，已恢复同一钱包账户。"},
-	PasskeyRecoveryHint:   {English: "Recovery requires the original passkey (or its synced copy) AND an exported public recovery file. Neither works alone. If the public data is lost after forgetting the wallet, this app cannot reconstruct the original account.", Chinese: "恢复必须同时拥有原 Passkey（或已同步的副本）和导出的公开恢复文件，缺一不可。移除钱包后若公开资料也丢失，本应用无法重建原账户。"},
-	PasskeyRecoveryFile:   {English: "Public passkey recovery JSON", Chinese: "Passkey 公开恢复 JSON"},
-	PasskeyRecoveryFailed: {English: "Passkey recovery data: %s", Chinese: "Passkey 恢复资料：%s"},
+	PasskeyTitle:           {English: "Passkey wallet", Chinese: "Passkey 钱包"},
+	PasskeyBadge:           {English: "NEAR + EVM + Solana", Chinese: "NEAR + EVM + Solana"},
+	PasskeyBody:            {English: "One passkey, held by your device or password manager, controls a NEAR account, an EVM smart account at the same address on every EVM chain, and a Solana vault.", Chinese: "一个由设备或密码管理器保管的 Passkey，控制一个 NEAR 账户、在所有 EVM 链上地址相同的 EVM 智能账户，以及一个 Solana 金库。"},
+	PasskeyCreate:          {English: "Create passkey", Chinese: "创建 Passkey"},
+	PasskeyWaiting:         {English: "Waiting for your passkey…", Chinese: "等待 Passkey 确认…"},
+	PasskeyFine:            {English: "The private key never leaves the authenticator. Lintel stores only the public key. To restore this wallet later, keep the original passkey and an exported public recovery file.", Chinese: "私钥不会离开认证器。门厅只保存公钥。以后恢复此钱包时，必须同时保留原 Passkey 和导出的公开恢复文件。"},
+	PasskeyCreated:         {English: "Passkey created. Export the public recovery file before funding the NEAR account. The Solana vault is not on chain — do not send SOL there.", Chinese: "Passkey 已创建。请先导出公开恢复文件，再为 NEAR 账户充值。Solana 金库尚未在链上创建——不要向那里发送 SOL。"},
+	PasskeyPreparedTitle:   {English: "One passkey, every network", Chinese: "一把 Passkey，覆盖每个网络"},
+	PasskeyPreparedBody:    {English: "These addresses were prepared together. The private key never left the authenticator.", Chinese: "这些地址是一起准备好的。私钥没有离开认证器。"},
+	PasskeyPreparedFoot:    {English: "Ethereum and Base share one smart-account address. Both NEAR networks share one account. The Solana vault is not created on chain — do not send SOL there. Sending from the EVM account is not wired.", Chinese: "Ethereum 和 Base 共用一个智能账户地址。两个 NEAR 网络共用一个账户。Solana 金库尚未在链上创建——不要向那里发送 SOL。EVM 账户的发送尚未接入。"},
+	PasskeyFailed:          {English: "The passkey ceremony failed:", Chinese: "Passkey 流程失败："},
+	PasskeyUnavailable:     {English: "Passkeys are unavailable in this build.", Chinese: "此版本无法使用 Passkey。"},
+	PasskeyNearAccount:     {English: "NEAR account", Chinese: "NEAR 账户"},
+	PasskeyEVMAccount:      {English: "EVM account", Chinese: "EVM 账户"},
+	PasskeyEVMNote:         {English: "Sending from this smart account needs a bundler and is not wired.", Chinese: "从这个智能账户发送需要 bundler，当前尚未接入。"},
+	PasskeySolanaAccount:   {English: "Solana vault", Chinese: "Solana 金库"},
+	PasskeySolanaNote:      {English: "LazorKit v1 vault on Solana mainnet, derived from this passkey. Creating the account and sending SOL are not wired — do not send funds here yet.", Chinese: "由这把 Passkey 推导出的 Solana 主网 LazorKit v1 金库。创建账户和发送 SOL 都尚未接入——先不要往这里转账。"},
+	PasskeySolanaClaimed:   {English: "This vault address already has an account on this network. It may not be yours — do not send funds here.", Chinese: "这个金库地址在当前网络上已有账户，可能不是你的——不要往这里转账。"},
+	PasskeySolanaUnchecked: {English: "Couldn't check whether this vault address is already taken. No balance is shown until the check succeeds.", Chinese: "无法确认这个金库地址是否已被占用。在确认之前不显示余额。"},
+	PasskeyDeriving:        {English: "Reading from the factory…", Chinese: "正在从工厂合约读取…"},
+	PasskeyMainnetOnly:     {English: "The NEAR passkey wallet contract is on mainnet. Switch to NEAR mainnet to create or send.", Chinese: "NEAR Passkey 钱包合约部署在主网。请切换到 NEAR 主网后再创建或发送。"},
+	PasskeyDeploy:          {English: "Create account", Chinese: "创建账户"},
+	PasskeyDeployHint:      {English: "The relayer pays the storage and gas; the passkey authorizes the account.", Chinese: "中继账户支付存储和 gas，Passkey 授权该账户。"},
+	PasskeyDeployNote:      {English: "Create the passkey's NEAR account. %s relays the transaction and pays its fee; the passkey's key authorizes the account's StateInit.", Chinese: "创建 Passkey 的 NEAR 账户。%s 负责中继并支付手续费；Passkey 的密钥授权该账户的 StateInit。"},
+	PasskeyDeployed:        {English: "Account created. Transaction %s", Chinese: "账户已创建。交易 %s"},
+	PasskeyAlreadyOnChain:  {English: "The account is already on chain.", Chinese: "该账户已经在链上了。"},
+	PasskeySend:            {English: "Sign and send", Chinese: "签名并发送"},
+	PasskeySendNote:        {English: "Send from the passkey account. %s relays the transaction and pays its fee; the passkey signs the transfer in your browser.", Chinese: "从 Passkey 账户发送。%s 负责中继并支付手续费；Passkey 会在浏览器中签署这笔转账。"},
+	PasskeyNoRelayer:       {English: "Add and unlock a NEAR account first; it relays the passkey's transactions.", Chinese: "请先添加并解锁一个 NEAR 账户，它负责中继 Passkey 的交易。"},
+	PasskeyRelayerLocked:   {English: "The relaying account was locked before it could sign.", Chinese: "中继账户在签名前被锁定了。"},
+	PasskeyRejected:        {English: "The transaction was rejected. Nothing was signed or sent.", Chinese: "交易已被拒绝。没有签名，也没有发送任何东西。"},
+	PasskeyForget:          {English: "Forget passkey", Chinese: "移除 Passkey"},
+	PasskeyForgetTitle:     {English: "Forget this passkey?", Chinese: "移除此 Passkey？"},
+	PasskeyForgetBody:      {English: "This removes the app's credential id, public key and account mapping. Export the public recovery file first. Restoring the same account requires both that file and the original passkey, including a synced copy. A synced passkey alone cannot restore it in this app. The credential itself stays in your authenticator.", Chinese: "此操作会删除应用保存的凭据 ID、公钥和账户映射。请先导出公开恢复文件。恢复同一账户必须同时拥有该文件和原 Passkey（可使用已同步的副本）。本应用无法仅凭已同步的 Passkey 恢复。凭据本身仍留在认证器中。"},
+	PasskeySettingsTitle:   {English: "Passkey wallet", Chinese: "Passkey 钱包"},
+	PasskeySettingsBody:    {English: "Create a passkey that owns a NEAR account, an EVM smart account, and a Solana vault.", Chinese: "创建一个同时拥有 NEAR 账户、EVM 智能账户和 Solana 金库的 Passkey。"},
+	PasskeySettingsHave:    {English: "Controlled by the passkey for %s, plus an EVM smart account and a Solana vault.", Chinese: "由 %s 的 Passkey 控制，同时还有一个 EVM 智能账户和一个 Solana 金库。"},
+	PasskeyCanceled:        {English: "The pending passkey operation was canceled. Start a new operation to continue.", Chinese: "等待中的 Passkey 操作已撤销。如需继续，请重新发起。"},
+	PasskeyExport:          {English: "Export recovery file", Chinese: "导出恢复文件"},
+	PasskeyExportTitle:     {English: "Export public passkey recovery data", Chinese: "导出 Passkey 公开恢复资料"},
+	PasskeyExported:        {English: "Public recovery file exported. Keep it with access to your original passkey; it contains account identifiers, but no private key.", Chinese: "公开恢复文件已导出。请同时保留原 Passkey 的访问权；文件含账户标识，不含私钥。"},
+	PasskeyExportForget:    {English: "Export, then forget", Chinese: "导出后移除"},
+	PasskeyRestore:         {English: "Restore passkey", Chinese: "恢复 Passkey"},
+	PasskeyRestoreTitle:    {English: "Choose public passkey recovery data", Chinese: "选择 Passkey 公开恢复资料"},
+	PasskeyRestored:        {English: "Original passkey verified. The same wallet account is restored.", Chinese: "原 Passkey 已验证，已恢复同一钱包账户。"},
+	PasskeyRecoveryHint:    {English: "Recovery requires the original passkey (or its synced copy) AND an exported public recovery file. Neither works alone. If the public data is lost after forgetting the wallet, this app cannot reconstruct the original account.", Chinese: "恢复必须同时拥有原 Passkey（或已同步的副本）和导出的公开恢复文件，缺一不可。移除钱包后若公开资料也丢失，本应用无法重建原账户。"},
+	PasskeyRecoveryFile:    {English: "Public passkey recovery JSON", Chinese: "Passkey 公开恢复 JSON"},
+	PasskeyRecoveryFailed:  {English: "Passkey recovery data: %s", Chinese: "Passkey 恢复资料：%s"},
 
 	AuthTouchID:      {English: "Touch ID", Chinese: "触控 ID"},
 	AuthFaceID:       {English: "Face ID", Chinese: "面容 ID"},
@@ -1042,7 +1048,7 @@ var messages = map[Key]map[string]string{
 	AgentTitle:       {English: "Local agent API", Chinese: "本地 Agent API"},
 	AgentBody:        {English: "A loopback API for local agents to read data, validate apps and propose installs or updates. You review installation in Apps. The API cannot sign or approve.", Chinese: "供本机 Agent 读取数据、校验应用并提议安装或更新。安装需在应用页审阅确认；API 不能签名或批准，且只监听本机回环地址。"},
 	AgentPort:        {English: "Port", Chinese: "端口"},
-	AgentPortInvalid: {English: "The port must be 1 to 65535.", Chinese: "端口必须是 1 到 65535。"},
+	AgentPortInvalid: {English: "The port must be 1024 to 65535.", Chinese: "端口必须是 1024 到 65535。"},
 	AgentListening:   {English: "Listening on http://%s", Chinese: "正在监听 http://%s"},
 	AgentToken:       {English: "Bearer token", Chinese: "访问令牌"},
 	AgentRotate:      {English: "Rotate token", Chinese: "更换令牌"},
@@ -1062,6 +1068,8 @@ var messages = map[Key]map[string]string{
 	StorePermStorage:     {English: "Store %d KB of data", Chinese: "存储 %d KB 数据"},
 	StorePermSettings:    {English: "Settings: %d", Chinese: "设置：%d"},
 	StoreFrom:            {English: "From: %s", Chinese: "来源：%s"},
+	StoreInstallID:       {English: "ID: %s", Chinese: "应用 ID：%s"},
+	StoreChanged:         {English: "The app changed after you approved it. Nothing was installed.", Chinese: "应用在你批准后发生了变化，未安装。"},
 	StoreNewPerms:        {English: "New permissions: %s", Chinese: "新增权限：%s"},
 	StoreInstallBody:     {English: "Only what is listed here is granted. A plugin never sees your keys.", Chinese: "只授予上面列出的权限。插件永远看不到你的私钥。"},
 	StoreUnsignedWarn:    {English: "This plugin is not signed. Install it only if you trust where it came from.", Chinese: "该插件未签名，只有在你信任来源时才安装。"},

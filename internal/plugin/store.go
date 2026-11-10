@@ -188,10 +188,30 @@ func verifyInstall(dir string, inst *Installed) error {
 	return nil
 }
 
+// ErrPackageChanged means the staged copy no longer matches the digest the
+// caller checked. Install refuses it instead of renaming it into place.
+var ErrPackageChanged = errors.New("the app's files changed after the permission prompt")
+
+// beforeInstallRename runs immediately before the staged digest is checked
+// and the folder is renamed into the store. It is nil in production; tests
+// use it to change the staged tree after the copy.
+var beforeInstallRename func(staged string)
+
 // Install copies the plugin in src into the store and enables it. A local
 // folder is unsigned — it has no registry entry to check it against — and
 // the shell marks such a plugin wherever it draws it.
 func (s *Store) Install(src string) (Manifest, error) {
+	return s.InstallFrom(src, "", "")
+}
+
+// InstallFrom is Install with the source kind and the digest of the tree the
+// caller already approved. via is "folder" or "zip"; an empty via keeps the
+// old path guess. A non-empty digest is compared to the staged copy
+// immediately before that copy is renamed into the store.
+func (s *Store) InstallFrom(src, via, digest string) (Manifest, error) {
+	if err := rejectSymlinkRoot(src); err != nil {
+		return Manifest{}, err
+	}
 	m, err := LoadManifest(src)
 	if err != nil {
 		return Manifest{}, err
@@ -237,13 +257,29 @@ func (s *Store) Install(src string) (Manifest, error) {
 	if err := saveState(tmp, state{Enabled: true}); err != nil {
 		return Manifest{}, err
 	}
-	via := "folder"
-	if filepath.Dir(filepath.Clean(src)) == filepath.Clean(s.dir) && strings.HasPrefix(filepath.Base(src), ".local-") {
-		via = "zip"
+	if via == "" {
+		via = "folder"
+		if filepath.Dir(filepath.Clean(src)) == filepath.Clean(s.dir) && strings.HasPrefix(filepath.Base(src), ".local-") {
+			via = "zip"
+		}
 	}
 	info := installInfo{InstalledVia: via}
 	if err := saveInstallInfo(tmp, info); err != nil {
 		return Manifest{}, err
+	}
+	// The staged tree can still change after it was copied. Check it on the
+	// way into the store, with nothing but the rename after the digest.
+	if beforeInstallRename != nil {
+		beforeInstallRename(tmp)
+	}
+	if digest != "" {
+		got, err := DigestDir(tmp)
+		if err != nil {
+			return Manifest{}, err
+		}
+		if got != digest {
+			return Manifest{}, ErrPackageChanged
+		}
 	}
 	if err := os.Rename(tmp, dest); err != nil {
 		return Manifest{}, err
@@ -443,6 +479,35 @@ func saveState(dir string, st state) error {
 	}
 	data = append(data, '\n')
 	return writeFileAtomic(filepath.Join(dir, "state.json"), data, 0o600)
+}
+
+// FreezeDir copies src into a new temporary directory. Callers install from
+// the copy after they have checked it, so a later edit to src is not what
+// gets installed. The caller removes the directory.
+func FreezeDir(src string) (string, error) {
+	if err := rejectSymlinkRoot(src); err != nil {
+		return "", err
+	}
+	dst, err := os.MkdirTemp("", "lintel-install-*")
+	if err != nil {
+		return "", err
+	}
+	if err := copyTree(src, dst); err != nil {
+		_ = os.RemoveAll(dst)
+		return "", err
+	}
+	return dst, nil
+}
+
+func rejectSymlinkRoot(dir string) error {
+	info, err := os.Lstat(dir)
+	if err != nil {
+		return err
+	}
+	if info.Mode()&fs.ModeSymlink != 0 {
+		return errors.New("the app folder cannot be a symlink")
+	}
+	return nil
 }
 
 // copyTree copies src into dst, refusing symlinks and bounding what one

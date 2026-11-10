@@ -667,6 +667,11 @@ func (a *App) fiatText(amount *big.Int, decimals int, symbol string) (string, bo
 		return "", false
 	}
 	price, ok := a.snap.usd[symbol]
+	if !ok {
+		// Prices keys symbols in upper case (CBETH). Token symbols keep
+		// their display case (cbETH).
+		price, ok = a.snap.usd[strings.ToUpper(symbol)]
+	}
 	if !ok || price <= 0 {
 		return "", false
 	}
