@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -17,6 +18,7 @@ import (
 	"github.com/davirain-su/lintel/internal/agent"
 	"github.com/davirain-su/lintel/internal/agent/authoring"
 	"github.com/davirain-su/lintel/internal/i18n"
+	"github.com/davirain-su/lintel/internal/pages"
 	"github.com/davirain-su/lintel/internal/plugin"
 )
 
@@ -33,11 +35,23 @@ type codingState struct {
 	values                                            map[string]string
 	cancel                                            context.CancelFunc
 	generation                                        int
+	preview                                           candidatePreview
+}
+
+type candidatePreview struct {
+	requestID  string
+	manifest   plugin.Manifest
+	page       string
+	result     pages.Page
+	updated    time.Time
+	loading    bool
+	err        string
+	generation int
 }
 
 func (a *App) codingProfiles() []authoring.Profile {
 	return []authoring.Profile{
-		{ID: "claude", Name: "Claude Code (ACP)", Executable: "claude-code-acp"},
+		{ID: "claude", Name: "Claude Code (ACP)", Executable: "claude-agent-acp"},
 		{ID: "codex", Name: "Codex (ACP)", Executable: "codex-acp"},
 		{ID: "custom", Name: a.t(i18n.CreatorCustomAgent)},
 	}
@@ -145,6 +159,17 @@ func (a *App) saveCodingProfile() bool {
 	return true
 }
 
+func codingSelectChoices(option acp.ConfigOption) []acp.ConfigValue {
+	choices := append([]acp.ConfigValue{}, option.Options...)
+	for _, group := range option.Groups {
+		choices = append(choices, group.Options...)
+	}
+	if len(choices) > acp.MaxConfigValues {
+		choices = choices[:acp.MaxConfigValues]
+	}
+	return choices
+}
+
 func (a *App) codingSettings(c *ui.Context) {
 	a.initAuthoring()
 	p := a.pal
@@ -185,10 +210,7 @@ func (a *App) codingSettings(c *ui.Context) {
 			if option.Type != "select" {
 				continue
 			}
-			choices := append([]acp.ConfigValue{}, option.Options...)
-			for _, group := range option.Groups {
-				choices = append(choices, group.Options...)
-			}
+			choices := codingSelectChoices(option)
 			labels := []string{}
 			value, ok := a.coding.values[option.ID]
 			if !ok {
@@ -252,7 +274,7 @@ func (a *App) checkCodingAgent() {
 				return
 			}
 			if err != nil {
-				a.coding.err = a.t(i18n.CodingConnectFailed, safeAgentText(err.Error(), 600))
+				a.coding.err = a.t(i18n.CodingConnectFailed, safeAgentText(a.codingErrorText(err), 600))
 			} else {
 				a.coding.initialization = initialization
 				a.coding.session = session
@@ -320,6 +342,13 @@ func (a *App) creatorView(c *ui.Context) {
 			a.softButton(c, a.t(i18n.CreateAppSettings), nil, p.muted, func() { a.goTo(routeSettings) })
 			a.softButton(c, a.t(i18n.CreateAppBack), nil, p.muted, func() { a.coding.open = false; a.invalidate() })
 		})
+		if a.coding.installationID != "" && !a.coding.busy {
+			requestID := a.coding.installationID
+			ui.Row(c).Gap(8).Wrap().Children(func() {
+				a.primaryButton(c, a.t(i18n.CodingPreview), nil, a.coding.preview.loading, a.previewGeneratedApp)
+				a.softButton(c, a.t(i18n.PendingReview), nil, p.accent, func() { a.reviewInstallation(requestID) })
+			})
+		}
 		if a.coding.busy {
 			ui.Text(c, a.t(i18n.CreateAppWorking)).FontSize(12).TextColor(p.accent)
 		}
@@ -364,7 +393,7 @@ func (a *App) startGeneration() {
 	profile, _ := a.codingProfile()
 	catalog, _ := json.Marshal(agent.Catalog(true))
 	var examples []plugin.Package
-	for _, id := range []string{"com.example.gas", "com.example.feargreed"} {
+	for _, id := range []string{"com.example.gas", "com.example.feargreed", "com.example.hyperliquid", "com.example.intents"} {
 		if pkg, _, err := plugin.OfficialPackage(id); err == nil {
 			examples = append(examples, pkg)
 		}
@@ -420,7 +449,7 @@ func (a *App) startGeneration() {
 			if cancelled {
 				a.coding.notice = a.t(i18n.CodingCanceled)
 			} else if err != nil {
-				a.coding.err = a.t(i18n.CodingIncomplete, safeAgentText(a.pluginErrorText(err), 800))
+				a.coding.err = a.t(i18n.CodingIncomplete, safeAgentText(a.codingErrorText(err), 800))
 			} else {
 				a.coding.installationID = result.Installation.RequestID
 				a.coding.notice = a.t(i18n.CodingValidated, result.Installation.Manifest.Name, result.Installation.Version)
@@ -431,6 +460,110 @@ func (a *App) startGeneration() {
 		})
 	})
 	a.invalidate()
+}
+
+func (a *App) previewGeneratedApp() {
+	if a.coding.installationID == "" || a.coding.preview.loading {
+		return
+	}
+	requestID := a.coding.installationID
+	job, err := a.pluginManager.GetInstallation(requestID)
+	if err != nil || job.Status != "pending" || job.Via != "acp" {
+		a.coding.err = a.t(i18n.PendingExpired)
+		a.invalidate()
+		return
+	}
+	if len(job.Manifest.Navigation) == 0 {
+		a.coding.err = a.t(i18n.AppNoPages)
+		a.invalidate()
+		return
+	}
+	a.coding.preview.requestID = requestID
+	a.coding.preview.manifest = job.Manifest
+	a.coding.preview.page = job.Manifest.Navigation[0].Page
+	a.goTo(route{kind: "preview"})
+	a.loadGeneratedPreview("")
+	a.invalidate()
+}
+
+func (a *App) loadGeneratedPreview(page string) {
+	preview := &a.coding.preview
+	if preview.requestID == "" || preview.loading {
+		return
+	}
+	if page == "" {
+		page = preview.page
+	}
+	requestID := preview.requestID
+	preview.page = page
+	preview.result = pages.Page{}
+	preview.updated = time.Time{}
+	preview.loading = true
+	preview.err = ""
+	preview.generation++
+	generation := preview.generation
+	a.goAsync(func() {
+		result, err := a.PreviewInstallationPage(requestID, page, "acp")
+		a.runOnMain(func() {
+			if a.coding.preview.requestID != requestID || a.coding.preview.generation != generation || a.route.kind != "preview" {
+				return
+			}
+			a.coding.preview.loading = false
+			if err != nil {
+				a.coding.preview.err = a.pluginErrorText(err)
+			} else if value, ok := result.Page.(pages.Page); ok {
+				a.coding.preview.result = value
+				a.coding.preview.updated = result.EvaluatedAt
+			} else {
+				a.coding.preview.err = a.t(i18n.PluginLoadFailed)
+			}
+			a.invalidate()
+		})
+	})
+}
+
+func (a *App) closeGeneratedPreview() {
+	a.coding.preview = candidatePreview{}
+	a.goTo(routePlugins)
+	a.invalidate()
+}
+
+func (a *App) generatedPreviewView(c *ui.Context) {
+	p := a.pal
+	preview := a.coding.preview
+	ui.Column(c).Gap(12).Children(func() {
+		ui.Row(c).Gap(8).Wrap().Children(func() {
+			a.softButton(c, a.t(i18n.CodingPreviewBack), nil, p.muted, a.closeGeneratedPreview)
+			if preview.requestID != "" {
+				a.softButton(c, a.t(i18n.PendingReview), nil, p.accent, func() { a.reviewInstallation(preview.requestID) })
+			}
+		})
+		ui.Text(c, a.t(i18n.CodingPreviewNotice)).FontSize(12).TextColor(p.muted).MaxLines(3)
+		if len(preview.manifest.Navigation) > 1 {
+			labels := make([]string, len(preview.manifest.Navigation))
+			selected := 0
+			for i, nav := range preview.manifest.Navigation {
+				labels[i] = nav.Title
+				if nav.Page == preview.page {
+					selected = i
+				}
+			}
+			if ui.Tabs(c.Key("candidate-preview-pages"), &selected, labels...).Changed() {
+				a.loadGeneratedPreview(preview.manifest.Navigation[selected].Page)
+			}
+		}
+		if preview.err != "" {
+			a.noticeCard(c, a.t(i18n.PluginErrorTitle), preview.err, true)
+		}
+		if preview.loading && preview.updated.IsZero() {
+			a.noticeCard(c, a.t(i18n.PluginLoadingTitle), a.t(i18n.Refreshing), false)
+			return
+		}
+		if preview.loading {
+			ui.Text(c, a.t(i18n.Refreshing)).FontSize(12).TextColor(p.muted)
+		}
+		pages.Render(c, preview.result, func(page string) { a.loadGeneratedPreview(page) })
+	})
 }
 
 func (a *App) cancelGeneration() {
@@ -444,10 +577,54 @@ func (a *App) cancelGeneration() {
 	a.invalidate()
 }
 
+// codingErrorText exposes only a bounded, sanitized agent-supplied message
+// in the interactive UI. RPCError.Error and diagnostic logging remain terse,
+// and RPC error data is never rendered.
+func (a *App) codingErrorText(err error) string {
+	var remote *acp.RPCError
+	if errors.As(err, &remote) && remote != nil {
+		if message := strings.TrimSpace(safeAgentText(remote.Message, 400)); message != "" {
+			return fmt.Sprintf("%s: %s", err, message)
+		}
+	}
+	var known *plugin.Error
+	if errors.As(err, &known) && known != nil {
+		return a.pluginErrorText(err)
+	}
+	return err.Error()
+}
+
 func safeAgentText(text string, limit int) string {
 	out := make([]rune, 0, min(len(text), limit))
+	esc, csi := false, false
 	for _, r := range text {
-		if (unicode.IsControl(r) && r != '\n' && r != '\t') || (r >= 0x202a && r <= 0x202e) || (r >= 0x2066 && r <= 0x2069) {
+		if esc {
+			esc = false
+			if r == '[' {
+				csi = true
+				continue
+			}
+		}
+		if csi {
+			if r >= 0x40 && r <= 0x7e {
+				csi = false
+			}
+			continue
+		}
+		if r == '\u001b' {
+			esc = true
+			continue
+		}
+		switch r {
+		case '\n', '\r', '\u0085', '\u2028', '\u2029':
+			if len(out) == 0 || out[len(out)-1] == ' ' {
+				continue
+			}
+			r = ' '
+		case '\u200b', '\u200e', '\u200f', '\u061c', '\ufeff', '\u2060':
+			continue
+		}
+		if (unicode.IsControl(r) && r != '\t') || (r >= 0x202a && r <= 0x202e) || (r >= 0x2066 && r <= 0x2069) {
 			continue
 		}
 		out = append(out, r)

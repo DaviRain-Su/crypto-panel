@@ -1,114 +1,95 @@
 # 交卷清单 — NEAR Hackathon
 
-这份文档给参赛者本人用，不是给评委的。代码已经完成并通过测试。提交和推送已按你的
-要求完成；剩下的发布动作由你来做：打标签、公开仓库、发 X、准备主网收款账户、填表。
+这份文档给参赛者本人用，不是给评委的。功能开发在 `product-experience` 分支和 PR #21 上进行；只有在最终验证完成、明确发布后才合并 main 和打交卷标签。当前文档不把计划或单测写成真实链上验收。
 
-截止时间：**2026-11-14 23:59 UTC**。提交前再读一遍
-<https://nearhackathon.com/HACKATHON.md>，规则和日期可能改。
+截止时间：**2026-11-14 23:59 UTC**。提交前再读 <https://nearhackathon.com/HACKATHON.md>，规则和日期可能变化。
 
-## 一、交卷前你要做的动作
+## 一、产品与赛道
 
-按顺序做，前一步没完成不要做下一步。
+项目：**Lintel（门厅）**。赛道：`security`（AI Security & Defense）。
 
-1. **确认提交已在。** 工作区已提交并推送到远程 `main`。如果之后还有改动：
+一句话：
+
+> Describe an app to your computer's coding agent. Lintel turns it into a native app you can preview, review and use, without giving the agent your wallet's approval power.
+
+中文：**你告诉电脑里的 Agent 想要什么应用，它负责生成；Lintel 负责预览、权限审阅和运行，安装与钱包签名始终由人决定。**
+
+主叙事不是普通多链钱包、支付预算、自动威胁检测或跨链成交。NEAR 的原生解码批准、function-call key 限制、隔离 WebView 与来源绑定证明人类签名边界。1Click 是 dry quote，不能称为已执行的跨链交易。
+
+## 二、最终发布顺序
+
+1. 在 PR #21 完成代码、真实 Agent 验收、README 复现和完整测试，再明确合并。
+2. 在最终提交上创建并推送标签：
 
    ```sh
-   git add -A
-   git commit -m "feat: NEAR wallet, native approvals, DApp bridge and Intents dry quote"
-   git push origin HEAD:main
-   ```
-
-2. **打交卷标签。**
-
-   ```sh
+   git tag -a pre-hackathon ccde05d -m "Pre-hackathon baseline" # 已存在时跳过
    git tag -a hackathon-submission -m "NEAR hackathon submission"
-   ```
-
-3. **推送标签。** README 里的 diff 链接
-   `compare/pre-hackathon...hackathon-submission` 只有在两个标签都推到公开仓库后
-   才有效；`pre-hackathon` 已在本地，指向 `ccde05d`。
-
-   ```sh
    git push origin pre-hackathon hackathon-submission
    ```
 
-4. **确认仓库是公开的。** README 里的链接、diff 和评委复现都依赖这一点。
+3. 确认仓库公开，并打开 `pre-hackathon...hackathon-submission` 链接核对新增范围。
+4. 准备一个有少量测试资金的 NEAR Testnet 账户，固定示例的 `RECEIVER` 改为自己控制的 testnet 账户。不要提交私钥。
+5. 录 90–120 秒演示视频。真实模型生成可在视频之前完成，但画面必须诚实标为 prepared candidate；不要把准备好的候选说成现场生成。
+6. 由本人在 X 发布视频，正文写明 NEAR HACKATHON，标记 `@NEARProtocol` 和 `#NEARHackathon`，附公开仓库链接。
+7. 准备一个 NEAR 主网收款账户，测试网账户不能收奖金。
+8. 提交公开仓库与公开 X 演示帖链接。填错走 <https://nearhackathon.com/request-changes>，不要重复提交同一仓库。
 
-5. **录一段不超过 90 秒的演示视频**，脚本见第三节。
-
-6. **发 X 演示帖**，要点见第四节。助手不代发。
-
-7. **准备一个 NEAR 主网收款账户**（具名 `xxx.near` 或 64 位隐式账户）。测试网
-   账户不能收奖金。
-
-8. **填写并提交参赛表。** 字段见第二节。填错走
-   <https://nearhackathon.com/request-changes>，不要用同一个仓库再交一次。
-
-## 二、提交表字段清单
-
-以表单实际字段为准；提交前把完整 payload 给自己过一遍。
-
-| 字段 | 值 |
-|---|---|
-| 项目名 | 门厅（Lintel） |
-| 赛道 | `security`（主）、`defi`（次） |
-| 仓库地址 | <https://github.com/DaviRain-Su/lintel> |
-| 演示帖链接 | 占位 — X 帖发布后填入 |
-| NEAR 主网收款账户 | **由你填写**（具名或 64 位隐式） |
-| 联系邮箱 | **由你填写** |
-| 队长姓名 | **由你填写** |
-| 团队人数 | `1` |
-| 同意主办方联系声明 | **由你阅读并勾选** |
-
-提交接口是 `https://nearhackathon.com/api/applications`。助手不会调用它，也不会
-代你点提交。
-
-## 三、90 秒演示脚本
-
-旁白按中文写，录屏时可以说英文或中文；每一步都对应 README 的复现步骤。
+## 三、90–120 秒演示脚本
 
 | 时间 | 画面 | 旁白 |
 |---|---|---|
-| 0–10s | 打开门厅（Lintel），侧边栏扫过 Portfolio / Wallet / Apps / Intents / DApp / Settings | 用链上产品时，你不必先搞懂钱包和哪条链。这个桌面应用把钥匙和批准留在本机，链在背后。 |
-| 10–25s | Wallet → New wallet，切到 NEAR，显示 64 位隐式账户和余额 | 新建钱包会同时准备 EVM、NEAR 和 Solana 的钥匙。切到 NEAR 看到隐式账户。钥匙在系统钥匙串里，插件和网页都看不到。 |
-| 25–45s | Send NEAR → 输入 `0.1` → 批准窗（网络、账户、接收方、NEAR 和 yoctoNEAR、来源）→ Approve → 点 View transaction 打开 nearblocks | 转一笔测试网 NEAR。壳自己解码并画出批准窗；批准后签名广播，拒绝就什么都不发。 |
-| 45–60s | DApp → 打开 `http://localhost:8080` → Connect wallet → Send 0.01 NEAR → 原生批准窗 | 网页只能申请。它拿不到钥匙，也不能自己点通过；批准窗是壳画的。 |
-| 60–75s | 用受限的 function-call key 触发一次超额或未授权方法，界面显示拒绝 | 如果钥匙被限制在某个合约、某些方法和额度内，超出的请求在弹窗前就被拒绝。 |
-| 75–90s | Intents → 选 wNEAR → USDC，Get a dry quote → 批准窗「You pay 1 wNEAR / You receive at least … USDC」 | 跨链兑换用 NEAR Intents：批准窗直接用「付出多少、至少换回多少」说话。这次只跑 dry quote，不签、不动钱。 |
+| 0–12s | Apps → Create app，显示需求与本地 ACP Agent 配置 | 你告诉电脑里的 Agent 想要什么应用，它会在独立工作目录生成应用。Lintel 把结果变成原生应用，而不是一段任意网页。 |
+| 12–28s | 已准备好的 pending candidate → Preview，展示真实原生页面 | 生成后先冻结候选并预览实际页面。预览禁止签名，不安装，也不等于批准。这个候选是录制前准备好的。 |
+| 28–40s | Review permissions，原生权限窗显示权限，点击批准 | 编码工具许可不等于安装许可。应用只有在独立的原生权限审阅后才进入 Apps。 |
+| 40–52s | 打开生成的应用，展示 sparkline / gauge / 页面和运行验证 | 应用现在可以长期打开和继续修改，页面由壳绘制。运行检查通过只说明页面能执行，不代表模型或数据被审计。 |
+| 52–70s | 固定 NEAR Approval Demo → Request 0.001 NEAR → 原生批准窗 → Reject | 对需要钱包的应用，插件只能申请。壳自己解码网络、接收方、金额和来源；拒绝就没有交易 hash。 |
+| 70–88s | 同一合法小额请求 → Approve → hash → nearblocks testnet | 明确批准后才会签名和广播。这是真实 testnet 交易，链接可以独立核验。 |
+| 88–102s | 使用受限 key 打开 Restricted key demo，展示签名前拒绝；或展示已有拒绝回归 | 如果签名 key 被限制到特定合约和方法，越权请求在批准窗前就被拒绝。它不是自动威胁评分，也不是通用支出预算。 |
+| 102–110s | 回到 Apps | Agent 可以创建和请求，但不能替人安装或批准。 |
 
-收尾一句：插件和网页只能申请，真正的钥匙和批准在壳里。
+如果真实链上步骤尚未完成，不得在视频中说“已广播”或展示虚构 hash。Function-call key 需要预先准备，来不及就省略该段，不把 fake RPC 测试说成链上演示。
 
-## 四、X 帖要点
+## 四、X 文案草稿
 
-- 正文第一句讲用户问题：「用链上产品时，不必先搞懂钱包和哪条链」。
-- 带上 90 秒视频。
-- 写明做于 NEAR HACKATHON，标记 `@NEARProtocol` 和 `#NEARHackathon`。
-- 附公开仓库链接。
-- 由你发布，助手不代发。
+```text
+I wanted a personal crypto tool, so I described it to my computer's coding agent.
 
-## 五、验收清单（当前状态）
+Lintel turns the result into a native app I can preview, permission-review and use. The agent can create and request, but it cannot install apps or approve NEAR signatures for me.
 
-- [x] `pre-hackathon` 指向加入 NEAR 之前的提交（`ccde05d`）
-- [x] 测试网：创建或导入账户，能显示余额（`TestNearWalletCreate`、`TestNearWalletImport`）
-- [x] 测试网转账：批准后链上可查；拒绝后无交易（`TestSendNearSignsAfterApproval`、`TestSendNearRejected`）
-- [x] 批准窗展示网络、账户、接收方、金额、来源；未知动作不假装已解码（`TestApprovalViewShowsTheNearDecode`）
-- [x] function-call key：额度内成功，超额或方法不匹配被拒绝并可感知（`TestPrepareAppliesFunctionCallKeyLimits`、`TestSignNearTransactionAppliesTheKeyLimit`）
-- [x] 私钥不出现在插件、WebView、日志、仓库里（`TestNearWalletCreate` 断言 `settings.json` 不含 `ed25519:`；`.gitignore` 排除 `.env` 和 `*.key`）
-- [x] 隔离 WebView 能连接并完成一次测试网签名，页面不能自批（`TestDappSignNeedsAConnection`、`TestDappSignRejected`、`TestDappBridgeScript`）
-- [x] Intents：`dry: true` 询价在批准窗用结果语言展示（`TestQuoteAsksForADryQuote`、`TestIntentsQuoteShowsResultLanguage`）；没有主网成交
-- [x] Passkey：真正的 WebAuthn Passkey 钱包（`TestCreatePasskeyStoresAndWatchesTheAccounts`、`TestSendPasskeyNearSignsAfterApproval`）。同一把 P-256 钥匙控制 NEAR 主网 `0s…` 账户（NEP-616 + NEP-591）和所有 EVM 链上同地址的 ERC-4337 智能账户；NEAR 部署/转账由钱包自己的中继账户代付 gas，拒绝后不广播。EVM 发送需要 bundler，未接线；Touch ID 仍是系统存在性检查，不是这把 Passkey；README 已写明恢复规则
-- [x] README 可按步骤复现；有 LICENSE；写明基线、限制，以及「无感不等于跳过批准」
-- [x] 有针对拒绝、限额、钥匙不落盘的测试
-- [x] 没有接入 Phoenix / Hyperliquid / Solana 签名，也没有接 Chain Signatures
-- [ ] 交卷动作留给用户：公开仓库、X 帖、主网收款账户、确认后的表单
+Built at NEAR HACKATHON. Demo below. @NEARProtocol #NEARHackathon
 
-## 六、助手不代做的事
+Repository: https://github.com/DaviRain-Su/lintel
+```
 
-提交和推送已按你的明确要求完成。以下仍由你来做：
+由本人检查后发布，不代发。
 
-- 创建主网收款账户。
-- 发 X 帖。
-- 把仓库改成公开。
-- 打 `hackathon-submission` 标签并推送。
-- 调用提交接口，代填表单。
-- 提交任何私钥、助记词或付费 RPC token。
+## 五、提交字段清单
+
+| 字段 | 值 |
+|---|---|
+| 项目名 | Lintel（门厅） |
+| 赛道 | `security` |
+| 仓库 | <https://github.com/DaviRain-Su/lintel> |
+| 演示帖 | X 发布后填写 |
+| NEAR 主网收款账户 | 本人提供，不能猜造 |
+| 联系邮箱 / 队长姓名 | 本人提供 |
+| 团队人数 | `1` |
+| 联系声明 | 本人阅读并同意后选择 |
+
+`What did you build?` 草稿：
+
+> Lintel turns a locally configured coding agent's output into native personal crypto apps. A user describes the tool; the agent generates an ordinary plugin in a separate workspace. Lintel validates and freezes the candidate, previews native pages with signing disabled, and installs only after separate native permission review. Installed apps run in a sandbox and can be revised without changing their identity. On NEAR, apps and web pages can request transactions but cannot access keys or approve themselves: the native shell decodes every request and signs only after human approval. Function-call key limits add protocol-enforced receiver, method and allowance boundaries. A fixed example demonstrates preview, rejection and a small testnet approval. Intents is dry-quote only. The coding agent itself is not OS-sandboxed, and preview is not a security audit.
+
+## 六、证据清单
+
+- [x] `pre-hackathon` 本地指向 `ccde05d`。
+- [x] 单元测试覆盖冻结候选、禁签名预览、独立安装决定、拒绝不广播和 function-call key 限制。
+- [x] 真实 Claude Agent 完成生成 → 预览 → 受控原生审阅 → 安装 → 打开；见 `docs/v1-acceptance.md`，没有冒充桌面鼠标验收。
+- [x] 真实模型将同一应用从 1.0.0 修改为 1.0.1，并再次独立审阅。
+- [ ] 真实 testnet 成功交易与 nearblocks 链接已记录。
+- [ ] 真实原生窗口中用户拒绝后无交易已记录。
+- [ ] NEAR Connect 在真实原生 WebView 自动发现已验证。
+- [ ] 从干净克隆按 README 构建、测试并走完主要路径。
+- [ ] 视频、公开仓库、两个标签、X 帖和主网收款账户均就绪。
+
+单测中的 fake RPC 只证明程序行为，不能勾选真实链上项目。`product-experience` 已推送不等于已合并 main，不等于已发布或已提交比赛。

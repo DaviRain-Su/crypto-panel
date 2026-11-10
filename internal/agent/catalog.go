@@ -50,6 +50,53 @@ func Catalog(managed bool) map[string]any {
 		}, "additionalProperties": false}, "body": schemaString(0, 0),
 	})), schemaObject(map[string]any{"status": map[string]any{"type": "integer"}, "ok": map[string]any{"type": "boolean"}, "headers": map[string]any{"type": "object"}, "body": schemaString(0, 0)}, "status", "ok", "headers", "body"), both...)
 	add("host.rpc", "chains + rpcMethods", args(schemaEnum(chainIDs...), schemaString(1, 64), map[string]any{}), map[string]any{}, both...)
+	decimalString := schemaString(1, 1024)
+	decimals := map[string]any{"type": "integer", "minimum": float64(0), "maximum": float64(255)}
+	add("host.units.parse", "none", args(decimalString, decimals), decimalString, both...)
+	add("host.units.format", "none", args(decimalString, decimals), decimalString, both...)
+	add("host.units.formatDisplay", "none", args(decimalString, decimals, decimals), decimalString, both...)
+	add("host.near.view", "NEAR chain", args(schemaObject(map[string]any{
+		"chainId": schemaEnum("near:mainnet", "near:testnet"), "contract": schemaString(2, 64),
+		"method": schemaString(1, 128), "args": map[string]any{},
+	}, "chainId", "contract", "method")), map[string]any{}, both...)
+	add("host.hyperliquid.info", "network: api.hyperliquid.xyz or api.hyperliquid-testnet.xyz", args(schemaObject(map[string]any{
+		"type":    schemaEnum("meta", "spotMeta", "metaAndAssetCtxs", "spotMetaAndAssetCtxs", "allMids", "l2Book", "candleSnapshot", "clearinghouseState", "spotClearinghouseState", "portfolio", "openOrders", "userFillsByTime"),
+		"testnet": map[string]any{"type": "boolean"},
+		"coin":    schemaString(1, 128), "user": schemaString(1, 128), "dex": schemaString(1, 128),
+		"nSigFigs": map[string]any{"type": "integer", "minimum": float64(2), "maximum": float64(5)},
+		"mantissa": map[string]any{"type": "integer", "minimum": float64(1)},
+		"req":      map[string]any{"type": "object"}, "aggregateByTime": map[string]any{"type": "boolean"},
+		"startTime": map[string]any{"type": "integer", "minimum": float64(0)},
+		"endTime":   map[string]any{"type": "integer", "minimum": float64(0)},
+	}, "type")), map[string]any{}, both...)
+	intentsNetwork := "network: 1click.chaindefuser.com"
+	add("host.intents.tokens", intentsNetwork, args(), schemaArray(schemaObject(map[string]any{
+		"assetId": schemaString(1, 0), "symbol": schemaString(1, 0), "blockchain": schemaString(1, 0),
+		"decimals": decimals, "price": map[string]any{"type": "number"}, "icon": schemaString(0, 0),
+	}, "assetId", "symbol", "blockchain", "decimals"), 0), both...)
+	quoteInput := schemaObject(map[string]any{
+		"originAsset": schemaString(1, 512), "destinationAsset": schemaString(1, 512), "amount": decimalString,
+		"recipient": schemaString(1, 512), "refundTo": schemaString(1, 512),
+		"slippageBps": map[string]any{"type": "integer", "minimum": float64(1), "maximum": float64(1000)},
+		"deadline":    schemaString(0, 64),
+	}, "originAsset", "destinationAsset", "amount", "recipient", "refundTo")
+	dryQuoteOutput := schemaObject(map[string]any{
+		"amountIn": decimalString, "amountOut": decimalString, "minAmountOut": decimalString,
+		"verified": map[string]any{"const": true}, "timestamp": schemaString(1, 64),
+	}, "amountIn", "amountOut", "minAmountOut", "verified", "timestamp")
+	// Return the complete trusted quote, including formatted amounts, deadline
+	// and echoed signed request, rather than rejecting its extra read fields.
+	dryQuoteOutput["additionalProperties"] = true
+	add("host.intents.dryQuote", intentsNetwork+"; dry only", args(quoteInput), dryQuoteOutput, both...)
+	statusOutput := schemaObject(map[string]any{
+		"status":        schemaEnum("PENDING_DEPOSIT", "KNOWN_DEPOSIT_TX", "INCOMPLETE_DEPOSIT", "PROCESSING", "SUCCESS", "REFUNDED", "FAILED"),
+		"correlationId": schemaString(0, 0), "updatedAt": schemaString(0, 0),
+		"quoteResponse": map[string]any{"type": "object"}, "swapDetails": map[string]any{},
+	}, "status", "quoteResponse")
+	statusOutput["additionalProperties"] = true
+	add("host.intents.status", intentsNetwork, args(schemaObject(map[string]any{
+		"depositAddress": schemaString(1, 512), "depositMemo": schemaString(0, 512),
+	}, "depositAddress")), statusOutput, both...)
 	add("host.accounts", "read: balances", args(), schemaArray(schemaObject(map[string]any{
 		"address": schemaString(0, 0), "label": schemaString(0, 0), "family": schemaEnum("evm", "near", "solana"),
 	}, "address", "family"), 0), both...)
@@ -59,7 +106,7 @@ func Catalog(managed bool) map[string]any {
 	add("host.i18n", "none", map[string]any{"type": "array", "minItems": 1}, schemaString(0, 0), both...)
 	add("host.render", "none", args(schemas["page"]), schemas["page"], both...)
 	examples := []map[string]any{}
-	for _, id := range []string{"com.example.gas", "com.example.feargreed"} {
+	for _, id := range []string{"com.example.gas", "com.example.feargreed", "com.example.hyperliquid", "com.example.intents"} {
 		pkg, hash, err := plugin.OfficialPackage(id)
 		if err != nil {
 			continue
@@ -84,7 +131,8 @@ func Catalog(managed bool) map[string]any {
 			"packageBytes": plugin.MaxPackageBytes, "applicationRequestBytes": maxApplicationRequest,
 			"settingsRequestBytes": maxSettingsRequest, "settingValueBytes": 8192, "pageBytes": 256 << 10,
 			"sections": 32, "stats": 12, "tableColumns": 8, "tableRows": 200, "cards": 32, "links": 16,
-			"chartPoints": 60, "settings": 20, "navigation": 8, "kvValueBytes": 64 << 10,
+			"chartPoints": 60, "sparklinePoints": 32, "gaugeMin": 0, "gaugeMax": 100,
+			"settings": 20, "navigation": 8, "kvValueBytes": 64 << 10,
 			"memoryBytes": 256 << 20, "executionSeconds": 30, "fetchSeconds": 30, "fetchResponseBytes": 8 << 20,
 			"pendingTasks": 5, "pendingSeconds": 1800,
 		},
@@ -153,12 +201,20 @@ func applicationSchemas(chainIDs []string) map[string]any {
 	points["minItems"] = 1
 	section := schemaObject(map[string]any{
 		"title": schemaString(0, 120),
-		"stats": schemaArray(schemaObject(map[string]any{"label": schemaString(0, 40), "value": schemaString(0, 80)}, "label", "value"), 12),
+		"stats": schemaArray(schemaObject(map[string]any{
+			"label": schemaString(0, 40), "value": schemaString(0, 80),
+			"trend":     schemaEnum("", "up", "down"),
+			"sparkline": schemaArray(map[string]any{"type": "number"}, 32),
+		}, "label", "value"), 12),
 		"table": schemaObject(map[string]any{"columns": columns, "rows": schemaArray(schemaArray(schemaString(0, 200), 8), 200)}, "columns", "rows"),
 		"cards": schemaArray(schemaObject(map[string]any{"title": schemaString(0, 80), "subtitle": schemaString(0, 120), "body": schemaString(0, 500)}, "title"), 32),
 		"links": schemaArray(schemaObject(map[string]any{"title": schemaString(0, 60), "page": pageName}, "title", "page"), 16),
 		"text":  schemaString(0, 2000), "divider": map[string]any{"type": "boolean"},
 		"chart": schemaObject(map[string]any{"kind": schemaEnum("", "line", "bar"), "points": points}, "points"),
+		"gauge": schemaObject(map[string]any{
+			"label": schemaString(0, 40), "text": schemaString(0, 20),
+			"value": map[string]any{"type": "number", "minimum": float64(0), "maximum": float64(100)},
+		}, "value"),
 	})
 	page := schemaObject(map[string]any{"title": schemaString(0, 120), "subtitle": schemaString(0, 160), "sections": schemaArray(section, 32)}, "sections")
 	pkgManifest := map[string]any{}

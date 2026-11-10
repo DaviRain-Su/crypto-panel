@@ -198,6 +198,7 @@ func (s *Server) handler() http.Handler {
 	mux.HandleFunc("PUT /v0/plugins/{id}", s.guard(s.propose))
 	mux.HandleFunc("GET /v0/installations/{requestId}", s.guard(s.installation))
 	mux.HandleFunc("DELETE /v0/installations/{requestId}", s.guard(s.installation))
+	mux.HandleFunc("POST /v0/installations/{requestId}/preview", s.guard(s.preview))
 	mux.HandleFunc("PUT /v0/plugins/{id}/settings", s.guard(s.settings))
 	mux.HandleFunc("DELETE /v0/plugins/{id}", s.guard(s.remove))
 	mux.HandleFunc("POST /v0/plugins/{id}/refresh", s.guard(s.refresh))
@@ -354,6 +355,15 @@ func setRefreshMeta(w http.ResponseWriter, result PageResult) {
 		formatted := result.EvaluatedAt.UTC().Format(time.RFC3339Nano)
 		w.Header().Set("X-Crypto-Panel-Evaluated-At", formatted)
 		w.Header().Set("X-Lintel-Evaluated-At", formatted)
+	}
+	if result.Signing != "" {
+		w.Header().Set("X-Lintel-Preview-Signing", result.Signing)
+	}
+	if result.Storage != "" {
+		w.Header().Set("X-Lintel-Preview-Storage", result.Storage)
+	}
+	if result.Network != "" {
+		w.Header().Set("X-Lintel-Preview-Network", result.Network)
 	}
 }
 

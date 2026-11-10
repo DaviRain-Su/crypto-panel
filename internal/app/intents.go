@@ -341,7 +341,16 @@ func (a *App) intentsAssetField(c *ui.Context, key, label string, current *strin
 		ui.Text(c, label).FontSize(11).FontWeight(600).TextColor(p.muted).MaxLines(1).
 			OnClick(func() { picker.Focus() })
 		selected := labels[idx]
-		picker = ui.Combobox(c.Key(key), &selected, labels).Label(label)
+		ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
+			if token, ok := a.intentsToken(*current); ok {
+				ui.Column(c).Gap(3).AlignItems(ui.Center).Children(func() {
+					a.assetIcon(c, token, 32)
+					ui.Text(c, blockchainName(token.Blockchain)).FontSize(8.5).
+						FontWeight(600).TextColor(p.muted).MaxLines(1)
+				})
+			}
+			picker = ui.Combobox(c.Key(key), &selected, labels).Label(label).Grow(1)
+		})
 		if picker.Changed() {
 			previous := *current
 			for i, l := range labels {
@@ -408,8 +417,16 @@ func (a *App) intentsQuoteCard(c *ui.Context) {
 			ui.Text(c, a.t(i18n.IntentsQuoteTitle)).FontSize(14).FontWeight(700).Grow(1)
 			ui.Badge(c, a.t(i18n.IntentsDryBadge))
 		})
-		a.intentsRow(c, p, a.t(i18n.IntentsYouPay), quoteAmount(q.AmountInText, q.AmountIn, origin))
-		a.intentsRow(c, p, a.t(i18n.IntentsYouReceive), quoteAmount("", minimum, destination))
+		ui.Row(c).Gap(18).Children(func() {
+			ui.Column(c).Gap(5).Grow(1).Children(func() {
+				ui.Text(c, a.t(i18n.IntentsYouPay)).FontSize(11).FontWeight(600).TextColor(p.muted)
+				a.assetIdentity(c, origin, quoteAmount(q.AmountInText, q.AmountIn, origin))
+			})
+			ui.Column(c).Gap(5).Grow(1).Children(func() {
+				ui.Text(c, a.t(i18n.IntentsYouReceive)).FontSize(11).FontWeight(600).TextColor(p.muted)
+				a.assetIdentity(c, destination, quoteAmount("", minimum, destination))
+			})
+		})
 		if q.AmountOutText != "" && q.AmountOutText != minimum {
 			a.intentsRow(c, p, a.t(i18n.IntentsEstimated), quoteAmount(q.AmountOutText, q.AmountOut, destination))
 		}

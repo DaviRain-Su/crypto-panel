@@ -69,9 +69,32 @@ Claude 当前上游命令已更名为 `claude-agent-acp`。本机旧版仍可握
 
 发布前已同步远程 `main` 的图标更新 `1113d5c`。重新检查时，既有 `TestRebindSamePort` 返回 `use of closed network connection`，100 次重复复现 2 次；原本先关闭 listener 再停止 HTTP 服务，会使服务重复关闭已关闭的连接。调整为先停止 HTTP 服务，再关闭可能尚未登记的 listener，保留原有端口复用断言与回环绑定。修正后端口重绑定测试连续 100 次通过，全仓测试、App / Agent race 检查与生产 MyGo 构建重新执行并全部通过。
 
+## 2026-11-10 真实 Claude Agent 补充验收
+
+环境：darwin/arm64，Go 1.27.3，`@agentclientprotocol/claude-agent-acp 0.102.0` 与 Claude Code `2.1.322`。实时测试通过显式 `LINTEL_TEST_ACP_EXECUTABLE=/opt/homebrew/bin/claude-agent-acp` 启动；默认全量测试不会调用模型。
+
+首次真实握手发现新版 adapter 在 `session/new.configOptions` 中公布 868 个唯一模型值，旧解析上限 128 使整个会话以 `invalid protocol message` 失败。修复将协议解析上限与 UI 上限分离：wire 保留 4 MiB 总帧限制并允许最多 1024 个值，原生选择器最多绘制 128 个；重复值、畸形分组、1025 个值及字段上限仍拒绝。回归测试为 `TestConfigOptionsAcceptALargeModelCatalog`、`TestConfigOptionsRejectTooManyOrDuplicateValues`、`TestConfigLargeCatalogStaysWithinWireBounds` 和 `TestCodingSelectChoicesBoundsLargeModelCatalog`。默认 Claude executable 更新为 `claude-agent-acp`。
+
+`TestInstalledACPCreatesPreviewsAndInstalls` 已通过，耗时 215.00 秒（包总耗时 218.356 秒）。真实模型创建 `local.personal.near-briefing` 1.0.0，无签名、无网络、无存储、无设置和秘密；生成后未安装，预览保持 pending，经受控原生审阅回调后安装，首页运行和安装后验证通过。第二次真实模型调用将**同一 ID** 修改为 1.0.1，并在另一次独立审阅后安装更新。测试工具许可回调没有被调用，模型只写独立临时工作目录。
+
+这不是桌面鼠标验收：`Manager.Decide` 由原生审阅入口下的受控测试回调触发，没有人工点击窗口，也没有 NEAR 签名或广播。因此 A20 的 Claude 模型生成、生命周期与同 ID 更新路径已取得真实模型证据，A20 的第二种真实 agent 和真实窗口操作仍未完成；A24 外部 Skill 流程也未完成。
+
+真实窗口随后暴露另一个独立问题：已有 `settings.json` 仍保存内置 Claude 的旧 executable `claude-code-acp`，所以修改代码中的默认值不会更新已安装用户的配置。旧适配器在显式包含 Homebrew 的 PATH 下握手成功，但真实 prompt 返回 `-32000`，远端消息为 `Authentication required`；这与 `available_commands_update` 通知无关。设置加载现仅迁移内置 `claude` profile 的精确旧命令到 `claude-agent-acp`，自定义 profile 不改写。生成与连接窗口会显示经过控制字符清洗和长度限制的远端短消息，不显示 RPC data；`RPCError.Error()` 与普通日志仍只含错误码。回归覆盖旧配置迁移、自定义命令保留、控制字符和长度边界。`TestInstalledACPCreatesSwapApp` 使用真实 `claude-agent-acp` 和完全相同的中文需求“创建一个 swap 的 App”通过：生成 `local.personal.swap` 1.0.0，候选保持 pending、未自动安装，首页原生预览成功。真实生成测试耗时 515.03 秒，包总耗时 515.492 秒。此次没有安装该 Swap、没有钱包签名或广播。修复后的完整构建、全仓测试、vet、ACP / Agent / Plugin / App race 和 MyGo 生产打包通过。旧窗口人工重启与点击尚未完成。
+
+## 2026-11-10 只读链能力与候选预览补充验收
+
+本切片提供精确金额工具、Hyperliquid Info 只读、NEAR 合约 view、1Click tokens、验签 dry quote 和 status。没有 Exchange、wet quote、入金、交易广播、自动安装或私钥能力。候选预览使用空的临时 KV、空设置和无账户状态，成功结果明确标记签名禁用、临时存储和仅批准 Host 可联网。新安装无网络访问，更新只能访问已批准且候选仍声明的 Host。
+
+- 真实 1Click dry quote 已验证 wNEAR → Ethereum USDC 和 wNEAR → ARB；使用生产公钥验证 Ed25519 签名。线上 dry quote 实际返回 HTTP 201，客户端只对该 POST 兼容 200/201，其余响应仍拒绝。无效 recipient 和上游错误均原样失败，没有生成 wet quote 或使用 deposit address。
+- 真实 NEAR mainnet `wrap.near.ft_balance_of` 只读通过。此次验收发现节点 `result` 是字节数组，而非此前假设的 Base64 字符串；修复后真实返回和 Host 解码测试通过，空字节返回 null，参数与节点响应有大小限制。
+- Hyperliquid mainnet/testnet 路由由固定生产 endpoint 选择，JS 不能传 URL；testnet 标志不进入 Info 请求体。
+- `TestInstalledACPCreatesChainCapabilityApps` 使用 `@agentclientprotocol/claude-agent-acp 0.102.0`，最终验收耗时 312.24 秒。真实模型分别生成 `local.personal.hyperliquid-markets` 与 `local.personal.intents-assets`，源码实际调用 `host.hyperliquid.info` 和 `host.intents.tokens`，候选 pending、无签名权限、未安装。本地计数测试服务器证明两次未批准预览均为零网络请求；经受控测试审阅安装到临时目录后，两者都实际发出只读请求并成功渲染。此前仅检查页面错误的测试版本失败过，因为没有识别生成代码可能捕获权限异常；最终版本改为直接统计请求，不依赖页面是否报错。
+- Intents status 对历史原始报价保留签名和时间戳格式验证，不套用 dry quote 的当前五分钟新鲜度；拒绝无签名报价和未知状态。
+- 真实桌面人工操作、第二种真实 Agent、外部 Skill 流程与真实交易仍未覆盖。最终全仓测试、变更包 race、vet、普通构建、MyGo 生产打包及差异检查见本次交付报告和随附提交。
+
 ## 尚未覆盖
 
-- A20：两种真实适配器分别完成需求 → 文件 → 校验 → 原生确认 → 安装 → 查看 → 同 id 更新，记录版本与平台。
+- A20：Claude 的真实模型创建、预览、受控审阅、安装、运行和同 ID 更新已通过；第二种真实适配器，以及两种 agent 的真实桌面窗口操作仍未完成。
 - A24：外部 agent 仅凭 Skill、连接信息、catalog 和模板完成应用。
 - 其他操作系统的原生界面、进程清理与凭据服务。
 - 真实系统凭据服务的部分失败和机器断电恢复；当前由自动化故障注入覆盖。

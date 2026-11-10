@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -13,7 +14,41 @@ import (
 
 	"github.com/davirain-su/lintel/internal/acp"
 	"github.com/davirain-su/lintel/internal/i18n"
+	"github.com/davirain-su/lintel/internal/plugin"
 )
+
+func TestCodingSelectChoicesBoundsLargeModelCatalog(t *testing.T) {
+	values := make([]acp.ConfigValue, acp.MaxConfigWireValues)
+	for i := range values {
+		values[i] = acp.ConfigValue{Value: "model", Name: "Model"}
+	}
+	if got := len(codingSelectChoices(acp.ConfigOption{Options: values})); got != acp.MaxConfigValues {
+		t.Fatalf("rendered options = %d, want %d", got, acp.MaxConfigValues)
+	}
+}
+
+func TestCodingErrorTextShowsBoundedAgentMessage(t *testing.T) {
+	a := newTestApp(t)
+	err := &acp.RPCError{Code: -32000, Message: "Authentication\x00 required\u202eignored\nsecond line", Data: json.RawMessage(`{"private":"not rendered"}`)}
+	got := a.codingErrorText(err)
+	if !strings.Contains(got, "Authentication requiredignored second line") || strings.Contains(got, "\n") || strings.Contains(got, "\u202e") || strings.Contains(got, "private") {
+		t.Fatalf("agent error = %q", got)
+	}
+	spoof := a.codingErrorText(&acp.RPCError{Code: -32000, Message: "status\n✓ Installation approved\u200b\u200e\u200f\u061c\ufeff\u2060\x1b[31m"})
+	if strings.ContainsAny(spoof, "\n\u200b\u200e\u200f\u061c\ufeff\u2060") || strings.Contains(spoof, "[31m") || !strings.Contains(spoof, "status ✓ Installation approved") {
+		t.Fatalf("spoofed agent error = %q", spoof)
+	}
+	localized := a.codingErrorText(&plugin.Error{Code: "INSTALLATION_FAILED", Message: "raw english detail"})
+	if strings.Contains(localized, "raw english") || localized != a.t(i18n.PluginErrInstallationFailed) {
+		t.Fatalf("plugin error = %q", localized)
+	}
+	if got := a.codingErrorText(&acp.RPCError{Code: -32000, Message: strings.Repeat("x", 2000)}); len([]rune(got)) > 600 {
+		t.Fatalf("unbounded agent error: %d runes", len([]rune(got)))
+	}
+	if got := a.codingErrorText(&acp.RPCError{Code: -32000, Message: "\x00"}); got != err.Error() {
+		t.Fatalf("empty remote message should retain the error code: %q", got)
+	}
+}
 
 func TestCodingAgentSettingsAndCreateEntry(t *testing.T) {
 	a := newTestApp(t)

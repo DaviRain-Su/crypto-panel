@@ -127,44 +127,10 @@ func TestSwitchingNearNetworkDropsTheConnection(t *testing.T) {
 	}
 }
 
-func TestDappConnectSkipsTheQuestionWhenConnected(t *testing.T) {
-	a, _, acc := newDappApp(t)
-	a.dappConnected["https://dapp.test"] = true
-	a.confirmConnect = func(string) bool {
-		t.Error("a connected origin reopened the connect question")
-		return false
-	}
-	res, err := a.dappConnect(context.Background(), "https://dapp.test", nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	out, ok := res.(map[string]any)
-	if !ok {
-		t.Fatalf("result = %T", res)
-	}
-	accounts, ok := out["accounts"].([]dappAccount)
-	if !ok || len(accounts) != 1 || accounts[0].AccountID != acc.AccountID {
-		t.Fatalf("accounts = %+v", out["accounts"])
-	}
-}
-
-func TestDappGetAccounts(t *testing.T) {
-	a, _, acc := newDappApp(t)
-	a.dappConnected["https://dapp.test"] = true
-	res, err := a.dappGetAccounts("https://dapp.test")
-	if err != nil {
-		t.Fatal(err)
-	}
-	accounts, ok := res.([]dappAccount)
-	if !ok || len(accounts) != 1 || accounts[0].AccountID != acc.AccountID {
-		t.Fatalf("accounts = %+v", res)
-	}
-}
-
 func TestDappGetAccountsNeedsANearNetwork(t *testing.T) {
 	a := newTestApp(t)
 	a.dappConnected["https://dapp.test"] = true
-	if _, err := a.dappGetAccounts("https://dapp.test"); err == nil || !strings.Contains(err.Error(), "NEAR network") {
+	if _, err := a.dappGetAccounts("https://dapp.test", "testnet"); err == nil || !strings.Contains(err.Error(), "NEAR network") {
 		t.Fatalf("err = %v", err)
 	}
 }
@@ -219,9 +185,86 @@ func TestDappSign(t *testing.T) {
 	if asked.near == nil || asked.near.ReceiverID != "bob.testnet" {
 		t.Fatalf("approval summary = %+v", asked.near)
 	}
-	out, ok := res.(map[string]string)
-	if !ok || out["hash"] == "" {
-		t.Fatalf("result = %+v", res)
+	out, ok := res.(json.RawMessage)
+	if !ok {
+		t.Fatalf("result = %T", res)
+	}
+	var withHash struct {
+		Hash string `json:"hash"`
+	}
+	if json.Unmarshal(out, &withHash) != nil || withHash.Hash == "" {
+		t.Fatalf("result has no top-level hash: %s", out)
+	}
+	var outcome struct {
+		Status      map[string]json.RawMessage `json:"status"`
+		Transaction struct {
+			Hash string `json:"hash"`
+		} `json:"transaction"`
+		TransactionOutcome struct {
+			ID string `json:"id"`
+		} `json:"transaction_outcome"`
+	}
+	if err := json.Unmarshal(out, &outcome); err != nil || outcome.Transaction.Hash == "" || outcome.Transaction.Hash != outcome.TransactionOutcome.ID || outcome.Status["SuccessValue"] == nil {
+		t.Fatalf("full outcome = %s, err = %v", out, err)
+	}
+}
+
+func TestDappNetworkMismatch(t *testing.T) {
+	a, rpc, _ := newDappApp(t)
+	a.dappConnected["https://dapp.test"] = true
+	for name, call := range map[string]func() error{
+		"connect": func() error {
+			_, err := a.dappConnect(context.Background(), "https://dapp.test", json.RawMessage(`{"network":"mainnet"}`))
+			return err
+		},
+		"accounts": func() error {
+			_, err := a.dappGetAccounts("https://dapp.test", "mainnet")
+			return err
+		},
+		"sign": func() error {
+			_, err := a.dappSign(context.Background(), "https://dapp.test", json.RawMessage(`{"network":"mainnet","receiverId":"bob.near","actions":[{"type":"transfer","amount":"1"}]}`))
+			return err
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if err := call(); err == nil || !strings.Contains(err.Error(), "network mainnet does not match selected testnet") {
+				t.Fatalf("err = %v", err)
+			}
+		})
+	}
+	if rpc.calls != nil {
+		t.Fatal("a network mismatch reached the RPC")
+	}
+}
+
+func TestDappConnectSkipsTheQuestionWhenConnected(t *testing.T) {
+	a, _, acc := newDappApp(t)
+	a.dappConnected["https://dapp.test"] = true
+	a.confirmConnect = func(string) bool {
+		t.Error("a connected origin reopened the connect question")
+		return false
+	}
+	res, err := a.dappConnect(context.Background(), "https://dapp.test", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := res.(map[string]any)
+	accounts := out["accounts"].([]dappAccount)
+	if len(accounts) != 1 || accounts[0].AccountID != acc.AccountID {
+		t.Fatalf("accounts = %+v", accounts)
+	}
+}
+
+func TestDappGetAccounts(t *testing.T) {
+	a, _, acc := newDappApp(t)
+	a.dappConnected["https://dapp.test"] = true
+	res, err := a.dappGetAccounts("https://dapp.test", "testnet")
+	if err != nil {
+		t.Fatal(err)
+	}
+	accounts := res.([]dappAccount)
+	if len(accounts) != 1 || accounts[0].AccountID != acc.AccountID {
+		t.Fatalf("accounts = %+v", accounts)
 	}
 }
 
@@ -269,6 +312,74 @@ func TestDappAddFunctionCallKey(t *testing.T) {
 	}
 }
 
+func TestDappSignsTransactionsSequentially(t *testing.T) {
+	a, rpc, _ := newDappApp(t)
+	a.dappConnected["https://dapp.test"] = true
+	approvals := 0
+	a.approve = func(approvalRequest) bool { approvals++; return true }
+	res, err := a.dappSignTransactions(context.Background(), "https://dapp.test", json.RawMessage(`{
+		"signerId":"", "transactions":[
+			{"receiverId":"one.testnet","actions":[{"type":"transfer","amount":"1"}]},
+			{"receiverId":"two.testnet","actions":[{"type":"transfer","amount":"2"}]}
+		]
+	}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if approvals != 2 || len(rpc.broadcasts) != 2 {
+		t.Fatalf("approvals = %d, broadcasts = %d", approvals, len(rpc.broadcasts))
+	}
+	outcomes := res.([]json.RawMessage)
+	for i, raw := range outcomes {
+		var outcome map[string]any
+		if json.Unmarshal(raw, &outcome) != nil || outcome["transaction"] == nil {
+			t.Fatalf("outcome %d = %s", i, raw)
+		}
+	}
+}
+
+func TestDappBatchKeepsConfirmedOutcomes(t *testing.T) {
+	a, rpc, _ := newDappApp(t)
+	a.dappConnected["https://dapp.test"] = true
+	n := 0
+	a.approve = func(approvalRequest) bool {
+		n++
+		return n == 1
+	}
+	res, err := a.dappSignTransactions(context.Background(), "https://dapp.test", json.RawMessage(`{"transactions":[
+		{"receiverId":"one.testnet","actions":[{"type":"transfer","amount":"1"}]},
+		{"receiverId":"two.testnet","actions":[{"type":"transfer","amount":"2"}]},
+		{"receiverId":"three.testnet","actions":[{"type":"transfer","amount":"3"}]}
+	]}`))
+	if err == nil || !strings.Contains(err.Error(), "transaction 2") || !strings.Contains(err.Error(), "rejected") {
+		t.Fatalf("err = %v", err)
+	}
+	if len(rpc.broadcasts) != 1 {
+		t.Fatalf("broadcasts = %d, want the confirmed transaction only", len(rpc.broadcasts))
+	}
+	outcomes, ok := res.([]json.RawMessage)
+	if !ok || len(outcomes) != 1 {
+		t.Fatalf("confirmed outcomes = %#v", res)
+	}
+	var outcome map[string]any
+	if json.Unmarshal(outcomes[0], &outcome) != nil || outcome["transaction"] == nil {
+		t.Fatalf("outcome = %s", outcomes[0])
+	}
+}
+
+func TestDappBatchStopsAfterRejection(t *testing.T) {
+	a, rpc, _ := newDappApp(t)
+	a.dappConnected["https://dapp.test"] = true
+	a.approve = func(approvalRequest) bool { return false }
+	_, err := a.dappSignTransactions(context.Background(), "https://dapp.test", json.RawMessage(`{"transactions":[
+		{"receiverId":"one.testnet","actions":[{"type":"transfer","amount":"1"}]},
+		{"receiverId":"two.testnet","actions":[{"type":"transfer","amount":"2"}]}
+	]}`))
+	if err == nil || !strings.Contains(err.Error(), "transaction 1") || len(rpc.broadcasts) != 0 {
+		t.Fatalf("err = %v, broadcasts = %d", err, len(rpc.broadcasts))
+	}
+}
+
 func TestDappRejectsUnknownParams(t *testing.T) {
 	a, _, _ := newDappApp(t)
 	a.dappConnected["https://dapp.test"] = true
@@ -280,8 +391,8 @@ func TestDappRejectsUnknownParams(t *testing.T) {
 
 func TestDappBridgeScript(t *testing.T) {
 	for _, want := range []string{
-		"cryptopanel://near/request", "signAndSendTransaction", "addFunctionCallKey",
-		"mygo.on", "window.nearWallet", "normalizeActions",
+		"cryptopanel://near/request", "signAndSendTransaction", "signAndSendTransactions", "addFunctionCallKey",
+		"mygo.on", "window.nearWallet", "normalizeActions", "near-wallet-injected", "near-selector-ready",
 	} {
 		if !strings.Contains(nearBridgeScript, want) {
 			t.Errorf("the bridge script is missing %q", want)

@@ -66,7 +66,7 @@ func TestAgentPortfolio(t *testing.T) {
 		t.Fatalf("accounts = %+v", p.Accounts)
 	}
 	acc := p.Accounts[0]
-	if acc.Address != viewAddr || acc.Label != "Main" {
+	if acc.Address != viewAddr || acc.Label != "Main" || acc.ChainID != chains.Ethereum.ID || acc.Network != chains.Ethereum.Name {
 		t.Fatalf("account = %+v", acc)
 	}
 	if acc.Native.Symbol != "ETH" || acc.Native.Decimals != 18 ||

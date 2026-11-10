@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"math/big"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -114,17 +115,22 @@ func TestCustomRPCStaysOnItsNetwork(t *testing.T) {
 	var jobs []familyFetch
 	a.startRefresh = func(_ int, got []familyFetch) { jobs = got }
 	a.requestRefresh()
-	if len(jobs) != 3 {
-		t.Fatalf("jobs = %d, want 3", len(jobs))
+	evmNetworks := chains.NetworksOf(chain.EVM)
+	if len(jobs) != len(evmNetworks)+2 {
+		t.Fatalf("jobs = %d, want one per EVM network plus NEAR and Solana", len(jobs))
 	}
 	for _, job := range jobs {
 		switch job.network.Family {
 		case chain.EVM:
-			if job.network.ID != chains.Ethereum.ID {
-				t.Fatalf("EVM job = %q", job.network.ID)
+			got := job.reader.(*evm.Client).Endpoint().URL
+			if job.network.ID == a.settings.NetworkID {
+				if got != a.settings.RPCURL {
+					t.Fatalf("selected endpoint = %q", got)
+				}
+				continue
 			}
-			if got := job.reader.(*evm.Client).Endpoint().URL; got != a.settings.RPCURL {
-				t.Fatalf("selected endpoint = %q", got)
+			if got != job.network.RPCURL {
+				t.Fatalf("%s endpoint = %q, the custom Ethereum URL leaked", job.network.Name, got)
 			}
 		case chain.Solana:
 			if got := job.reader.(*solana.Client).Endpoint().URL; got != chains.SolanaMainnet.RPCURL {
@@ -323,6 +329,101 @@ func TestVaultCheckUsesTheSelectedSolanaReader(t *testing.T) {
 	})
 	if a.snap.vault != vaultExists {
 		t.Fatalf("vault = %v, want exists", a.snap.vault)
+	}
+}
+
+func TestQueuedNetworkDoesNotWaitASecondTimeout(t *testing.T) {
+	if familyReadTimeout != 90*time.Second {
+		t.Fatalf("family timeout = %s, want 90s", familyReadTimeout)
+	}
+	previous := familyReadTimeout
+	familyReadTimeout = 250 * time.Millisecond
+	t.Cleanup(func() { familyReadTimeout = previous })
+	a := newTestApp(t)
+	jobs := make([]familyFetch, maxRefreshConcurrency+1)
+	for i := range jobs {
+		jobs[i] = familyFetch{
+			network: chain.Network{ID: "job-" + string(rune('a'+i)), Family: chain.EVM},
+			addrs:   []string{viewAddr},
+			reader: gateReader{account: func(ctx context.Context) error {
+				<-ctx.Done()
+				return ctx.Err()
+			}},
+		}
+	}
+	start := time.Now()
+	finishFetch(t, a, jobs)
+	if elapsed := time.Since(start); elapsed > 450*time.Millisecond {
+		t.Fatalf("refresh took %s; a job queued on the semaphore started another full timeout", elapsed)
+	}
+}
+
+func TestOtherFamiliesAreNotStarvedByHungEVM(t *testing.T) {
+	if familyReadTimeout != 90*time.Second {
+		t.Fatalf("family timeout = %s, want 90s", familyReadTimeout)
+	}
+	previous := familyReadTimeout
+	familyReadTimeout = 2 * time.Second
+	t.Cleanup(func() { familyReadTimeout = previous })
+	var entered sync.WaitGroup
+	entered.Add(maxRefreshConcurrency + 2)
+	hold := make(chan struct{})
+	var release sync.Once
+	closeHold := func() { release.Do(func() { close(hold) }) }
+	t.Cleanup(closeHold)
+	block := func(ctx context.Context) error {
+		entered.Done()
+		select {
+		case <-hold:
+			return nil
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+	start := func(context.Context) error {
+		entered.Done()
+		return nil
+	}
+	jobs := make([]familyFetch, 0, maxRefreshConcurrency+2)
+	for i := 0; i < maxRefreshConcurrency; i++ {
+		jobs = append(jobs, familyFetch{
+			network: chain.Network{ID: "eip155:" + string(rune('1'+i)), Family: chain.EVM},
+			addrs:   []string{viewAddr},
+			reader:  gateReader{account: block},
+		})
+	}
+	jobs = append(jobs,
+		familyFetch{network: chain.Network{ID: "near:mainnet", Family: chain.Near}, addrs: []string{"alice.near"}, reader: gateReader{account: start}},
+		familyFetch{network: chain.Network{ID: "solana:mainnet", Family: chain.Solana}, addrs: []string{"sol"}, reader: gateReader{account: start}},
+	)
+	a := newTestApp(t)
+	done := make(chan struct{})
+	previousUI := runOnUI
+	runOnUI = func(fn func()) {
+		fn()
+		select {
+		case <-done:
+		default:
+			close(done)
+		}
+	}
+	t.Cleanup(func() { runOnUI = previousUI })
+	a.fetch(a.gen, jobs)
+	allEntered := make(chan struct{})
+	go func() {
+		entered.Wait()
+		close(allEntered)
+	}()
+	select {
+	case <-allEntered:
+	case <-time.After(400 * time.Millisecond):
+		t.Fatal("NEAR or Solana did not start while the EVM slots were full")
+	}
+	closeHold()
+	select {
+	case <-done:
+	case <-time.After(3 * time.Second):
+		t.Fatal("refresh did not finish")
 	}
 }
 

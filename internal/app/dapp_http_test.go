@@ -49,6 +49,51 @@ func dappHTTP(t *testing.T, a *App, bridge *dappBridgeState, page *mygo.Page, or
 	return w, replies
 }
 
+func TestDappHTTPKeepsConfirmedBatchOutcome(t *testing.T) {
+	a, rpc, _ := newDappApp(t)
+	origin := "https://dapp.test"
+	a.dappConnected[origin] = true
+	n := 0
+	a.approve = func(approvalRequest) bool {
+		n++
+		return n == 1
+	}
+	b := a.dappBridge
+	b.committed(origin)
+	binding, _ := b.binding()
+	w, replies := dappHTTP(t, a, b, binding.page, origin, t.Context(), dappRequest{
+		ID: "batch", Method: "signAndSendTransactions", Capability: binding.capability,
+		Params: json.RawMessage(`{"transactions":[
+			{"receiverId":"one.testnet","actions":[{"type":"transfer","amount":"1"}]},
+			{"receiverId":"two.testnet","actions":[{"type":"transfer","amount":"2"}]}
+		]}`),
+	})
+	if w.Code != http.StatusNoContent || len(replies) != 1 {
+		t.Fatalf("status=%d replies=%d", w.Code, len(replies))
+	}
+	if len(rpc.broadcasts) != 1 {
+		t.Fatalf("broadcasts = %d, want the confirmed transaction only", len(rpc.broadcasts))
+	}
+	raw, err := json.Marshal(replies[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	var body struct {
+		Error  string            `json:"error"`
+		Result []json.RawMessage `json:"result"`
+	}
+	if json.Unmarshal(raw, &body) != nil {
+		t.Fatalf("response = %s", raw)
+	}
+	if !strings.Contains(body.Error, "transaction 2") || !strings.Contains(body.Error, "rejected") || len(body.Result) != 1 {
+		t.Fatalf("response dropped the confirmed outcome: %s", raw)
+	}
+	var outcome map[string]any
+	if json.Unmarshal(body.Result[0], &outcome) != nil || outcome["hash"] == nil || outcome["transaction"] == nil {
+		t.Fatalf("confirmed outcome = %s", body.Result[0])
+	}
+}
+
 func TestDappHTTPRequiresDocumentCapabilityEvenWithConnectedTopPage(t *testing.T) {
 	a, rpc, _ := newDappApp(t)
 	origin := "https://dapp.test"

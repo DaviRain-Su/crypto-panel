@@ -10,7 +10,9 @@ import (
 
 	"github.com/davirain-su/lintel/internal/chain"
 	"github.com/davirain-su/lintel/internal/chains"
+	"github.com/davirain-su/lintel/internal/hyperliquid"
 	"github.com/davirain-su/lintel/internal/i18n"
+	"github.com/davirain-su/lintel/internal/intents"
 	"github.com/davirain-su/lintel/internal/plugin"
 	"github.com/davirain-su/lintel/internal/wallet"
 )
@@ -30,6 +32,8 @@ func newTestApp(t *testing.T) *App {
 		pluginSecrets: memStore{},
 	}
 	a.newReader()
+	a.intentsClient = intents.New()
+	a.hyperliquidClient = hyperliquid.New()
 	a.initPlugins(t.TempDir())
 	a.keyring = wallet.NewKeyring(memStore{}, nil)
 	a.nearKeyring = wallet.NewNearKeyring(memStore{}, nil)
@@ -243,7 +247,7 @@ func TestViewShowsFiatValues(t *testing.T) {
 			network: chains.Ethereum,
 			native:  big.NewInt(2_000_000_000_000_000_000),
 		}},
-		usd: map[string]float64{"ETH": 3000},
+		usd: map[string]float64{nativePriceKey(chains.Ethereum): 3000},
 	}
 	tt := ui.NewTester(a.view, windowWidth, windowHeight)
 	if !tt.HasText("$6,000.00") {
@@ -253,6 +257,21 @@ func TestViewShowsFiatValues(t *testing.T) {
 	tt.Frame()
 	if tt.HasText("$6,000.00") {
 		t.Error("the fiat value is still shown after it was turned off")
+	}
+}
+
+func TestPortfolioShowsSameAddressOnEveryEVMNetwork(t *testing.T) {
+	a := newTestApp(t)
+	a.settings.Accounts = []wallet.Address{{Addr: viewAddr, Label: "Main"}}
+	a.snap = &snapshot{accounts: []accountSnapshot{
+		{addr: viewAddr, network: chains.Ethereum, native: new(big.Int).Exp(big.NewInt(10), big.NewInt(18), nil)},
+		{addr: viewAddr, network: chains.BSC, native: new(big.Int).Mul(big.NewInt(2), new(big.Int).Exp(big.NewInt(10), big.NewInt(18), nil))},
+	}}
+	tt := ui.NewTester(a.view, windowWidth, windowHeight)
+	for _, want := range []string{"Ethereum", "BNB Smart Chain", "Avalanche C-Chain", "1 ETH", "2 BNB"} {
+		if !tt.HasText(want) {
+			t.Errorf("missing %q in %q", want, tt.Texts())
+		}
 	}
 }
 

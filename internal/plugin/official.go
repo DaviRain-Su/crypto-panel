@@ -14,7 +14,7 @@ import (
 	"time"
 )
 
-//go:embed testdata/examples/gas testdata/examples/fear-greed
+//go:embed testdata/examples/gas testdata/examples/fear-greed testdata/examples/hyperliquid testdata/examples/intents
 var officialFS embed.FS
 
 // OfficialSource is the install record of an example that shipped with the
@@ -34,7 +34,13 @@ var errOfficialChanged = errors.New("the official example's files changed after 
 var officialExampleIDs = []string{
 	"com.example.feargreed",
 	"com.example.gas",
+	"com.example.hyperliquid",
+	"com.example.intents",
 }
+
+// firstLaunchExampleIDs preserves the existing two-app launcher. Additional
+// embedded examples are authoring references, not automatic installations.
+var firstLaunchExampleIDs = []string{"com.example.feargreed", "com.example.gas"}
 
 func isOfficialID(id string) bool {
 	for _, want := range officialExampleIDs {
@@ -144,10 +150,7 @@ func (s *Store) EnsureOfficial() error {
 			}
 		}
 	}
-	ids := make([]string, 0, len(officialByID))
-	for id := range officialByID {
-		ids = append(ids, id)
-	}
+	ids := append([]string(nil), firstLaunchExampleIDs...)
 	sort.Strings(ids)
 	for _, id := range ids {
 		if err := s.installOfficial(id); err != nil {

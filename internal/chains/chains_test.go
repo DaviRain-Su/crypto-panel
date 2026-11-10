@@ -77,6 +77,21 @@ func TestTokenAddresses(t *testing.T) {
 		"0x50c5725949a6f0c72e6c4a641f24049a917db0cb": "0x50c5725949A6F0c72E6C4a641F24049A917DB0Cb", // DAI
 		"0x4200000000000000000000000000000000000006": "0x4200000000000000000000000000000000000006", // WETH
 		"0x2ae3f1ec7f1f5012cfeab0185bfc7aa3cf0dec22": "0x2Ae3F1Ec7F1F5012CFEab0185bfc7aa3cf0DEc22", // cbETH
+		// Arbitrum One
+		"0xaf88d065e77c8cc2239327c5edb3a432268e5831": "0xaf88d065e77c8cC2239327C5EDb3A432268e5831", // USDC
+		"0xfd086bc7cd5c481dcc9c85ebe478a1c0b69fcbb9": "0xFd086bC7CD5C481DCC9C85ebE478A1C0b69FCbb9", // USDT
+		// Optimism
+		"0x0b2c639c533813f4aa9d7837caf62653d097ff85": "0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85", // USDC
+		"0x94b008aa00579c1307b0ef2c499ad98a8ce58e58": "0x94b008aA00579c1307B0EF2c499aD98a8ce58e58", // USDT
+		// Polygon
+		"0x3c499c542cef5e3811e1192ce70d8cc03d5c3359": "0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359", // USDC
+		"0xc2132d05d31c914a87c6611c10748aeb04b58e8f": "0xc2132D05D31c914a87C6611C10748AEb04B58e8F", // USDT
+		// BNB Smart Chain
+		"0x8ac76a51cc950d9822d68b83fe1ad97b32cd580d": "0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d", // USDC
+		"0x55d398326f99059ff775485246999027b3197955": "0x55d398326f99059fF775485246999027B3197955", // USDT
+		// Avalanche C-Chain
+		"0xb97ef9ef8734c71904d8002f8b6bc66dd9c48a6e": "0xB97EF9Ef8734C71904D8002F8b6Bc66Dd9c48a6E", // USDC
+		"0x9702230a8ea53601f5cd2dc00fdbc13d4df4a8c7": "0x9702230A8Ea53601f5cD2dc00fDBc13d4dF4A8c7", // USDT
 	}
 	knownSolana := map[string]bool{
 		"EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v": true, // USDC
@@ -122,8 +137,17 @@ func TestByID(t *testing.T) {
 
 func TestNetworksOf(t *testing.T) {
 	evm := NetworksOf(chain.EVM)
-	if len(evm) != 2 || evm[0].ID != Ethereum.ID || evm[1].ID != Base.ID {
+	want := []chain.Network{Ethereum, Base, Arbitrum, Optimism, Polygon, BSC, Avalanche}
+	if len(evm) != len(want) {
 		t.Fatalf("EVM networks = %+v", evm)
+	}
+	for i, network := range want {
+		if evm[i].ID != network.ID || evm[i].ChainID != network.ChainID {
+			t.Errorf("EVM network %d = %+v, want %+v", i, evm[i], network)
+		}
+		if network.Decimals != 18 {
+			t.Errorf("%s native decimals = %d, want 18", network.Name, network.Decimals)
+		}
 	}
 	sol := NetworksOf(chain.Solana)
 	if len(sol) != 1 || sol[0].ID != SolanaMainnet.ID {

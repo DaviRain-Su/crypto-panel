@@ -1,6 +1,9 @@
 package app
 
 import (
+	"context"
+	"time"
+
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
 
@@ -25,6 +28,7 @@ type intentsApproval struct {
 	req      intentsApprovalRequest
 	decided  bool
 	onDecide func(bool)
+	icons    *assetIconCache
 }
 
 func (ap *intentsApproval) decide(ok bool) {
@@ -42,6 +46,7 @@ func (ap *intentsApproval) view(c *ui.Context) {
 	p := paletteFor(t)
 	useAccent(t, p)
 	c.Root().Background(p.bg)
+	ap.loadIcons(c)
 	ui.Column(c).Fill().Padding(24).Gap(14).Children(func() {
 		ui.Row(c).Gap(10).AlignItems(ui.Center).Children(func() {
 			ui.Box(c).Size(34, 34).Radius(10).Background(p.accentSoft).Center().Children(func() {
@@ -53,6 +58,14 @@ func (ap *intentsApproval) view(c *ui.Context) {
 				ui.Text(c, ap.t(i18n.IntentsApproveTitle)).FontSize(21).FontWeight(700).
 					LetterSpacing(-0.4).MaxLines(2)
 			})
+		})
+		ui.Row(c).Gap(18).Children(func() {
+			minimum := ap.req.quote.MinAmountOut
+			if minimum == "" {
+				minimum = ap.req.quote.AmountOut
+			}
+			ap.assetSummary(c, ap.req.origin, quoteAmount(ap.req.quote.AmountInText, ap.req.quote.AmountIn, ap.req.origin), p)
+			ap.assetSummary(c, ap.req.destination, quoteAmount("", minimum, ap.req.destination), p)
 		})
 		ui.Column(c).Gap(9).Padding(16).Radius(12).Background(p.card).
 			Border(1, p.hairline).Children(func() {
@@ -82,6 +95,58 @@ func (ap *intentsApproval) view(c *ui.Context) {
 			if b.Clicked() {
 				ap.decide(true)
 			}
+		})
+	})
+}
+
+// loadIcons starts public artwork requests without blocking approval.
+func (ap *intentsApproval) loadIcons(c *ui.Context) {
+	if ap.icons == nil {
+		return
+	}
+	for _, token := range []intents.Token{ap.req.origin, ap.req.destination} {
+		if token.IconURL == "" {
+			continue
+		}
+		if _, ok := ap.icons.cached(token.IconURL); ok || ap.icons.loading(token.IconURL) || ap.icons.cooling(token.IconURL) {
+			continue
+		}
+		raw := token.IconURL
+		go func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+			defer cancel()
+			if _, err := ap.icons.load(ctx, raw); err != nil {
+				ap.icons.noteFailure(raw)
+			}
+			mygo.RunOnMain(c.Invalidate)
+		}()
+	}
+}
+
+func (ap *intentsApproval) assetSummary(c *ui.Context, token intents.Token, amount string, p palette) {
+	ui.Row(c).Gap(10).AlignItems(ui.Center).Grow(1).Children(func() {
+		loaded := false
+		if icon := builtinAssetIcon(token); icon != nil {
+			ui.Box(c).Size(32, 32).Radius(16).Clip().Children(func() {
+				ui.Image(c, icon).Size(32, 32)
+			})
+			loaded = true
+		} else if ap.icons != nil && token.IconURL != "" {
+			if result, ok := ap.icons.cached(token.IconURL); ok && result.bitmap != nil {
+				ui.Box(c).Size(32, 32).Radius(16).Clip().Children(func() {
+					ui.Image(c, result.bitmap).Size(32, 32)
+				})
+				loaded = true
+			}
+		}
+		if !loaded {
+			ui.Box(c).Size(32, 32).Radius(16).Background(p.accentSoft).Center().Children(func() {
+				ui.Text(c, assetMonogram(token.Symbol)).FontSize(13).FontWeight(700).TextColor(p.accent)
+			})
+		}
+		ui.Column(c).Gap(2).Children(func() {
+			ui.Text(c, amount).FontSize(12.5).FontWeight(650).MaxLines(2)
+			ui.Text(c, blockchainName(token.Blockchain)).FontSize(10.5).TextColor(p.muted)
 		})
 	})
 }
@@ -152,6 +217,7 @@ func (a *App) askIntentsApproval(req intentsApprovalRequest) bool {
 			t:        a.t,
 			req:      req,
 			onDecide: func(ok bool) { decided <- ok },
+			icons:    a.assetIcons,
 		}
 		win = mygo.NewWindow(mygo.WindowOptions{
 			Title:           a.t(i18n.IntentsApproveWindowTitle),

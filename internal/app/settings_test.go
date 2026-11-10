@@ -83,6 +83,24 @@ func TestLoadSettingsMigratesChainID(t *testing.T) {
 	}
 }
 
+func TestLoadSettingsMigratesLegacyClaudePreset(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "settings.json")
+	data := `{"codingAgents":[{"ID":"claude","Name":"Claude Code (ACP)","Executable":"claude-code-acp","Args":[]},{"ID":"custom","Name":"Custom","Executable":"claude-code-acp","Args":["--custom"]}],"activeCodingAgent":"claude"}`
+	if err := os.WriteFile(path, []byte(data), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	s, err := LoadSettings(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(s.CodingAgents) != 2 || s.CodingAgents[0].Executable != "claude-agent-acp" {
+		t.Fatalf("legacy Claude preset was not migrated: %+v", s.CodingAgents)
+	}
+	if s.CodingAgents[1].Executable != "claude-code-acp" || len(s.CodingAgents[1].Args) != 1 {
+		t.Fatalf("custom agent was rewritten: %+v", s.CodingAgents[1])
+	}
+}
+
 func TestLoadSettingsCorruptFile(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "settings.json")
 	if err := os.WriteFile(path, []byte("{not json"), 0o644); err != nil {

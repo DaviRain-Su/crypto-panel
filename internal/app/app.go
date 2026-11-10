@@ -8,6 +8,7 @@ package app
 
 import (
 	"log"
+	"net/http"
 	"path/filepath"
 	"runtime"
 	"strconv"
@@ -20,6 +21,7 @@ import (
 
 	"github.com/davirain-su/lintel/internal/agent"
 	"github.com/davirain-su/lintel/internal/chain"
+	"github.com/davirain-su/lintel/internal/hyperliquid"
 	"github.com/davirain-su/lintel/internal/i18n"
 	"github.com/davirain-su/lintel/internal/intents"
 	"github.com/davirain-su/lintel/internal/passkey"
@@ -252,6 +254,7 @@ type App struct {
 	// asking about, and the last dry quote. approveIntents shows a quote's
 	// conditions; tests replace it.
 	intentsClient        *intents.Client
+	hyperliquidClient    *hyperliquid.Client
 	intentsTokens        []intents.Token
 	intentsTokensErr     string
 	intentsTokensLoading bool
@@ -267,6 +270,7 @@ type App struct {
 	intentsAccepted      bool
 	intentsNotice        string
 	approveIntents       func(intentsApprovalRequest) bool
+	assetIcons           *assetIconCache
 
 	// The menu bar tray: the icon, each enabled app's first stat, and the
 	// signature of the menu the last applyTray drew. All tray state changes
@@ -317,6 +321,8 @@ func New() (*App, error) {
 	a.nearKeyring = wallet.NewNearKeyring(secrets, settings.NearWallet)
 	a.solanaKeyring = wallet.NewSolanaKeyring(secrets, settings.SolanaAccounts())
 	a.intentsClient = intents.New()
+	a.hyperliquidClient = hyperliquid.New()
+	a.assetIcons = newAssetIconCache(&http.Client{Timeout: 8 * time.Second})
 	a.priceSource = prices.New()
 	a.startRefresh = a.fetch
 	a.runOnMain = appRunOnMain

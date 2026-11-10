@@ -1,9 +1,18 @@
 package app
 
 import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
 	"math/big"
+	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 
+	"github.com/davirain-su/lintel/internal/chain"
+	"github.com/davirain-su/lintel/internal/chain/evm"
 	"github.com/davirain-su/lintel/internal/chains"
 	"github.com/davirain-su/lintel/internal/wallet"
 )
@@ -53,13 +62,16 @@ func TestRequestRefreshStartsOnce(t *testing.T) {
 	if !a.loading {
 		t.Fatal("loading = false")
 	}
-	if len(gotJobs) != 2 {
-		t.Fatalf("jobs = %d, want one per family with addresses", len(gotJobs))
+	evmNetworks := chains.NetworksOf(chain.EVM)
+	if len(gotJobs) != len(evmNetworks)+1 {
+		t.Fatalf("jobs = %d, want one per EVM network plus Solana", len(gotJobs))
 	}
-	if n := len(gotJobs[0].addrs); n != 2 {
-		t.Fatalf("EVM job reads %d addresses, want 2", n)
+	for i, network := range evmNetworks {
+		if gotJobs[i].network.ID != network.ID || len(gotJobs[i].addrs) != 2 {
+			t.Errorf("EVM job %d = network %q, addresses %v", i, gotJobs[i].network.ID, gotJobs[i].addrs)
+		}
 	}
-	if got := gotJobs[1].network.ID; got != chains.SolanaMainnet.ID {
+	if got := gotJobs[len(gotJobs)-1].network.ID; got != chains.SolanaMainnet.ID {
 		t.Fatalf("Solana job reads %q, want the preset", got)
 	}
 	a.requestRefresh()
@@ -153,4 +165,131 @@ func TestPasskeyVaultExists(t *testing.T) {
 	if a.passkeyVaultExists() {
 		t.Fatal("Ethereum network: vault reported as existing")
 	}
+}
+
+type refreshReader struct {
+	account func(context.Context, string) (chain.AccountBalances, error)
+}
+
+func (r refreshReader) Account(ctx context.Context, addr string) (chain.AccountBalances, error) {
+	return r.account(ctx, addr)
+}
+func (refreshReader) Block(context.Context) (uint64, error) { return 42, nil }
+func (refreshReader) RPC(context.Context, string, any) (json.RawMessage, error) {
+	return nil, errors.New("not implemented")
+}
+
+func TestFetchKeepsEVMNetworksSeparate(t *testing.T) {
+	a := newTestApp(t)
+	done := make(chan struct{})
+	previous := runOnUI
+	runOnUI = func(fn func()) { fn(); close(done) }
+	t.Cleanup(func() { runOnUI = previous })
+	jobs := []familyFetch{
+		{network: chains.Ethereum, addrs: []string{strings.ToUpper(viewAddr)}, reader: refreshReader{account: func(context.Context, string) (chain.AccountBalances, error) {
+			return chain.AccountBalances{Native: big.NewInt(1)}, nil
+		}}},
+		{network: chains.BSC, addrs: []string{viewAddr}, reader: refreshReader{account: func(context.Context, string) (chain.AccountBalances, error) {
+			return chain.AccountBalances{Native: big.NewInt(2)}, errors.New("BSC RPC unavailable")
+		}}},
+	}
+	a.fetch(0, jobs)
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("refresh did not finish")
+	}
+	if len(a.snap.accounts) != 2 || a.snap.accounts[0].network.ID != chains.Ethereum.ID || a.snap.accounts[1].network.ID != chains.BSC.ID {
+		t.Fatalf("snapshots = %+v, want stable Ethereum then BSC rows", a.snap.accounts)
+	}
+	if got := a.accountSnapshot(viewAddr, chains.Ethereum.ID); got == nil || got.native.Cmp(big.NewInt(1)) != 0 {
+		t.Fatalf("Ethereum snapshot = %+v", got)
+	}
+	if got := a.accountSnapshot(viewAddr, chains.BSC.ID); got == nil || got.err == "" {
+		t.Fatalf("BSC error snapshot = %+v", got)
+	}
+	if a.lastErr == "" || !a.totalsPartial() {
+		t.Fatalf("partial error not preserved: error %q, partial %v", a.lastErr, a.totalsPartial())
+	}
+}
+
+func TestFetchBoundsConcurrentJobs(t *testing.T) {
+	a := newTestApp(t)
+	done := make(chan struct{})
+	previous := runOnUI
+	runOnUI = func(fn func()) { fn(); close(done) }
+	t.Cleanup(func() { runOnUI = previous })
+	var active atomic.Int32
+	var maximum atomic.Int32
+	var jobs []familyFetch
+	for _, network := range chains.NetworksOf(chain.EVM) {
+		jobs = append(jobs, familyFetch{network: network, addrs: []string{viewAddr}, reader: refreshReader{account: func(context.Context, string) (chain.AccountBalances, error) {
+			current := active.Add(1)
+			defer active.Add(-1)
+			for old := maximum.Load(); current > old && !maximum.CompareAndSwap(old, current); old = maximum.Load() {
+			}
+			time.Sleep(15 * time.Millisecond)
+			return chain.AccountBalances{Native: big.NewInt(1)}, nil
+		}}})
+	}
+	a.fetch(0, jobs)
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("refresh did not finish")
+	}
+	if got := maximum.Load(); got < 2 || got > maxRefreshConcurrency {
+		t.Fatalf("maximum concurrent jobs = %d, want 2..%d", got, maxRefreshConcurrency)
+	}
+}
+
+func TestTotalUSDUsesPerNetworkAssetIdentity(t *testing.T) {
+	a := newTestApp(t)
+	a.snap = &snapshot{
+		accounts: []accountSnapshot{
+			{addr: viewAddr, network: chains.Ethereum, native: new(big.Int).Mul(big.NewInt(2), new(big.Int).Exp(big.NewInt(10), big.NewInt(18), nil))},
+			{addr: viewAddr, network: chains.BSC, native: new(big.Int).Exp(big.NewInt(10), big.NewInt(18), nil)},
+		},
+		usd: map[string]float64{
+			"eip155:1:native":  3000,
+			"eip155:56:native": 600,
+		},
+	}
+	total, ok := a.totalUSD()
+	if !ok || total != 6600 {
+		t.Fatalf("total USD = %v, %v; want 6600", total, ok)
+	}
+	a.snap.accounts[1].native = nil
+	a.snap.accounts[1].err = "BSC RPC unavailable"
+	total, ok = a.totalUSD()
+	if !ok || total != 6000 || !a.totalsPartial() {
+		t.Fatalf("partial total USD = %v, %v, partial %v; want 6000 and incomplete", total, ok, a.totalsPartial())
+	}
+}
+
+func TestCustomRPCStaysOnSelectedEVMNetwork(t *testing.T) {
+	a := newTestApp(t)
+	a.settings.NetworkID = chains.Base.ID
+	a.settings.RPCURL = "http://127.0.0.1:1/custom"
+	jobs := a.refreshJobs()
+	for _, job := range jobs {
+		client, ok := job.reader.(interface{ Endpoint() evm.Endpoint })
+		if !ok {
+			t.Fatal("EVM reader does not expose its endpoint")
+		}
+		got := client.Endpoint().URL
+		if job.network.ID == chains.Base.ID && got != a.settings.RPCURL {
+			t.Errorf("selected network endpoint = %q", got)
+		}
+		if job.network.ID != chains.Base.ID && got != job.network.RPCURL {
+			t.Errorf("%s inherited custom endpoint %q", job.network.Name, got)
+		}
+	}
+}
+
+func Example_accountSnapshotNetworkIdentity() {
+	first := accountSnapshot{addr: viewAddr, network: chains.Ethereum}
+	second := accountSnapshot{addr: viewAddr, network: chains.Base}
+	fmt.Println(first.network.Symbol, second.network.Symbol, first.network.ID != second.network.ID)
+	// Output: ETH ETH true
 }

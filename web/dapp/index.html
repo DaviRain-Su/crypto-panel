@@ -175,11 +175,27 @@
     el.classList.toggle("error", !!isError);
   }
 
+  let standardWallet;
+  let standardNetwork = "testnet";
+  window.addEventListener("near-wallet-injected", (event) => {
+    if (event.detail && event.detail.manifest && event.detail.manifest.id === "lintel") {
+      standardWallet = event.detail;
+      show("connect-status", "Discovered Lintel through NEAR Connect.");
+    }
+  });
+  window.dispatchEvent(new Event("near-selector-ready"));
+
   function wallet() {
     if (!window.nearWallet) {
       throw new Error("The Lintel wallet bridge is not injected. Open this page from Lintel's DApp page.");
     }
     return window.nearWallet;
+  }
+  function outcomeLine(outcome) {
+    const transaction = outcome.transaction || {};
+    const execution = outcome.transaction_outcome || {};
+    return "Transaction " + (transaction.hash || execution.id || outcome.hash || "completed") +
+      "\n" + JSON.stringify(outcome, null, 2);
   }
 
   function toYocto(value) {
@@ -194,14 +210,10 @@
     return out;
   }
 
-  function hashLine(hash) {
-    return "Transaction " + hash;
-  }
-
   $("connect").addEventListener("click", async () => {
     try {
-      const res = await wallet().connect();
-      const accounts = res.accounts || [];
+      const accounts = standardWallet ? await standardWallet.signIn({ network: standardNetwork }) :
+        (await wallet().connect()).accounts || [];
       $("account").textContent = accounts.map((a) => a.accountId).join("\n");
       show("connect-status", accounts.length ? "Connected." : "The wallet has no NEAR account.");
     } catch (err) {
@@ -212,6 +224,7 @@
   $("network").addEventListener("click", async () => {
     try {
       const res = await wallet().getNetwork();
+      standardNetwork = res.networkId;
       show("connect-status", "Network " + res.networkId + " (" + res.chainId + ")");
     } catch (err) {
       show("connect-status", err.message || String(err), true);
@@ -220,7 +233,7 @@
 
   $("accounts").addEventListener("click", async () => {
     try {
-      const accounts = await wallet().getAccounts();
+      const accounts = standardWallet ? await standardWallet.getAccounts({ network: standardNetwork }) : await wallet().getAccounts();
       $("account").textContent = accounts.map((a) => a.accountId).join("\n");
       show("connect-status", accounts.length + " account(s).");
     } catch (err) {
@@ -234,12 +247,14 @@
       if (!receiverId) throw new Error("Enter the recipient's account id.");
       const amount = toYocto($("amount").value);
       show("send-status", "Waiting for the approval window…");
-      const res = await wallet().signAndSendTransaction({
+      const params = {
         receiverId: receiverId,
         description: "Send " + $("amount").value.trim() + " NEAR to " + receiverId,
         actions: [{ type: "Transfer", params: { deposit: amount } }],
-      });
-      show("send-status", hashLine(res.hash));
+      };
+      const res = standardWallet ? await standardWallet.signAndSendTransaction({ ...params, network: standardNetwork }) :
+        await wallet().signAndSendTransaction(params);
+      show("send-status", outcomeLine(res));
     } catch (err) {
       show("send-status", err.message || String(err), true);
     }
@@ -259,7 +274,7 @@
         methodNames: methods,
         allowance: allowance,
       });
-      show("key-status", hashLine(res.hash));
+      show("key-status", outcomeLine(res));
     } catch (err) {
       show("key-status", err.message || String(err), true);
     }

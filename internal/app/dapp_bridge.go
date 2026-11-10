@@ -39,8 +39,11 @@ const nearBridgeScript = `(() => {
       if (!p || msg.origin !== origin || msg.capability !== p.capability || msg.capability !== capability) return;
       pending.delete(msg.id);
       stopTimer(p.timer);
-      if (msg.error) p.reject(new Error(msg.error));
-      else p.resolve(msg.result);
+      if (msg.error) {
+        const err = new Error(msg.error);
+        if (msg.result != null) err.result = msg.result;
+        p.reject(err);
+      } else p.resolve(msg.result);
     });
   }
   window.addEventListener("pagehide", () => {
@@ -82,41 +85,94 @@ const nearBridgeScript = `(() => {
       p.start();
     });
   }
+  function base64Bytes(bytes) {
+    let binary = "";
+    for (const byte of bytes) binary += String.fromCharCode(byte);
+    return window.btoa(binary);
+  }
+  function normalizeArgs(args) {
+    if (args instanceof ArrayBuffer) args = new Uint8Array(args);
+    if (ArrayBuffer.isView(args)) args = new Uint8Array(args.buffer, args.byteOffset, args.byteLength);
+    if (args instanceof Uint8Array) {
+      const text = new TextDecoder().decode(args);
+      try { JSON.parse(text); return text; } catch { return "base64:" + base64Bytes(args); }
+    }
+    if (args != null && typeof args !== "string") return JSON.stringify(args);
+    return args;
+  }
   function normalizeActions(actions) {
-    return (actions || []).map((a) => {
+    if (!Array.isArray(actions)) throw new Error("actions must be an array");
+    return actions.map((a) => {
+      if (!a || typeof a !== "object") throw new Error("each action must be an object");
+      // @near-js/transactions action instances use lower-case enum fields.
+      if (a.transfer) return { type: "transfer", amount: String(a.transfer.deposit) };
+      if (a.functionCall) {
+        const call = a.functionCall;
+        return { type: "functionCall", method: call.methodName, args: normalizeArgs(call.args),
+          gas: String(call.gas), deposit: String(call.deposit) };
+      }
+      if (a.addKey) {
+        const key = a.addKey, permission = key.accessKey.permission;
+        if (!permission.functionCall) throw new Error("only function-call access keys are supported");
+        a = { type: "AddKey", params: { publicKey: key.publicKey.toString(), accessKey: { permission: permission.functionCall } } };
+      }
       const type = String(a.type || "").toLowerCase();
       const p = a.params || {};
       if (type === "transfer") {
         return { type: "transfer", amount: String(a.amount != null ? a.amount : (p.deposit != null ? p.deposit : "0")) };
       }
       if (type === "functioncall") {
-        let args = a.args != null ? a.args : p.args;
-        if (args == null) args = "";
-        if (typeof args !== "string") args = JSON.stringify(args);
-        const gas = a.gas != null ? a.gas : p.gas;
-        const deposit = a.deposit != null ? a.deposit : p.deposit;
         return {
-          type: "functionCall",
-          method: a.method || p.methodName || "",
-          args: args,
-          gas: gas != null ? String(gas) : "",
-          deposit: deposit != null ? String(deposit) : "",
+          type: "functionCall", method: a.method || p.methodName || "",
+          args: normalizeArgs(a.args != null ? a.args : (p.args != null ? p.args : "")),
+          gas: a.gas != null ? String(a.gas) : (p.gas != null ? String(p.gas) : ""),
+          deposit: a.deposit != null ? String(a.deposit) : (p.deposit != null ? String(p.deposit) : ""),
         };
       }
       if (type === "addkey" || type === "addfunctioncallkey") {
         const accessKey = p.accessKey || a.accessKey || {};
-        const fc = accessKey.FunctionCall || accessKey.functionCall || {};
+        const fc = accessKey.permission && typeof accessKey.permission === "object" ?
+          (accessKey.permission.functionCall || accessKey.permission.FunctionCall || accessKey.permission) :
+          (accessKey.FunctionCall || accessKey.functionCall || {});
         const allowance = fc.allowance != null ? fc.allowance : a.allowance;
         return {
-          type: "addFunctionCallKey",
-          publicKey: a.publicKey || p.publicKey || "",
+          type: "addFunctionCallKey", publicKey: String(a.publicKey || p.publicKey || ""),
           receiverId: fc.receiverId || fc.receiver_id || a.contractId || "",
           methodNames: fc.methodNames || fc.method_names || a.methodNames || [],
           allowance: allowance != null ? String(allowance) : "",
         };
       }
-      return a;
+      throw new Error("action type " + (a.type || "unknown") + " is unsupported");
     });
+  }
+  function transactionParams(params) {
+    return {
+      network: params.network || selectedNetwork || undefined,
+      receiverId: params.receiverId,
+      from: params.signerId || params.from,
+      description: params.description,
+      actions: normalizeActions(params.actions),
+    };
+  }
+  let selectedNetwork = "";
+  function currentNetwork() {
+    return request("getNetwork", {}).then(result => {
+      selectedNetwork = result.networkId;
+      return result;
+    });
+  }
+  async function requireNetwork(requested) {
+    const current = await currentNetwork();
+    if (requested && requested !== current.networkId) {
+      throw new Error("network " + requested + " does not match selected " + current.networkId);
+    }
+  }
+  async function legacySignAndSendTransaction(params) {
+    return request("signAndSendTransaction", transactionParams(params));
+  }
+  async function signAndSendTransaction(params) {
+    await requireNetwork(params.network);
+    return legacySignAndSendTransaction(params);
   }
   window.nearWallet = {
     isNearWallet: true,
@@ -127,13 +183,63 @@ const nearBridgeScript = `(() => {
     signOut: () => request("disconnect", {}),
     getAccounts: () => request("getAccounts", {}),
     getNetwork: () => request("getNetwork", {}),
-    signAndSendTransaction: (params) => request("signAndSendTransaction", {
-      receiverId: params.receiverId,
-      from: params.signerId || params.from,
-      description: params.description,
-      actions: normalizeActions(params.actions),
-    }),
+    signAndSendTransaction: legacySignAndSendTransaction,
+    signAndSendTransactions: async (params) => {
+      const results = [];
+      for (const transaction of params.transactions || []) {
+        try {
+          results.push(await legacySignAndSendTransaction({
+            network: params.network, signerId: params.signerId, ...transaction,
+          }));
+        } catch (err) {
+          if (results.length) err.result = results;
+          throw err;
+        }
+      }
+      return results;
+    },
     addFunctionCallKey: (params) => request("addFunctionCallKey", params || {}),
   };
+
+  const manifest = {
+    id: "lintel", version: "1.0.0", name: "Lintel",
+    description: "Local-first wallet with native transaction approval",
+    icon: "https://raw.githubusercontent.com/davirain-su/lintel/main/resources/icon.png",
+    website: "https://github.com/davirain-su/lintel", executor: "", type: "injected",
+    platform: { web: "https://github.com/davirain-su/lintel" },
+    permissions: {},
+    features: {
+      signMessage: false, signTransaction: false, signAndSendTransaction: true,
+      signAndSendTransactions: true, signInWithoutAddKey: true,
+      signInAndSignMessage: false, signInWithFunctionCallKey: false,
+      signDelegateActions: false, verifyOwner: false, mainnet: true, testnet: true,
+    },
+  };
+  function unsupported(name) {
+    return () => Promise.reject(new Error(name + " is unsupported: Lintel does not implement offline or NEP-413 signing"));
+  }
+  const adapter = {
+    manifest,
+    signIn: async (params) => {
+      params = params || {};
+      if (params.addFunctionCallKey) throw new Error("addFunctionCallKey during signIn is unsupported");
+      const result = await request("connect", { network: params.network });
+      return result.accounts;
+    },
+    signOut: () => request("disconnect", {}),
+    getAccounts: (params) => request("getAccounts", { network: params && params.network }),
+    signAndSendTransaction,
+    signAndSendTransactions: (params) => request("signAndSendTransactions", {
+      network: params.network, signerId: params.signerId,
+      transactions: (params.transactions || []).map(transactionParams),
+    }),
+    signMessage: unsupported("signMessage"), verifyOwner: unsupported("verifyOwner"),
+    signTransaction: unsupported("signTransaction"), signTransactions: unsupported("signTransactions"),
+    signDelegateActions: unsupported("signDelegateActions"),
+    signInAndSignMessage: unsupported("signInAndSignMessage"),
+  };
+  window.addEventListener("near-selector-ready", () => {
+    window.dispatchEvent(new window.CustomEvent("near-wallet-injected", { detail: adapter }));
+  });
 })();
 `

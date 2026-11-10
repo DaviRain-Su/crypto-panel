@@ -137,7 +137,10 @@ func (a *App) serveDappRequestFrom(w http.ResponseWriter, r *http.Request, bridg
 	result, err := a.handleDappRequest(call.ctx, origin, req)
 	out := dappResponse{ID: req.ID, Capability: call.binding.capability, Origin: call.binding.origin, Result: result}
 	if err != nil {
-		out.Result, out.Error = nil, err.Error()
+		// A batch can confirm one transaction and then fail the next. The
+		// page has to see the outcome that is already on chain, not only
+		// the error, or it will submit that transaction again.
+		out.Error = err.Error()
 	}
 	if call.ctx.Err() == nil && bridge.current(call.binding) {
 		emit(out)
@@ -163,13 +166,17 @@ func (a *App) handleDappRequest(ctx context.Context, origin string, req dappRequ
 		})
 		return nil, ctx.Err()
 	case "getAccounts":
-		return a.dappGetAccounts(origin)
+		return a.dappGetAccounts(origin, dappNetworkParam(req.Params))
 	case "getNetwork":
 		return a.dappGetNetwork()
 	case "signAndSendTransaction":
 		return a.dappSign(ctx, origin, req.Params)
+	case "signAndSendTransactions":
+		return a.dappSignTransactions(ctx, origin, req.Params)
 	case "addFunctionCallKey":
 		return a.dappAddFunctionCallKey(ctx, origin, req.Params)
+	case "signMessage", "verifyOwner", "signTransaction", "signTransactions", "signDelegateActions", "signInAndSignMessage":
+		return nil, fmt.Errorf("%s is unsupported: Lintel does not implement offline or NEP-413 signing", req.Method)
 	default:
 		return nil, fmt.Errorf("the wallet has no method %q", req.Method)
 	}
@@ -181,6 +188,7 @@ func (a *App) dappConnect(ctx context.Context, origin string, params json.RawMes
 	var p struct {
 		ContractID  string   `json:"contractId,omitempty"`
 		MethodNames []string `json:"methodNames,omitempty"`
+		Network     string   `json:"network,omitempty"`
 	}
 	if len(params) > 0 && string(params) != "null" {
 		dec := json.NewDecoder(bytes.NewReader(params))
@@ -192,6 +200,9 @@ func (a *App) dappConnect(ctx context.Context, origin string, params json.RawMes
 	network, _, connected := a.dappState(origin)
 	if network.Family != chain.Near {
 		return nil, errors.New("switch to a NEAR network before connecting")
+	}
+	if err := checkDappNetwork(network, p.Network); err != nil {
+		return nil, err
 	}
 	accounts, err := a.dappAccounts()
 	if err != nil {
@@ -215,15 +226,33 @@ func (a *App) dappConnect(ctx context.Context, origin string, params json.RawMes
 	return map[string]any{"accounts": accounts}, nil
 }
 
-func (a *App) dappGetAccounts(origin string) (any, error) {
-	if !a.dappIsConnected(origin) {
+func (a *App) dappGetAccounts(origin, requested string) (any, error) {
+	network, _, connected := a.dappState(origin)
+	if !connected {
 		return nil, errors.New("connect first")
 	}
-	network, _, _ := a.dappState(origin)
 	if network.Family != chain.Near {
 		return nil, errors.New("switch to a NEAR network before reading the accounts")
 	}
+	if err := checkDappNetwork(network, requested); err != nil {
+		return nil, err
+	}
 	return a.dappAccounts()
+}
+
+func dappNetworkParam(raw json.RawMessage) string {
+	var p struct {
+		Network string `json:"network"`
+	}
+	_ = json.Unmarshal(raw, &p)
+	return p.Network
+}
+
+func checkDappNetwork(network chain.Network, requested string) error {
+	if requested == "" || requested == network.ChainName {
+		return nil
+	}
+	return fmt.Errorf("network %s does not match selected %s", requested, network.ChainName)
 }
 
 func (a *App) dappGetNetwork() (any, error) {
@@ -242,21 +271,22 @@ func (a *App) dappSign(ctx context.Context, origin string, params json.RawMessag
 	if !a.dappIsConnected(origin) {
 		return nil, errors.New("connect first")
 	}
-	var p struct {
-		ReceiverID  string              `json:"receiverId"`
-		From        string              `json:"from,omitempty"`
-		Actions     []plugin.NearAction `json:"actions"`
-		Description string              `json:"description,omitempty"`
-	}
+	var p dappTransaction
 	if err := decodeDappParams(params, &p); err != nil {
 		return nil, fmt.Errorf("signAndSendTransaction: %w", err)
 	}
 	if len(p.Actions) == 0 {
 		return nil, errors.New("signAndSendTransaction: actions are required")
 	}
-	network, reader, _ := a.dappState(origin)
+	network, reader, connected := a.dappState(origin)
+	if !connected {
+		return nil, errors.New("connect first")
+	}
 	if network.Family != chain.Near {
 		return nil, errors.New("switch to a NEAR network before signing")
+	}
+	if err := checkDappNetwork(network, p.Network); err != nil {
+		return nil, err
 	}
 	if reader == nil {
 		return nil, errors.New("the NEAR reader is unavailable")
@@ -271,7 +301,76 @@ func (a *App) dappSign(ctx context.Context, origin string, params json.RawMessag
 	if err != nil {
 		return nil, err
 	}
-	return map[string]string{"hash": res.Hash}, nil
+	return withTopLevelHash(res.Outcome, res.Hash), nil
+}
+
+// withTopLevelHash keeps the full NEAR outcome and also the old {hash}
+// field callers already read.
+func withTopLevelHash(outcome json.RawMessage, hash string) json.RawMessage {
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(outcome, &fields); err != nil || fields == nil {
+		fields = map[string]json.RawMessage{}
+	}
+	encoded, err := json.Marshal(hash)
+	if err != nil {
+		return outcome
+	}
+	fields["hash"] = encoded
+	raw, err := json.Marshal(fields)
+	if err != nil {
+		return outcome
+	}
+	return raw
+}
+
+type dappTransaction struct {
+	Network     string              `json:"network,omitempty"`
+	ReceiverID  string              `json:"receiverId"`
+	From        string              `json:"from,omitempty"`
+	SignerID    string              `json:"signerId,omitempty"`
+	Actions     []plugin.NearAction `json:"actions"`
+	Description string              `json:"description,omitempty"`
+}
+
+func (a *App) dappSignTransactions(ctx context.Context, origin string, params json.RawMessage) (any, error) {
+	var p struct {
+		Network      string            `json:"network,omitempty"`
+		SignerID     string            `json:"signerId,omitempty"`
+		Transactions []dappTransaction `json:"transactions"`
+	}
+	if err := decodeDappParams(params, &p); err != nil {
+		return nil, fmt.Errorf("signAndSendTransactions: %w", err)
+	}
+	if len(p.Transactions) == 0 {
+		return nil, errors.New("signAndSendTransactions: transactions are required")
+	}
+	outcomes := make([]json.RawMessage, 0, len(p.Transactions))
+	for i, transaction := range p.Transactions {
+		if p.Network != "" {
+			transaction.Network = p.Network
+		}
+		if p.SignerID != "" {
+			transaction.SignerID = p.SignerID
+		}
+		if transaction.SignerID != "" {
+			transaction.From = transaction.SignerID
+		}
+		transaction.SignerID = ""
+		raw, err := json.Marshal(transaction)
+		if err != nil {
+			return nil, err
+		}
+		result, err := a.dappSign(ctx, origin, raw)
+		if err != nil {
+			return outcomes, fmt.Errorf("signAndSendTransactions: transaction %d: %w", i+1, err)
+		}
+		outcome, ok := result.(json.RawMessage)
+		if !ok {
+			return nil, errors.New("signAndSendTransactions: native signing returned no outcome")
+		}
+		outcomes = append(outcomes, outcome)
+	}
+	return outcomes, nil
 }
 
 // dappAddFunctionCallKey adds a key the page holds itself, limited to one

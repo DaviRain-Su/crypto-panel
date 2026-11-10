@@ -16,6 +16,7 @@ import (
 	"github.com/davirain-su/lintel/internal/chain"
 	"github.com/davirain-su/lintel/internal/chains"
 	"github.com/davirain-su/lintel/internal/i18n"
+	"github.com/davirain-su/lintel/internal/intents"
 	"github.com/davirain-su/lintel/internal/pages"
 	"github.com/davirain-su/lintel/internal/plugin"
 	"github.com/davirain-su/lintel/internal/wallet"
@@ -859,7 +860,11 @@ func (a *App) pluginHostDeps(m plugin.Manifest) plugin.HostDeps {
 			defer cancel()
 			return reader.RPC(ctx, method, params)
 		},
-		Accounts: func() []plugin.Account { return accounts },
+		Accounts:        func() []plugin.Account { return accounts },
+		HyperliquidInfo: a.hyperliquidInfo,
+		IntentsTokens:   a.readIntentsTokens,
+		IntentsDryQuote: a.intentsDryQuote,
+		IntentsStatus:   a.intentsStatus,
 		Sign: func(req plugin.SignRequest) (plugin.SignResult, error) {
 			return a.signForPlugin(m, readers, req)
 		},
@@ -872,4 +877,172 @@ func (a *App) pluginHostDeps(m plugin.Manifest) plugin.HostDeps {
 			return i18n.T(locale, i18n.Key(key), args...)
 		},
 	}
+}
+
+func (a *App) hyperliquidInfo(testnet bool, operation string, params map[string]any) (json.RawMessage, error) {
+	if a.hyperliquidClient == nil {
+		return nil, errors.New("hyperliquid is not configured")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	if testnet {
+		return a.hyperliquidClient.InfoAt(ctx, "https://api.hyperliquid-testnet.xyz", operation, params)
+	}
+	return a.hyperliquidClient.Info(ctx, operation, params)
+}
+
+func (a *App) readIntentsTokens() (any, error) {
+	if a.intentsClient == nil {
+		return nil, errors.New("NEAR Intents is not configured")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	return a.intentsClient.Tokens(ctx)
+}
+
+func (a *App) intentsDryQuote(request map[string]any) (any, error) {
+	if a.intentsClient == nil {
+		return nil, errors.New("NEAR Intents is not configured")
+	}
+	data, err := json.Marshal(request)
+	if err != nil {
+		return nil, err
+	}
+	var input struct {
+		OriginAsset      string `json:"originAsset"`
+		DestinationAsset string `json:"destinationAsset"`
+		Amount           string `json:"amount"`
+		Recipient        string `json:"recipient"`
+		RefundTo         string `json:"refundTo"`
+		SlippageBps      int    `json:"slippageBps,omitempty"`
+		Deadline         string `json:"deadline,omitempty"`
+	}
+	if err := plugin.DecodeJSON(data, &input); err != nil {
+		return nil, errors.New("intents.dryQuote has invalid or unknown fields")
+	}
+	quoteRequest := intents.QuoteRequest{
+		OriginAsset: input.OriginAsset, DestinationAsset: input.DestinationAsset,
+		Amount: input.Amount, Recipient: input.Recipient, RefundTo: input.RefundTo,
+		SlippageBps: input.SlippageBps,
+	}
+	if input.Deadline != "" {
+		deadline, err := time.Parse(time.RFC3339, input.Deadline)
+		if err != nil {
+			return nil, errors.New("intents.dryQuote deadline must be RFC3339")
+		}
+		quoteRequest.Deadline = deadline
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	return a.intentsClient.Quote(ctx, quoteRequest)
+}
+
+func (a *App) intentsStatus(address, memo string) (any, error) {
+	if a.intentsClient == nil {
+		return nil, errors.New("NEAR Intents is not configured")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	return a.intentsClient.Status(ctx, address, memo)
+}
+
+// previewHostDeps is the host a frozen candidate may use. It never reads
+// installed settings or secrets, never touches the installed kv.json, does
+// not reveal watched accounts, and may fetch only hosts already approved
+// on the installed version and still declared by the candidate. A fresh
+// install has no approved hosts, so fetch is disabled.
+func (a *App) previewHostDeps(m plugin.Manifest) plugin.HostDeps {
+	manifest := m
+	manifest.Permissions.Network = a.previewFetchAllowlist(m)
+	quota := m.Permissions.StorageKb * 1024
+	declared := make(map[string]bool, len(m.Settings))
+	for _, field := range m.Settings {
+		declared[field.Key] = true
+	}
+	locale := a.lang()
+	// The manifest still lists the chains the candidate declared, so a
+	// signing call reaches the disabled signer. Readers exist only for
+	// chains the installed app already approved, so a candidate-only chain
+	// never opens an RPC.
+	allowedChains := a.previewChainAllowlist(m)
+	readers := make(map[string]chain.Reader, len(allowedChains))
+	for _, id := range allowedChains {
+		network, ok := chains.ByID(id)
+		if !ok {
+			continue
+		}
+		if reader, err := chains.NewReader(network, ""); err == nil {
+			readers[id] = reader
+		}
+	}
+	previewLog := plugin.NewLogBuffer(32)
+	return plugin.HostDeps{
+		Manifest: manifest,
+		Settings: func(key string) (string, error) {
+			if !declared[key] {
+				return "", nil
+			}
+			return "", nil
+		},
+		KV:       plugin.NewMemoryKV(quota),
+		Accounts: func() []plugin.Account { return []plugin.Account{} },
+		RPC: func(chainID, method string, params any) (json.RawMessage, error) {
+			reader, ok := readers[chainID]
+			if !ok {
+				return nil, fmt.Errorf("chain %q is not available", chainID)
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+			defer cancel()
+			return reader.RPC(ctx, method, params)
+		},
+		HyperliquidInfo: a.hyperliquidInfo,
+		IntentsTokens:   a.readIntentsTokens,
+		IntentsDryQuote: a.intentsDryQuote,
+		IntentsStatus:   a.intentsStatus,
+		Log:             previewLog.Add,
+		Locale:          func() string { return locale },
+		Translate: func(key string, args []any) string {
+			return i18n.T(locale, i18n.Key(key), args...)
+		},
+	}
+}
+
+// previewFetchAllowlist is the hosts a preview may call: the intersection
+// of the installed app's already-approved list and the candidate's list.
+func (a *App) previewFetchAllowlist(m plugin.Manifest) []string {
+	installed, err := a.plugins.Get(m.ID)
+	if err != nil {
+		return nil
+	}
+	approved := map[string]bool{}
+	for _, host := range installed.Manifest.Permissions.Network {
+		approved[strings.ToLower(host)] = true
+	}
+	var out []string
+	for _, host := range m.Permissions.Network {
+		if approved[strings.ToLower(host)] {
+			out = append(out, host)
+		}
+	}
+	return out
+}
+
+// previewChainAllowlist is the chains a preview may call. A candidate-only
+// chain has not been approved, so the preview does not open that RPC.
+func (a *App) previewChainAllowlist(m plugin.Manifest) []string {
+	installed, err := a.plugins.Get(m.ID)
+	if err != nil {
+		return nil
+	}
+	approved := map[string]bool{}
+	for _, id := range installed.Manifest.Permissions.Chains {
+		approved[id] = true
+	}
+	var out []string
+	for _, id := range m.Permissions.Chains {
+		if approved[id] {
+			out = append(out, id)
+		}
+	}
+	return out
 }

@@ -1,0 +1,17 @@
+{
+  "id": "com.example.nearapproval",
+  "name": "NEAR Approval Demo",
+  "version": "1.0.0",
+  "main": "index.js",
+  "description": "A fixed testnet example of Lintel's native permission and signing boundaries. Install explicitly, then choose when to request a transaction.",
+  "author": "Lintel examples",
+  "permissions": {
+    "sign": true,
+    "chains": ["near:testnet"]
+  },
+  "navigation": [
+    { "title": "Overview", "page": "overview" },
+    { "title": "Request 0.001 NEAR", "page": "transfer" },
+    { "title": "Restricted key demo", "page": "limited" }
+  ]
+}
