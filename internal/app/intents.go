@@ -177,13 +177,30 @@ func (a *App) requestIntentsQuote() {
 		if err != nil {
 			a.onMain(func() {
 				a.intentsBusy = false
-				a.intentsErr = err.Error()
+				a.intentsErr = a.intentsErrorText(err)
 				a.invalidate()
 			})
 			return
 		}
 		a.showIntentsApproval(quote, origin, destination)
 	})
+}
+
+// intentsErrorText turns 1Click's raw answers into what the page shows. The
+// API's own wording is terse English ("recipient is not valid"); the common
+// cases get a sentence that says what to change, with the original kept in
+// parentheses for anything the mappings miss.
+func (a *App) intentsErrorText(err error) string {
+	raw := err.Error()
+	switch {
+	case strings.Contains(raw, "recipient is not valid"):
+		return a.t(i18n.IntentsRecipientInvalid, raw)
+	case strings.Contains(raw, "tokenIn is not valid"), strings.Contains(raw, "tokenOut is not valid"):
+		return a.t(i18n.IntentsAssetUnsupported, raw)
+	case strings.EqualFold(strings.TrimSpace(raw), "1Click: internal server error"):
+		return a.t(i18n.IntentsServerBusy, raw)
+	}
+	return raw
 }
 
 // showIntentsApproval opens the approval window and records the answer. It

@@ -2,6 +2,7 @@ package app
 
 import (
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -354,5 +355,30 @@ func TestIntentsPageShowsTheQuote(t *testing.T) {
 		if !tt.HasText(want) {
 			t.Errorf("missing %q in %q", want, tt.Texts())
 		}
+	}
+}
+
+func TestIntentsErrorText(t *testing.T) {
+	a := newTestApp(t)
+	cases := map[string]struct {
+		raw   string
+		says  string
+		keeps string
+	}{
+		"recipient":  {"1Click: recipient is not valid", "recipient address", "1Click: recipient is not valid"},
+		"asset pair": {"1Click: tokenIn is not valid", "asset pair", "1Click: tokenIn is not valid"},
+		"server":     {"1Click: Internal server error", "internal error", "1Click: Internal server error"},
+		"unknown":    {"1Click: the amount is too small", "the amount is too small", ""},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			got := a.intentsErrorText(errors.New(tc.raw))
+			if !strings.Contains(got, tc.says) {
+				t.Errorf("intentsErrorText(%v) = %q, want it to say %q", tc.raw, got, tc.says)
+			}
+			if tc.keeps != "" && !strings.Contains(got, "("+tc.keeps+")") {
+				t.Errorf("intentsErrorText(%v) = %q, want the original kept in parentheses", tc.raw, got)
+			}
+		})
 	}
 }

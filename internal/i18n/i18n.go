@@ -286,6 +286,9 @@ const (
 	IntentsRecipientRequired    Key = "intentsRecipientRequired"
 	IntentsRefundRequired       Key = "intentsRefundRequired"
 	IntentsNoClient             Key = "intentsNoClient"
+	IntentsRecipientInvalid     Key = "intentsRecipientInvalid"
+	IntentsAssetUnsupported     Key = "intentsAssetUnsupported"
+	IntentsServerBusy           Key = "intentsServerBusy"
 	IntentsRetry                Key = "intentsRetry"
 	IntentsQuoteTitle           Key = "intentsQuoteTitle"
 	IntentsDryBadge             Key = "intentsDryBadge"
@@ -700,6 +703,9 @@ var messages = map[Key]map[string]string{
 	IntentsRecipientRequired:    {English: "Enter the address that should receive the swap.", Chinese: "请输入接收兑换的地址。"},
 	IntentsRefundRequired:       {English: "Enter a refund address, or add a NEAR account to the wallet.", Chinese: "请输入退款地址，或在钱包里添加一个 NEAR 账户。"},
 	IntentsNoClient:             {English: "The 1Click client is unavailable.", Chinese: "1Click 客户端不可用。"},
+	IntentsRecipientInvalid:     {English: "1Click rejected the recipient address: it must fit the chain you receive on. Check its format, or pick another chain to receive on. (%s)", Chinese: "1Click 拒绝了收款地址：它必须符合收款链的格式。请检查地址，或换一条收款链。(%s)"},
+	IntentsAssetUnsupported:     {English: "1Click has no route for this asset pair. Try another pair of assets. (%s)", Chinese: "1Click 暂不支持这对资产，换一对试试。(%s)"},
+	IntentsServerBusy:           {English: "1Click hit an internal error. Try again in a moment. (%s)", Chinese: "1Click 服务内部出错，稍后再试。(%s)"},
 	IntentsRetry:                {English: "Try again", Chinese: "重试"},
 	IntentsQuoteTitle:           {English: "Your dry quote", Chinese: "dry 报价"},
 	IntentsDryBadge:             {English: "DRY RUN", Chinese: "DRY RUN"},
