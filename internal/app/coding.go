@@ -288,7 +288,7 @@ func (a *App) openCreator(id string) {
 	a.initAuthoring()
 	if a.coding.busy {
 		a.coding.open = true
-		a.route = routePlugins
+		a.goTo(routePlugins)
 		a.invalidate()
 		return
 	}
@@ -316,7 +316,7 @@ func (a *App) openCreator(id string) {
 	a.coding.slug = ""
 	a.pluginTab = "installed"
 	a.pluginDetail = ""
-	a.route = routePlugins
+	a.goTo(routePlugins)
 	a.invalidate()
 }
 
