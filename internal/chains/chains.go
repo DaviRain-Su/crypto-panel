@@ -11,7 +11,7 @@ import (
 
 // All lists the presets, in the order the settings offer them.
 func All() []chain.Network {
-	return []chain.Network{Ethereum, Base, NearTestnet, NearMainnet, SolanaMainnet}
+	return []chain.Network{Ethereum, Base, Arbitrum, Optimism, Polygon, BSC, Avalanche, NearTestnet, NearMainnet, SolanaMainnet}
 }
 
 // Default is the network a fresh install watches.

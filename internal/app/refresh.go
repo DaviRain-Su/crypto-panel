@@ -3,15 +3,22 @@ package app
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log"
 	"math/big"
+	"sort"
+	"strings"
+	"sync"
 	"time"
 
 	"github.com/egoist/mygo"
 
 	"github.com/davirain-su/lintel/internal/chain"
 	"github.com/davirain-su/lintel/internal/chains"
+	"github.com/davirain-su/lintel/internal/wallet"
 )
+
+const maxRefreshConcurrency = 4
 
 // accountSnapshot is one address's balances in one refresh. network is the
 // preset the balances were read on: an address is watched once, but its
@@ -24,8 +31,8 @@ type accountSnapshot struct {
 	err     string
 }
 
-// familyFetch is the work one chain family contributes to a refresh: the
-// network it is read on, its reader, and the addresses to read.
+// familyFetch is the work one network contributes to a refresh: its reader
+// and the watched addresses of that network's family.
 type familyFetch struct {
 	network chain.Network
 	reader  chain.Reader
@@ -55,7 +62,7 @@ type snapshot struct {
 	accounts []accountSnapshot
 	block    uint64
 	at       time.Time
-	// usd prices the symbols the snapshot holds, for the approximate fiat
+	// usd prices explicit network/asset identities for the approximate fiat
 	// values beside balances. fiatErr says why it is empty.
 	usd     map[string]float64
 	fiatErr string
@@ -69,9 +76,10 @@ type snapshot struct {
 // runOnUI delivers a finished refresh to the main thread. Tests replace it.
 var runOnUI = mygo.RunOnMain
 
-// priceSource prices assets in USD. *prices.Client implements it.
+// priceSource prices assets in USD by their curated feed identity.
+// *prices.Client implements it.
 type priceSource interface {
-	Prices(ctx context.Context, symbols []string) (map[string]float64, error)
+	PricesByID(ctx context.Context, assetIDs []string) (map[string]float64, error)
 }
 
 // requestRefresh starts a refresh unless one is running. It runs on the
@@ -83,26 +91,7 @@ func (a *App) requestRefresh() {
 	if a.loading {
 		return
 	}
-	// Every family with watched addresses contributes its own job, so the
-	// portfolio reads all chains instead of only the selected network.
-	var jobs []familyFetch
-	for _, family := range chains.Families() {
-		accounts := a.settings.WatchedOf(family)
-		if len(accounts) == 0 {
-			continue
-		}
-		network := a.settings.NetworkFor(family)
-		reader, err := a.settings.ReaderFor(network)
-		if err != nil {
-			log.Printf("lintel: %v", err)
-			continue
-		}
-		addrs := make([]string, len(accounts))
-		for i, acc := range accounts {
-			addrs[i] = acc.Addr
-		}
-		jobs = append(jobs, familyFetch{network: network, reader: reader, addrs: addrs})
-	}
+	jobs := a.refreshJobs()
 	if len(jobs) == 0 {
 		a.snap = &snapshot{at: time.Now()}
 		a.lastErr = ""
@@ -115,6 +104,36 @@ func (a *App) requestRefresh() {
 	gen := a.gen
 	a.startRefresh(gen, jobs)
 	a.invalidate()
+}
+
+// refreshJobs builds one independent job per network with watched addresses.
+// Every EVM preset reads the same watched EVM addresses; non-EVM families
+// retain their selected-network behavior.
+func (a *App) refreshJobs() []familyFetch {
+	var jobs []familyFetch
+	for _, family := range chains.Families() {
+		accounts := a.settings.WatchedOf(family)
+		if len(accounts) == 0 {
+			continue
+		}
+		networks := []chain.Network{a.settings.NetworkFor(family)}
+		if family == chain.EVM {
+			networks = chains.NetworksOf(chain.EVM)
+		}
+		addrs := make([]string, len(accounts))
+		for i, acc := range accounts {
+			addrs[i] = acc.Addr
+		}
+		for _, network := range networks {
+			reader, err := a.settings.ReaderFor(network)
+			if err != nil {
+				log.Printf("lintel: %v", err)
+				continue
+			}
+			jobs = append(jobs, familyFetch{network: network, reader: reader, addrs: addrs})
+		}
+	}
+	return jobs
 }
 
 // fetch reads every address on every chain in the background and hands the
@@ -141,25 +160,55 @@ func (a *App) fetch(gen int, jobs []familyFetch) {
 		ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 		defer cancel()
 		snap := &snapshot{at: time.Now()}
-		var firstErr error
+		results := make(chan []accountSnapshot, len(jobs))
+		sem := make(chan struct{}, maxRefreshConcurrency)
+		var wg sync.WaitGroup
 		for _, job := range jobs {
-			for _, addr := range job.addrs {
-				acct, err := job.reader.Account(ctx, addr)
-				s := accountSnapshot{addr: addr, network: job.network}
-				if err != nil {
-					s.err = err.Error()
-					if firstErr == nil {
-						firstErr = err
+			job := job
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				sem <- struct{}{}
+				defer func() { <-sem }()
+				var rows []accountSnapshot
+				for _, addr := range job.addrs {
+					s := accountSnapshot{addr: addr, network: job.network}
+					acct, err := job.reader.Account(ctx, addr)
+					if err != nil {
+						s.err = fmt.Sprintf("%s: %v", job.network.Name, err)
+					} else {
+						s.native = acct.Native
+						s.tokens = acct.Tokens
+						if len(acct.Warnings) > 0 {
+							s.err = fmt.Sprintf("%s: %s", job.network.Name, acct.Warnings[0])
+						}
 					}
-				} else {
-					s.native = acct.Native
-					s.tokens = acct.Tokens
-					if len(acct.Warnings) > 0 && firstErr == nil {
-						firstErr = errors.New(acct.Warnings[0])
-					}
+					rows = append(rows, s)
 				}
-				snap.accounts = append(snap.accounts, s)
+				results <- rows
+			}()
+		}
+		wg.Wait()
+		close(results)
+		order := make(map[string]int, len(jobs))
+		for i, job := range jobs {
+			order[job.network.ID] = i
+		}
+		sort.Slice(snap.accounts, func(i, j int) bool {
+			left, right := snap.accounts[i], snap.accounts[j]
+			if order[left.network.ID] != order[right.network.ID] {
+				return order[left.network.ID] < order[right.network.ID]
 			}
+			return left.addr < right.addr
+		})
+		var firstErr error
+		for rows := range results {
+			for _, row := range rows {
+				if row.err != "" && firstErr == nil {
+					firstErr = errors.New(row.err)
+				}
+			}
+			snap.accounts = append(snap.accounts, rows...)
 		}
 		if exister != nil && vaultAddr != "" {
 			exists, err := exister.AccountExists(ctx, vaultAddr)
@@ -178,24 +227,28 @@ func (a *App) fetch(gen int, jobs []familyFetch) {
 			snap.block = block
 		}
 		if source != nil && !hideFiat {
-			var symbols []string
+			var ids []string
 			seen := map[string]bool{}
-			add := func(symbol string) {
-				if symbol != "" && !seen[symbol] {
-					seen[symbol] = true
-					symbols = append(symbols, symbol)
+			add := func(id string) {
+				if id != "" && !seen[id] {
+					seen[id] = true
+					ids = append(ids, id)
 				}
 			}
 			for _, job := range jobs {
-				add(job.network.Symbol)
-			}
-			for _, s := range snap.accounts {
-				for _, tb := range s.tokens {
-					add(tb.Token.Symbol)
+				add(job.network.PriceID)
+				for _, token := range job.network.Tokens {
+					add(token.PriceID)
 				}
 			}
-			if usd, err := source.Prices(ctx, symbols); err == nil {
-				snap.usd = usd
+			if usd, err := source.PricesByID(ctx, ids); err == nil {
+				snap.usd = make(map[string]float64)
+				for _, job := range jobs {
+					putPrice(snap.usd, nativePriceKey(job.network), usd, job.network.PriceID)
+					for _, token := range job.network.Tokens {
+						putPrice(snap.usd, tokenPriceKey(job.network, token), usd, token.PriceID)
+					}
+				}
 			} else {
 				snap.fiatErr = err.Error()
 			}
@@ -269,17 +322,29 @@ func (a *App) totalUSD() (float64, bool) {
 	total := 0.0
 	for _, acc := range a.snap.accounts {
 		if acc.native != nil {
-			total += usdValue(acc.native, acc.network.Decimals, acc.network.Symbol, a.snap.usd)
+			total += usdValue(acc.native, acc.network.Decimals, nativePriceKey(acc.network), a.snap.usd)
 		}
 		for _, tb := range acc.tokens {
-			total += usdValue(tb.Amount, tb.Token.Decimals, tb.Token.Symbol, a.snap.usd)
+			total += usdValue(tb.Amount, tb.Token.Decimals, tokenPriceKey(acc.network, tb.Token), a.snap.usd)
 		}
 	}
 	return total, true
 }
 
-// usdValue is amount's worth at the symbol's price, or zero when the price
-// is missing: a balance is never invented.
+func nativePriceKey(network chain.Network) string { return network.ID + ":native" }
+
+func tokenPriceKey(network chain.Network, token chain.Token) string {
+	return network.ID + ":token:" + strings.ToLower(strings.TrimSpace(token.Address))
+}
+
+func putPrice(out map[string]float64, key string, prices map[string]float64, id string) {
+	if id != "" && prices[id] > 0 {
+		out[key] = prices[id]
+	}
+}
+
+// usdValue is amount's worth at the explicit asset key's price, or zero
+// when the price is missing: a balance is never invented.
 func usdValue(amount *big.Int, decimals int, symbol string, usd map[string]float64) float64 {
 	if amount == nil || amount.Sign() == 0 {
 		return 0
@@ -296,13 +361,35 @@ func usdValue(amount *big.Int, decimals int, symbol string, usd map[string]float
 	return out
 }
 
-func (a *App) accountSnapshot(addr string) *accountSnapshot {
+// accountSnapshot returns the balance for one network/address identity.
+// The optional network keeps legacy selected-network callers working while
+// the portfolio supplies it for every row.
+func (a *App) accountSnapshot(addr string, networkID ...string) *accountSnapshot {
 	if a.snap == nil {
 		return nil
 	}
+	wantNetwork := ""
+	if len(networkID) > 0 {
+		wantNetwork = networkID[0]
+	} else {
+		wantNetwork = a.network().ID
+	}
+	wantAddr := addr
+	if family, ok := addressFamily(addr); ok {
+		if normalized, err := wallet.Normalize(wallet.Kind(family), addr); err == nil {
+			wantAddr = normalized
+		}
+	}
 	for i := range a.snap.accounts {
-		if a.snap.accounts[i].addr == addr {
-			return &a.snap.accounts[i]
+		snap := &a.snap.accounts[i]
+		gotAddr := snap.addr
+		if family, ok := addressFamily(gotAddr); ok {
+			if normalized, err := wallet.Normalize(wallet.Kind(family), gotAddr); err == nil {
+				gotAddr = normalized
+			}
+		}
+		if gotAddr == wantAddr && snap.network.ID == wantNetwork {
+			return snap
 		}
 	}
 	return nil

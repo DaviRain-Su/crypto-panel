@@ -50,8 +50,10 @@ type Portfolio struct {
 // Account is one watched address. Native and Tokens carry amounts in their
 // smallest unit as decimal strings, so no precision is lost to JSON numbers.
 type Account struct {
-	Address string   `json:"address"`
-	Label   string   `json:"label,omitempty"`
+	Address string `json:"address"`
+	Network string `json:"network,omitempty"`
+	ChainID string `json:"chainId,omitempty"`
+	Label   string `json:"label,omitempty"`
 	Native  Amount   `json:"native"`
 	Tokens  []Amount `json:"tokens,omitempty"`
 	Error   string   `json:"error,omitempty"`

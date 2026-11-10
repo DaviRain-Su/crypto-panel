@@ -472,8 +472,8 @@ func (a *App) pageBody(c *ui.Context) {
 	}
 }
 
-// watchedAccount pairs a watched address with the network its balances
-// come from: the selected preset for its family, or the family's first.
+// watchedAccount pairs a watched address with one network whose balances
+// appear as a separate portfolio row.
 type watchedAccount struct {
 	addr    wallet.Address
 	network chain.Network
@@ -484,9 +484,14 @@ type watchedAccount struct {
 func (a *App) watchedAll() []watchedAccount {
 	var out []watchedAccount
 	for _, family := range chains.Families() {
-		network := a.settings.NetworkFor(family)
+		networks := []chain.Network{a.settings.NetworkFor(family)}
+		if family == chain.EVM {
+			networks = chains.NetworksOf(chain.EVM)
+		}
 		for _, acc := range a.settings.WatchedOf(family) {
-			out = append(out, watchedAccount{addr: acc, network: network})
+			for _, network := range networks {
+				out = append(out, watchedAccount{addr: acc, network: network})
+			}
 		}
 	}
 	return out
@@ -570,8 +575,8 @@ func (a *App) emptyPortfolio(c *ui.Context) {
 
 func (a *App) accountCard(c *ui.Context, acc wallet.Address, network chain.Network) {
 	p := a.pal
-	snap := a.accountSnapshot(acc.Addr)
-	ui.Column(c).Key(acc.Addr).Gap(12).Padding(16).Radius(14).
+	snap := a.accountSnapshot(acc.Addr, network.ID)
+	ui.Column(c).Key(network.ID+":"+acc.Addr).Gap(12).Padding(16).Radius(14).
 		Background(p.card).Border(1, p.hairline).Shadow(0, 1, 2, 0, p.shadow).Children(func() {
 		ui.Row(c).AlignItems(ui.Center).Gap(12).Children(func() {
 			a.identicon(c, acc.Addr)
@@ -598,7 +603,7 @@ func (a *App) accountCard(c *ui.Context, acc wallet.Address, network chain.Netwo
 				ui.Text(c, a.nativeText(snap)).FontSize(15).FontWeight(700)
 				ui.Text(c, network.Symbol).FontSize(12).TextColor(p.muted)
 				if snap != nil && snap.native != nil {
-					if fiat, ok := a.fiatText(snap.native, network.Decimals, network.Symbol); ok {
+					if fiat, ok := a.fiatText(snap.native, network.Decimals, nativePriceKey(network)); ok {
 						ui.Text(c, fiat).FontSize(12).TextColor(p.muted).MaxLines(1)
 					}
 				}
@@ -669,7 +674,7 @@ func (a *App) tokenRows(c *ui.Context, snap *accountSnapshot) {
 					TextColor(p.muted).MaxLines(1)
 				ui.Text(c, chain.FormatAmount(tb.Amount, tb.Token.Decimals, tb.Token.DisplayFrac())).
 					FontSize(10.5).FontWeight(600).MaxLines(1)
-				if fiat, ok := a.fiatText(tb.Amount, tb.Token.Decimals, tb.Token.Symbol); ok {
+				if fiat, ok := a.fiatText(tb.Amount, tb.Token.Decimals, tokenPriceKey(snap.network, tb.Token)); ok {
 					ui.Text(c, fiat).FontSize(12).TextColor(p.muted).MaxLines(1)
 				}
 			})

@@ -129,6 +129,36 @@ func (c *Client) Prices(ctx context.Context, symbols []string) (map[string]float
 	return out, nil
 }
 
+// PricesByID returns prices keyed by the requested price-feed asset IDs.
+// Unlike Prices, it does not use ticker symbols, so distinct assets that
+// share a symbol cannot borrow each other's value.
+func (c *Client) PricesByID(ctx context.Context, assetIDs []string) (map[string]float64, error) {
+	unique := make(map[string]bool)
+	var wanted []string
+	for _, id := range assetIDs {
+		id = strings.TrimSpace(id)
+		if id != "" && !unique[id] {
+			unique[id] = true
+			wanted = append(wanted, id)
+		}
+	}
+	if len(wanted) == 0 {
+		return map[string]float64{}, nil
+	}
+	sort.Strings(wanted)
+	raw, err := c.get(ctx, wanted)
+	if err != nil {
+		return map[string]float64{}, err
+	}
+	out := make(map[string]float64, len(wanted))
+	for _, id := range wanted {
+		if price, ok := raw[id]["usd"]; ok {
+			out[id] = price
+		}
+	}
+	return out, nil
+}
+
 func (c *Client) get(ctx context.Context, assetIDs []string) (map[string]map[string]float64, error) {
 	base := c.URL
 	if base == "" {

@@ -46,6 +46,25 @@ func TestPricesReadsKnownSymbols(t *testing.T) {
 	}
 }
 
+func TestPricesByIDKeepsAssetIdentity(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.URL.Query().Get("ids"); got != "binancecoin,ethereum" {
+			t.Errorf("ids = %q", got)
+		}
+		_, _ = w.Write([]byte(`{"ethereum":{"usd":3000},"binancecoin":{"usd":600}}`))
+	}))
+	defer srv.Close()
+	c := New()
+	c.URL = srv.URL
+	got, err := c.PricesByID(context.Background(), []string{"ethereum", "binancecoin", "ethereum", "unknown"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got["ethereum"] != 3000 || got["binancecoin"] != 600 || len(got) != 2 {
+		t.Fatalf("prices = %v", got)
+	}
+}
+
 func TestPricesCachesForTTL(t *testing.T) {
 	var calls atomic.Int32
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

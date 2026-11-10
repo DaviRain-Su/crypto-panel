@@ -30,7 +30,10 @@ type Network struct {
 	// Symbol and Decimals describe the native coin: ETH at 18, SOL at 9.
 	Symbol   string `json:"symbol"`
 	Decimals int    `json:"decimals"`
-	RPCURL   string `json:"rpcUrl"`
+	// PriceID is the native coin's curated price-feed identity. Empty means
+	// the portfolio must not infer a price from the symbol alone.
+	PriceID string `json:"priceId,omitempty"`
+	RPCURL  string `json:"rpcUrl"`
 	Explorer string `json:"explorer"`
 	// ChainID is the EVM chain id; 0 for other families.
 	ChainID uint64 `json:"chainId,omitempty"`
@@ -50,6 +53,9 @@ type Token struct {
 	Name     string `json:"name"`
 	Address  string `json:"address"`
 	Decimals int    `json:"decimals"`
+	// PriceID identifies this exact asset in the curated price feed. Empty
+	// means the token is not priced by symbol.
+	PriceID string `json:"priceId,omitempty"`
 }
 
 // DisplayFrac is how many fraction digits the app shows for this token.
