@@ -212,8 +212,8 @@
 
   $("connect").addEventListener("click", async () => {
     try {
-      const res = await wallet().connect();
-      const accounts = standardWallet ? await standardWallet.signIn({ network: standardNetwork }) : res.accounts || [];
+      const accounts = standardWallet ? await standardWallet.signIn({ network: standardNetwork }) :
+        (await wallet().connect()).accounts || [];
       $("account").textContent = accounts.map((a) => a.accountId).join("\n");
       show("connect-status", accounts.length ? "Connected." : "The wallet has no NEAR account.");
     } catch (err) {

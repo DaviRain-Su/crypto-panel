@@ -164,24 +164,27 @@ const nearBridgeScript = `(() => {
       throw new Error("network " + requested + " does not match selected " + current.networkId);
     }
   }
+  async function legacySignAndSendTransaction(params) {
+    return request("signAndSendTransaction", transactionParams(params));
+  }
   async function signAndSendTransaction(params) {
     await requireNetwork(params.network);
-    return request("signAndSendTransaction", transactionParams(params));
+    return legacySignAndSendTransaction(params);
   }
   window.nearWallet = {
     isNearWallet: true,
     name: "Lintel",
     connect: () => request("connect", {}),
-    signIn: (params) => currentNetwork().then(() => request("connect", params || {})),
+    signIn: (params) => request("connect", params || {}),
     disconnect: () => request("disconnect", {}),
     signOut: () => request("disconnect", {}),
     getAccounts: () => request("getAccounts", {}),
     getNetwork: () => request("getNetwork", {}),
-    signAndSendTransaction,
+    signAndSendTransaction: legacySignAndSendTransaction,
     signAndSendTransactions: async (params) => {
       const results = [];
       for (const transaction of params.transactions || []) {
-        results.push(await signAndSendTransaction({
+        results.push(await legacySignAndSendTransaction({
           network: params.network, signerId: params.signerId, ...transaction,
         }));
       }

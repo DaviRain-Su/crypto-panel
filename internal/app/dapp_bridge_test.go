@@ -145,7 +145,12 @@ const w = {
   AbortController, TextDecoder, Uint8Array, ArrayBuffer, btoa: value => Buffer.from(value, "binary").toString("base64"),
   CustomEvent: class CustomEvent { constructor(type, options) { this.type = type; this.detail = options.detail; } },
   Event: class Event { constructor(type) { this.type = type; } },
-  fetch: (url, options) => { sent.push({ body: JSON.parse(options.body) }); return Promise.resolve({}); },
+  fetch: (url, options) => {
+    const request = JSON.parse(options.body);
+    sent.push({ body: request });
+    if (request.method === "getNetwork") queueMicrotask(() => answer({ id: request.id, capability: request.capability, origin: "https://dapp.test", result: { networkId: "testnet" } }));
+    return Promise.resolve({});
+  },
   setTimeout: () => 1, clearTimeout: () => {},
   addEventListener: (name, fn) => { const list = events.get(name) || []; list.push(fn); events.set(name, list); },
   dispatchEvent: event => { for (const fn of events.get(event.type) || []) fn(event); },
@@ -174,6 +179,7 @@ const token = "a".repeat(64);
 w.__cryptoPanelBindNear(token, 1, w.__cryptoPanelNearDocument, "https://dapp.test");
 async function call(method, params, result) {
   const promise = method(params);
+  await Promise.resolve();
   const request = sent.at(-1).body;
   answer({ id: request.id, capability: token, origin: "https://dapp.test", result });
   return { result: await promise, request };
@@ -197,13 +203,12 @@ async function answerNetwork(networkId) {
   answer({ id: sent.at(-1).body.id, capability: token, origin: "https://dapp.test", error: "network mainnet does not match selected testnet" });
   await assert.rejects(accountsMismatch, /network mainnet does not match selected testnet/);
   const mismatch = discovered.signAndSendTransaction({ network: "mainnet", receiverId: "bob.near", actions: [] });
-  await answerNetwork("testnet");
   await assert.rejects(mismatch, /network mainnet does not match selected testnet/);
   const afterMismatch = sent.at(-1).body;
   assert.equal(afterMismatch.method, "getNetwork");
 
   const current = discovered.signAndSendTransaction({
-    receiverId: "contract.testnet", signerId: "alice.testnet",
+    network: "testnet", receiverId: "contract.testnet", signerId: "alice.testnet",
     actions: [
       { functionCall: { methodName: "set", args: new Uint8Array([123,125]), gas: 30000000000000n, deposit: 0n } },
       { transfer: { deposit: 1n } },
@@ -211,7 +216,7 @@ async function answerNetwork(networkId) {
         permission: { functionCall: { receiverId: "contract.testnet", allowance: 25n, methodNames: ["set"] } } } } },
     ],
   });
-  await answerNetwork("testnet");
+  for (let i = 0; i < 20 && sent.at(-1).body.method === "getNetwork"; i++) await Promise.resolve();
   const currentRequest = sent.at(-1).body;
   assert.equal(currentRequest.method, "signAndSendTransaction");
   assert.equal(currentRequest.params.network, "testnet");
@@ -224,12 +229,12 @@ async function answerNetwork(networkId) {
   answer({ id: currentRequest.id, capability: token, origin: "https://dapp.test", result: outcome });
   assert.equal(await current, outcome);
 
-  const legacy = discovered.signAndSendTransaction({ receiverId: "bob.testnet", actions: [
+  const legacy = discovered.signAndSendTransaction({ network: "testnet", receiverId: "bob.testnet", actions: [
     { type: "Transfer", params: { deposit: "1" } },
     { type: "FunctionCall", params: { methodName: "set", args: { greeting: "hello" }, gas: "1", deposit: "0" } },
     { type: "AddKey", params: { publicKey: "ed25519:key", accessKey: { permission: { functionCall: { receiverId: "contract.testnet", allowance: "1", methodNames: [] } } } } },
   ] });
-  await answerNetwork("testnet");
+  for (let i = 0; i < 20 && sent.at(-1).body.method === "getNetwork"; i++) await Promise.resolve();
   assert.deepEqual(sent.at(-1).body.params.actions[1], {
     type: "functionCall", method: "set", args: "{\"greeting\":\"hello\"}", gas: "1", deposit: "0",
   });
@@ -239,10 +244,10 @@ async function answerNetwork(networkId) {
   answer({ id: sent.at(-1).body.id, capability: token, origin: "https://dapp.test", error: "stop" });
   await assert.rejects(legacy, /stop/);
 
-  const bytes = discovered.signAndSendTransaction({ receiverId: "contract.testnet", actions: [
+  const bytes = discovered.signAndSendTransaction({ network: "testnet", receiverId: "contract.testnet", actions: [
     { functionCall: { methodName: "raw", args: new Uint8Array([255]), gas: 1n, deposit: 0n } },
   ] });
-  await answerNetwork("testnet");
+  for (let i = 0; i < 20 && sent.at(-1).body.method === "getNetwork"; i++) await Promise.resolve();
   assert.equal(sent.at(-1).body.params.actions[0].args, "base64:/w==");
   answer({ id: sent.at(-1).body.id, capability: token, origin: "https://dapp.test", result: outcome });
   assert.equal(await bytes, outcome);
@@ -251,17 +256,14 @@ async function answerNetwork(networkId) {
     { receiverId: "one.testnet", actions: [{ type: "Transfer", params: { deposit: "1" } }] },
     { receiverId: "two.testnet", actions: [{ type: "Transfer", params: { deposit: "2" } }] },
   ] });
-  await Promise.resolve(); await Promise.resolve();
-  assert.equal(sent.at(-1).body.method, "getNetwork");
-  await answerNetwork("testnet");
-  const firstCount = sent.length;
+  for (let i = 0; i < 10 && sent.at(-1).body.receiverId !== "one.testnet"; i++) await Promise.resolve();
+  assert.equal(sent.at(-1).body.method, "signAndSendTransaction");
   assert.equal(sent.at(-1).body.params.receiverId, "one.testnet");
   answer({ id: sent.at(-1).body.id, capability: token, origin: "https://dapp.test", result: { transaction: { hash: "one" } } });
-  await Promise.resolve(); await Promise.resolve();
-  await answerNetwork("testnet");
+  for (let i = 0; i < 10 && sent.at(-1).body.receiverId !== "two.testnet"; i++) await Promise.resolve();
   assert.equal(sent.at(-1).body.params.receiverId, "two.testnet");
   answer({ id: sent.at(-1).body.id, capability: token, origin: "https://dapp.test", result: { transaction: { hash: "two" } } });
-  assert.deepEqual(await batch, [{ transaction: { hash: "one" } }, { transaction: { hash: "two" } }]);
+  assert.equal(JSON.stringify(await batch), JSON.stringify([{ transaction: { hash: "one" } }, { transaction: { hash: "two" } }]));
 
   for (const method of ["signMessage", "verifyOwner", "signTransaction", "signTransactions", "signDelegateActions", "signInAndSignMessage"]) {
     await assert.rejects(discovered[method]({}), new RegExp(method + ".*unsupported"));
