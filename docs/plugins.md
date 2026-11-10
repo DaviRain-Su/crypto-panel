@@ -75,6 +75,11 @@ silently widen or narrow what an app may do.
 | `settings` | Up to 20 fields; each has `key`, `label`, and optional `secret`, `help`, `link` (https). |
 | `navigation` | Up to 8 pages; each has `title` (1–40 characters), `page` (lowercase, digits, dashes) and an optional `icon`. The first entry is what **Open** shows. |
 
+The menu bar reads apps too: the first stat of the first page of every
+enabled app shows in the macOS tray — its value beside the icon, one menu
+row per app that opens the app. A page needs no extra declaration; a page
+whose first section has a `stats` block feeds the tray.
+
 ### Permissions
 
 | Key | Grants |

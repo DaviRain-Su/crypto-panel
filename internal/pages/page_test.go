@@ -38,6 +38,19 @@ func TestDecodeValid(t *testing.T) {
 	}
 }
 
+func TestStatValueIsCapped(t *testing.T) {
+	page := func(n int) string {
+		return `{"sections":[{"stats":[{"label":"a","value":"` + strings.Repeat("a", n) + `"}]}]}`
+	}
+	if _, err := Decode([]byte(page(80))); err != nil {
+		t.Fatalf("80-character value: %v", err)
+	}
+	_, err := Decode([]byte(page(81)))
+	if err == nil || !strings.Contains(err.Error(), "longer than 80") {
+		t.Fatalf("err = %v, want the 80-character cap", err)
+	}
+}
+
 func TestDecodeRejects(t *testing.T) {
 	cases := []struct {
 		name string

@@ -243,7 +243,7 @@ func TestViewShowsFiatValues(t *testing.T) {
 			network: chains.Ethereum,
 			native:  big.NewInt(2_000_000_000_000_000_000),
 		}},
-		usd: map[string]float64{"eip155:1:native": 3000},
+		usd: map[string]float64{nativePriceKey(chains.Ethereum): 3000},
 	}
 	tt := ui.NewTester(a.view, windowWidth, windowHeight)
 	if !tt.HasText("$6,000.00") {

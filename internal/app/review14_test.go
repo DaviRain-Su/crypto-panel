@@ -306,7 +306,11 @@ func TestRefreshVaultErrorShowsTheWarning(t *testing.T) {
 		}
 	}
 	t.Cleanup(func() { runOnUI = previous })
-	a.fetch(a.gen, []familyFetch{{network: chains.SolanaMainnet, reader: a.reader, addrs: []string{vault}}})
+	a.fetch(a.gen, []familyFetch{{
+		network: chains.SolanaMainnet,
+		reader:  vaultErrReader{},
+		addrs:   []string{vault},
+	}})
 	select {
 	case <-done:
 	case <-time.After(2 * time.Second):

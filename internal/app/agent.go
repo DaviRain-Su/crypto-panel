@@ -230,9 +230,10 @@ func (a *App) agentPortfolio() agent.Portfolio {
 		}
 		item := agent.Account{
 			Address: acc.addr,
+			Label:   labels[acc.addr],
 			Network: network.Name,
 			ChainID: network.ID,
-			Label:   labels[acc.addr],
+			Block:   acc.block,
 			Native:  native,
 			Error:   acc.err,
 		}

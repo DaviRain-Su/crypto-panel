@@ -502,6 +502,8 @@ const (
 	StoreFrom            Key = "storeFrom"
 	StoreInstallID       Key = "storeInstallID"
 	StoreChanged         Key = "storeChanged"
+	TrayOpenApp          Key = "trayOpenApp"
+	TrayRefresh          Key = "trayRefresh"
 	StoreNewPerms        Key = "storeNewPerms"
 	StoreInstallBody     Key = "storeInstallBody"
 	StoreUnsignedWarn    Key = "storeUnsignedWarn"
@@ -1082,6 +1084,8 @@ var messages = map[Key]map[string]string{
 	StoreFrom:            {English: "From: %s", Chinese: "来源：%s"},
 	StoreInstallID:       {English: "ID: %s", Chinese: "应用 ID：%s"},
 	StoreChanged:         {English: "The app changed after you approved it. Nothing was installed.", Chinese: "应用在你批准后发生了变化，未安装。"},
+	TrayOpenApp:          {English: "Open Lintel", Chinese: "打开 Lintel"},
+	TrayRefresh:          {English: "Refresh data", Chinese: "刷新数据"},
 	StoreNewPerms:        {English: "New permissions: %s", Chinese: "新增权限：%s"},
 	StoreInstallBody:     {English: "Only what is listed here is granted. A plugin never sees your keys.", Chinese: "只授予上面列出的权限。插件永远看不到你的私钥。"},
 	StoreUnsignedWarn:    {English: "This plugin is not signed. Install it only if you trust where it came from.", Chinese: "该插件未签名，只有在你信任来源时才安装。"},

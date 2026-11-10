@@ -477,7 +477,8 @@ func (a *App) pageBody(c *ui.Context) {
 }
 
 // watchedAccount pairs a watched address with one network whose balances
-// appear as a separate portfolio row.
+// appear as a separate portfolio row. An unselected non-EVM family uses
+// that family's mainnet, never its testnet.
 type watchedAccount struct {
 	addr    wallet.Address
 	network chain.Network
@@ -494,6 +495,9 @@ func (a *App) watchedAll() []watchedAccount {
 		}
 		for _, acc := range a.settings.WatchedOf(family) {
 			for _, network := range networks {
+				if network.ID == "" {
+					continue
+				}
 				out = append(out, watchedAccount{addr: acc, network: network})
 			}
 		}
@@ -539,9 +543,10 @@ func (a *App) portfolio(c *ui.Context) {
 func (a *App) heroCard(c *ui.Context) {
 	p := a.pal
 	value := "—"
-	total, known := a.totalUSD()
-	if known {
-		value = usdText(total)
+	if !a.settings.HideFiat {
+		if total, known := a.totalUSD(); known {
+			value = usdText(total)
+		}
 	}
 	ui.Column(c).Gap(10).Padding(22).Radius(16).Border(1, p.hairline).
 		Gradient(p.accentSoft, p.card, 115).Children(func() {
