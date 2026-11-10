@@ -1,6 +1,9 @@
 package app
 
 import (
+	"bytes"
+	"crypto/ed25519"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"io"
@@ -8,9 +11,11 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/egoist/mygo/ui"
 
+	"github.com/davirain-su/lintel/internal/base58"
 	"github.com/davirain-su/lintel/internal/i18n"
 	"github.com/davirain-su/lintel/internal/intents"
 	"github.com/davirain-su/lintel/internal/wallet"
@@ -40,7 +45,10 @@ func intentsTestApp(t *testing.T) *App {
 	return a
 }
 
-// quoteServer answers /v0/quote with a dry quote and records the request.
+var intentsTestKey = ed25519.NewKeyFromSeed(bytes.Repeat([]byte{42}, ed25519.SeedSize))
+var intentsTestPublicKey = "ed25519:" + base58.Encode(intentsTestKey.Public().(ed25519.PublicKey))
+
+// quoteServer answers /v0/quote with a signed dry quote and records the request.
 func quoteServer(t *testing.T, amount *string) *httptest.Server {
 	t.Helper()
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -51,26 +59,38 @@ func quoteServer(t *testing.T, amount *string) *httptest.Server {
 		if amount != nil {
 			*amount, _ = body["amount"].(string)
 		}
+		requestJSON, _ := json.Marshal(body)
+		quoteJSON := []byte(`{"amountIn":"1000000000000000000000000","amountInFormatted":"1","amountInUsd":"2.5","minAmountIn":"1000000000000000000000000","amountOut":"10000000","amountOutFormatted":"10","amountOutUsd":"10","minAmountOut":"9900000","deadline":"2026-11-09T12:30:00Z","timeEstimate":120}`)
+		var requestFields map[string]json.RawMessage
+		var quoteFields map[string]json.RawMessage
+		_ = json.Unmarshal(requestJSON, &requestFields)
+		_ = json.Unmarshal(quoteJSON, &quoteFields)
+		signed := map[string]json.RawMessage{"timestamp": json.RawMessage(`"2026-11-09T00:00:00Z"`)}
+		for _, key := range []string{"dry", "swapType", "slippageTolerance", "originAsset", "depositType", "destinationAsset", "amount", "refundTo", "refundType", "recipient", "recipientType", "deadline"} {
+			signed[key] = requestFields[key]
+		}
+		for _, key := range []string{"amountIn", "amountInFormatted", "amountInUsd", "minAmountIn", "amountOut", "amountOutFormatted", "amountOutUsd", "minAmountOut"} {
+			signed[key] = quoteFields[key]
+		}
+		payload, _ := json.Marshal(signed)
+		digest := sha256.Sum256(payload)
+		hash := base58.Encode(digest[:])
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"correlationId": "quote-1",
 			"timestamp":     "2026-11-09T00:00:00Z",
-			"signature":     "sig",
+			"signature":     "ed25519:" + base58.Encode(ed25519.Sign(intentsTestKey, []byte(hash))),
 			"quoteRequest":  body,
-			"quote": map[string]any{
-				"amountIn":           "1000000000000000000000000",
-				"amountInFormatted":  "1",
-				"amountInUsd":        "2.5",
-				"minAmountIn":        "1000000000000000000000000",
-				"amountOut":          "10000000",
-				"amountOutFormatted": "10",
-				"amountOutUsd":       "10",
-				"minAmountOut":       "9900000",
-				"deadline":           "2026-11-09T12:30:00Z",
-				"timeEstimate":       120,
-			},
+			"quote":         json.RawMessage(quoteJSON),
 		})
 	}))
+}
+
+func intentsTestClient(url string) *intents.Client {
+	return intents.NewAtWithOptions(url,
+		intents.WithVerifierKey(intentsTestPublicKey),
+		intents.WithClock(func() time.Time { return time.Date(2026, 11, 9, 0, 0, 0, 0, time.UTC) }),
+	)
 }
 
 func TestIntentsPageView(t *testing.T) {
@@ -112,7 +132,7 @@ func TestIntentsQuoteShowsResultLanguage(t *testing.T) {
 	var amount string
 	srv := quoteServer(t, &amount)
 	defer srv.Close()
-	a.intentsClient = intents.NewAt(srv.URL)
+	a.intentsClient = intentsTestClient(srv.URL)
 	var captured intentsApprovalRequest
 	a.approveIntents = func(req intentsApprovalRequest) bool {
 		captured = req
@@ -170,7 +190,7 @@ func TestBadQuoteDoesNotOpenApproval(t *testing.T) {
 				io.WriteString(w, body)
 			}))
 			defer srv.Close()
-			a.intentsClient = intents.NewAt(srv.URL)
+			a.intentsClient = intentsTestClient(srv.URL)
 			opened := false
 			a.approveIntents = func(intentsApprovalRequest) bool {
 				opened = true
@@ -191,7 +211,7 @@ func TestIntentsRejected(t *testing.T) {
 	a := intentsTestApp(t)
 	srv := quoteServer(t, nil)
 	defer srv.Close()
-	a.intentsClient = intents.NewAt(srv.URL)
+	a.intentsClient = intentsTestClient(srv.URL)
 	a.approveIntents = func(intentsApprovalRequest) bool { return false }
 	a.requestIntentsQuote()
 	if a.intentsAccepted {
@@ -211,7 +231,7 @@ func TestIntentsQuoteNeedsARecipient(t *testing.T) {
 	calls := 0
 	srv := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { calls++ }))
 	defer srv.Close()
-	a.intentsClient = intents.NewAt(srv.URL)
+	a.intentsClient = intentsTestClient(srv.URL)
 	a.requestIntentsQuote()
 	if calls != 0 {
 		t.Fatal("a quote was asked for without a recipient")
@@ -226,7 +246,7 @@ func TestIntentsQuoteNeedsTheRightDecimals(t *testing.T) {
 	a.intentsAmount = "1.0000001" // wNEAR has 24 decimals, so this is fine
 	srv := quoteServer(t, nil)
 	defer srv.Close()
-	a.intentsClient = intents.NewAt(srv.URL)
+	a.intentsClient = intentsTestClient(srv.URL)
 	a.approveIntents = func(intentsApprovalRequest) bool { return true }
 	a.requestIntentsQuote()
 	if a.intentsErr != "" {
@@ -247,7 +267,7 @@ func TestIntentsApprovalRejectButton(t *testing.T) {
 	a := intentsTestApp(t)
 	srv := quoteServer(t, nil)
 	defer srv.Close()
-	a.intentsClient = intents.NewAt(srv.URL)
+	a.intentsClient = intentsTestClient(srv.URL)
 	var captured intentsApprovalRequest
 	a.approveIntents = func(req intentsApprovalRequest) bool {
 		captured = req
@@ -361,7 +381,7 @@ func TestIntentsPageShowsTheQuote(t *testing.T) {
 	a := intentsTestApp(t)
 	srv := quoteServer(t, nil)
 	defer srv.Close()
-	a.intentsClient = intents.NewAt(srv.URL)
+	a.intentsClient = intentsTestClient(srv.URL)
 	a.approveIntents = func(intentsApprovalRequest) bool { return true }
 	a.requestIntentsQuote()
 	a.route = routeIntents

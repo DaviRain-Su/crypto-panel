@@ -6,6 +6,72 @@ import (
 	"github.com/davirain-su/lintel/internal/pages"
 )
 
+func TestCatalogDescribesChainCapabilitiesAndAuthoringExamples(t *testing.T) {
+	catalog := Catalog(true)
+	functions := catalog["hostFunctions"].([]map[string]any)
+	want := map[string]string{
+		"host.units.parse":      "none",
+		"host.units.format":     "none",
+		"host.hyperliquid.info": "network: api.hyperliquid.xyz or api.hyperliquid-testnet.xyz",
+		"host.near.view":        "NEAR chain",
+		"host.intents.tokens":   "network: 1click.chaindefuser.com",
+		"host.intents.dryQuote": "network: 1click.chaindefuser.com; dry only",
+		"host.intents.status":   "network: 1click.chaindefuser.com",
+	}
+	for name, permission := range want {
+		found := false
+		for _, fn := range functions {
+			if fn["name"] == name {
+				found = true
+				if fn["permission"] != permission || fn["inputSchema"] == nil || fn["outputSchema"] == nil {
+					t.Fatalf("%s = %+v", name, fn)
+				}
+			}
+		}
+		if !found {
+			t.Errorf("catalog does not describe %s", name)
+		}
+	}
+	for _, fn := range functions {
+		if fn["name"] != "host.hyperliquid.info" {
+			continue
+		}
+		input := fn["inputSchema"].(map[string]any)["prefixItems"].([]any)[0].(map[string]any)
+		properties := input["properties"].(map[string]any)
+		for _, field := range []string{"coin", "nSigFigs", "mantissa", "req", "user", "dex", "startTime", "endTime", "aggregateByTime"} {
+			if properties[field] == nil {
+				t.Errorf("Hyperliquid catalog omits operation parameter %q", field)
+			}
+		}
+	}
+	for _, fn := range functions {
+		name := fn["name"]
+		if name != "host.intents.dryQuote" && name != "host.intents.status" {
+			continue
+		}
+		output := fn["outputSchema"].(map[string]any)
+		if output["additionalProperties"] != true {
+			t.Errorf("%s output rejects trusted protocol fields", name)
+		}
+		properties := output["properties"].(map[string]any)
+		if name == "host.intents.status" && (properties["quoteResponse"] == nil || properties["swapDetails"] == nil) {
+			t.Errorf("status output omits raw protocol fields: %#v", properties)
+		}
+	}
+	examples := catalog["examples"].([]map[string]any)
+	for _, id := range []string{"com.example.hyperliquid", "com.example.intents"} {
+		found := false
+		for _, example := range examples {
+			if example["id"] == id {
+				found = true
+			}
+		}
+		if !found {
+			t.Errorf("catalog does not package %s", id)
+		}
+	}
+}
+
 func TestCatalogDescribesTrendSparklineGaugeAndLimits(t *testing.T) {
 	catalog := Catalog(true)
 	schemas := catalog["schemas"].(map[string]any)

@@ -609,10 +609,18 @@ func writeFileAtomic(path string, data []byte, mode fs.FileMode) error {
 // KV is one plugin's key-value store: JSON values under string keys, kept
 // in kv.json, bounded by the manifest's storageKb.
 type KV struct {
-	path  string
-	quota int
-	data  map[string]json.RawMessage
-	size  int
+	path      string
+	quota     int
+	data      map[string]json.RawMessage
+	size      int
+	mu        sync.Mutex
+	ephemeral bool
+}
+
+// NewEphemeralKV returns request-scoped storage for a candidate preview.
+// It never reads or writes the installed application's KV file.
+func NewEphemeralKV(storageKb int) *KV {
+	return &KV{quota: storageKb << 10, ephemeral: true}
 }
 
 const (
@@ -635,10 +643,19 @@ func (kv *KV) fileLock() *sync.Mutex {
 }
 
 // Get returns the value stored under key.
-func (kv *KV) Get(key string) (json.RawMessage, bool) {
+func (kv *KV) lock() func() {
+	if kv.ephemeral {
+		kv.mu.Lock()
+		return kv.mu.Unlock
+	}
 	mu := kv.fileLock()
 	mu.Lock()
-	defer mu.Unlock()
+	return mu.Unlock
+}
+
+func (kv *KV) Get(key string) (json.RawMessage, bool) {
+	unlock := kv.lock()
+	defer unlock()
 	if err := kv.load(); err != nil {
 		return nil, false
 	}
@@ -657,9 +674,8 @@ func (kv *KV) Put(key string, value json.RawMessage) error {
 	if kv.quota == 0 {
 		return errors.New("plugin has no storage permission")
 	}
-	mu := kv.fileLock()
-	mu.Lock()
-	defer mu.Unlock()
+	unlock := kv.lock()
+	defer unlock()
 	if err := kv.load(); err != nil {
 		return err
 	}
@@ -681,9 +697,8 @@ func (kv *KV) Put(key string, value json.RawMessage) error {
 
 // Delete removes key.
 func (kv *KV) Delete(key string) error {
-	mu := kv.fileLock()
-	mu.Lock()
-	defer mu.Unlock()
+	unlock := kv.lock()
+	defer unlock()
 	if err := kv.load(); err != nil {
 		return err
 	}
@@ -697,9 +712,8 @@ func (kv *KV) Delete(key string) error {
 
 // Keys returns the stored keys, for tests and the manager.
 func (kv *KV) Keys() []string {
-	mu := kv.fileLock()
-	mu.Lock()
-	defer mu.Unlock()
+	unlock := kv.lock()
+	defer unlock()
 	if err := kv.load(); err != nil {
 		return nil
 	}
@@ -712,6 +726,9 @@ func (kv *KV) Keys() []string {
 }
 
 func (kv *KV) load() error {
+	if kv.ephemeral {
+		return nil
+	}
 	kv.data, kv.size = nil, 0
 	data, err := os.ReadFile(kv.path)
 	if errors.Is(err, fs.ErrNotExist) {
@@ -730,6 +747,9 @@ func (kv *KV) load() error {
 }
 
 func (kv *KV) save() error {
+	if kv.ephemeral {
+		return nil
+	}
 	data, err := json.Marshal(kv.data)
 	if err != nil {
 		return err

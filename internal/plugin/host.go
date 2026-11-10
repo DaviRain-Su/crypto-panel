@@ -62,10 +62,16 @@ type HostDeps struct {
 	// the transaction was broadcast, or with an error.
 	Sign func(SignRequest) (SignResult, error)
 	// NearSign is the same for a NEAR transaction, decoded by the shell.
-	NearSign  func(NearSignRequest) (SignResult, error)
-	Log       func(level, msg string)
-	Locale    func() string
-	Translate func(key string, args []any) string
+	NearSign func(NearSignRequest) (SignResult, error)
+	// Read-only protocol adapters. The host checks manifest permissions
+	// before invoking these shell-owned capabilities.
+	HyperliquidInfo func(testnet bool, operation string, params map[string]any) (json.RawMessage, error)
+	IntentsTokens   func() (any, error)
+	IntentsDryQuote func(request map[string]any) (any, error)
+	IntentsStatus   func(depositAddress, depositMemo string) (any, error)
+	Log             func(level, msg string)
+	Locale          func() string
+	Translate       func(key string, args []any) string
 }
 
 // Host implements the functions a plugin sees as the global `host`. A
@@ -97,8 +103,24 @@ func (h *Host) Namespace() map[string]any {
 			"put":    moejs.NativeFunc(h.kvPut),
 			"delete": moejs.NativeFunc(h.kvDelete),
 		},
-		"fetch":           moejs.NativeFunc(h.fetch),
-		"rpc":             moejs.NativeFunc(h.rpc),
+		"fetch": moejs.NativeFunc(h.fetch),
+		"rpc":   moejs.NativeFunc(h.rpc),
+		"near": map[string]any{
+			"view": moejs.NativeFunc(h.nearView),
+		},
+		"hyperliquid": map[string]any{
+			"info": moejs.NativeFunc(h.hyperliquidInfo),
+		},
+		"intents": map[string]any{
+			"tokens":   moejs.NativeFunc(h.intentsTokens),
+			"dryQuote": moejs.NativeFunc(h.intentsDryQuote),
+			"status":   moejs.NativeFunc(h.intentsStatus),
+		},
+		"units": map[string]any{
+			"parse":         moejs.NativeFunc(h.unitsParse),
+			"format":        moejs.NativeFunc(h.unitsFormat),
+			"formatDisplay": moejs.NativeFunc(h.unitsFormatDisplay),
+		},
 		"accounts":        moejs.NativeFunc(h.accounts),
 		"requestSign":     moejs.NativeFunc(h.requestSign),
 		"requestNearSign": moejs.NativeFunc(h.requestNearSign),

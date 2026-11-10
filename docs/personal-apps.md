@@ -43,7 +43,7 @@ Lintel 的个人应用仍是沙箱 JS 与原生页面数据。编码 agent 负�
 
 catalog 的 `page` schema 与原生页面一致：stat 可用 `trend: "up" | "down"` 和最多 32 个数值的 `sparkline`，section 可用 `gauge`，其 `value` 必须为 0–100；对应 `limits` 为 `sparklinePoints`、`gaugeMin` 和 `gaugeMax`。
 
-没有 HTTP approve、钱包签名、广播或密钥接口。refresh 和候选 preview 禁用 EVM / NEAR 签名，但声明范围内的 host.fetch 和 KV 写入仍可能产生副作用，不能代替静态 validate。预览运行的是候选而不是已安装目录，状态仍是 pending；预览结果绝不构成安装批准。
+没有 HTTP approve、钱包签名、广播或密钥接口。refresh 和候选 preview 禁用 EVM / NEAR 签名；候选 preview 的 KV 是每次执行独立创建的内存状态，不读取或修改已安装应用的 KV，响应以 `X-Lintel-Preview-Signing: disabled`、`X-Lintel-Preview-Storage: ephemeral` 和 `X-Lintel-Preview-Network: declared methods allowed` 标明边界。声明范围内的网络方法仍可能产生外部副作用，不能代替静态 validate。预览运行的是候选而不是已安装目录，状态仍是 pending；预览结果绝不构成安装批准。
 
 原生确认安装后，`GET /v0/plugins` 可返回当前包的可选 `verification`：requestId、packageHash、page、status（waiting_settings / running / passed / failed）、固定原因 code 及完成时间 checkedAt。它与安装任务的 installed 状态分开；passed 只表示首页执行与结构检查通过。完整保存设置且没有清除秘密时，会自动验证已跟踪的安装；清除秘密使旧结果失效并等待配置，部分保存失败不会执行。验证不记录插件日志或回传页面、异常原文。记录只存在于当前进程，重启后没有该字段；需要时继续显式 refresh。
 

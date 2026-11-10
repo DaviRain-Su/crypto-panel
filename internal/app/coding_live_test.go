@@ -55,7 +55,7 @@ func TestInstalledACPCreatesPreviewsAndInstalls(t *testing.T) {
 		t.Fatal(err)
 	}
 	var examples []plugin.Package
-	for _, id := range []string{"com.example.gas", "com.example.feargreed"} {
+	for _, id := range []string{"com.example.gas", "com.example.feargreed", "com.example.hyperliquid", "com.example.intents"} {
 		pkg, _, err := plugin.OfficialPackage(id)
 		if err != nil {
 			t.Fatal(err)
@@ -173,7 +173,7 @@ func TestInstalledACPCreatesSwapApp(t *testing.T) {
 		t.Fatal(err)
 	}
 	var examples []plugin.Package
-	for _, id := range []string{"com.example.gas", "com.example.feargreed"} {
+	for _, id := range []string{"com.example.gas", "com.example.feargreed", "com.example.hyperliquid", "com.example.intents"} {
 		pkg, _, err := plugin.OfficialPackage(id)
 		if err != nil {
 			t.Fatal(err)
@@ -212,6 +212,86 @@ func TestInstalledACPCreatesSwapApp(t *testing.T) {
 		t.Fatalf("swap preview: %v", err)
 	}
 	t.Logf("real swap app generated and previewed without installation: %s version %s; preview type=%T", result.Installation.PluginID, result.Installation.Version, preview.Page)
+}
+
+func TestInstalledACPCreatesChainCapabilityApps(t *testing.T) {
+	executable := os.Getenv("LINTEL_TEST_ACP_EXECUTABLE")
+	if executable == "" {
+		t.Skip("需要 LINTEL_TEST_ACP_EXECUTABLE；此测试调用真实模型和公开只读接口")
+	}
+	for _, tc := range []struct {
+		name       string
+		id         string
+		prompt     string
+		host       string
+		sourceText string
+	}{
+		{
+			name: "hyperliquid", id: "local.personal.hyperliquid-markets", host: "api.hyperliquid.xyz",
+			prompt:     "Create a personal app called Hyperliquid Markets. Use host.hyperliquid.info with type allMids and l2Book for BTC, and render the BTC/ETH mids plus up to five order-book rows with native stats and a table. Use the packaged Hyperliquid example and the current catalog. Only allow api.hyperliquid.xyz. No account data, settings, storage, signing, Exchange actions, orders, private keys or wallet transactions.",
+			sourceText: "host.hyperliquid.info",
+		},
+		{
+			name: "intents", id: "local.personal.intents-assets", host: "1click.chaindefuser.com",
+			prompt:     "Create a personal app called NEAR Intents Assets. Use host.intents.tokens to list the first 20 supported assets with symbol, blockchain, decimals and exact assetId in a native table. Explain that host.intents.dryQuote is available for exact base-unit string amounts, but do not request a quote on page load. Use the packaged Intents example and current catalog. Only allow 1click.chaindefuser.com. No settings, storage, signing, wet quote, deposit, private keys or wallet transactions.",
+			sourceText: "host.intents.tokens",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			a := newTestApp(t)
+			a.initAuthoring()
+			catalog, _ := json.Marshal(agent.Catalog(true))
+			var examples []plugin.Package
+			for _, id := range []string{"com.example.gas", "com.example.feargreed", "com.example.hyperliquid", "com.example.intents"} {
+				pkg, _, err := plugin.OfficialPackage(id)
+				if err != nil {
+					t.Fatal(err)
+				}
+				examples = append(examples, pkg)
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
+			defer cancel()
+			result, err := a.coding.service.Run(ctx, authoring.Request{
+				Profile: authoring.Profile{ID: "live", Name: "Live test", Executable: executable},
+				Prompt:  tc.prompt, WorkspaceRoot: a.workspaceRoot(), TargetID: tc.id,
+				Catalog: catalog, Examples: examples,
+				RequestPermission: func(_ context.Context, req acp.PermissionRequest) (string, error) {
+					for _, option := range req.Options {
+						if option.Kind == "allow_once" {
+							return option.OptionID, nil
+						}
+					}
+					return "", nil
+				},
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			job := result.Installation
+			if job.Status != "pending" || job.PluginID != tc.id || job.Manifest.Permissions.Sign || len(job.Manifest.Permissions.Network) != 1 || job.Manifest.Permissions.Network[0] != tc.host {
+				t.Fatalf("generated candidate = %+v permissions=%+v", job, job.Manifest.Permissions)
+			}
+			candidate, _, err := a.pluginManager.PendingCandidate(job.RequestID, "acp")
+			if err != nil {
+				t.Fatal(err)
+			}
+			source, err := os.ReadFile(candidate.Dir + "/index.js")
+			if err != nil || !strings.Contains(string(source), tc.sourceText) {
+				t.Fatalf("generated source does not use %s: %v\n%s", tc.sourceText, err, source)
+			}
+			preview, err := a.PreviewInstallationPage(job.RequestID, "", "acp")
+			if err != nil {
+				t.Fatalf("real generated preview: %v", err)
+			}
+			if preview.Storage != "ephemeral" || preview.Signing != "disabled" {
+				t.Fatalf("preview metadata = %+v", preview)
+			}
+			if _, err := a.plugins.Get(job.PluginID); err == nil {
+				t.Fatal("generation installed the candidate")
+			}
+			t.Logf("real agent generated and previewed %s using %s; pending, unsigned, no installation", job.PluginID, tc.sourceText)
+		})
+	}
 }
 
 func TestInstalledACPGenerationRejectsInstallation(t *testing.T) {

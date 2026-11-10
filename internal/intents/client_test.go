@@ -2,6 +2,8 @@ package intents
 
 import (
 	"context"
+	"crypto/ed25519"
+	"crypto/rand"
 	"encoding/json"
 	"errors"
 	"io"
@@ -13,6 +15,11 @@ import (
 )
 
 func TestQuoteAsksForADryQuote(t *testing.T) {
+	now := time.Date(2026, 11, 9, 0, 0, 0, 0, time.UTC)
+	_, key, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
 	var body map[string]any
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost || r.URL.Path != "/v0/quote" {
@@ -22,10 +29,9 @@ func TestQuoteAsksForADryQuote(t *testing.T) {
 			t.Error(err)
 		}
 		w.Header().Set("Content-Type", "application/json")
-		io.WriteString(w, `{
+		io.WriteString(w, signTestQuote(t, key, `{
 			"correlationId": "c1",
 			"timestamp": "2026-11-09T00:00:00Z",
-			"signature": "sig",
 			"quoteRequest": {
 				"dry": true,
 				"swapType": "EXACT_INPUT",
@@ -52,11 +58,11 @@ func TestQuoteAsksForADryQuote(t *testing.T) {
 				"deadline": "2026-11-09T12:30:00Z",
 				"timeEstimate": 120
 			}
-		}`)
+		}`))
 	}))
 	defer srv.Close()
 
-	q, err := NewAt(srv.URL).Quote(context.Background(), QuoteRequest{
+	q, err := newSignedTestClient(srv.URL, key.Public().(ed25519.PublicKey), now).Quote(context.Background(), QuoteRequest{
 		OriginAsset:      "nep141:wrap.near",
 		DestinationAsset: "nep141:eth-0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48.omft.near",
 		Amount:           "1000000000000000000000000",
@@ -82,7 +88,7 @@ func TestQuoteAsksForADryQuote(t *testing.T) {
 	if q.Deadline.IsZero() {
 		t.Fatal("the deadline was dropped")
 	}
-	if q.CorrelationID != "c1" || q.Signature != "sig" {
+	if q.CorrelationID != "c1" || q.Signature == "" || !q.Verified || !q.Timestamp.Equal(now) {
 		t.Fatalf("quote = %+v", q)
 	}
 }
@@ -110,6 +116,7 @@ func TestQuoteRefusesBadRequestsBeforeTheNetwork(t *testing.T) {
 		"signed":         func(r *QuoteRequest) { r.Amount = "-1" },
 		"no recipient":   func(r *QuoteRequest) { r.Recipient = "" },
 		"no refund":      func(r *QuoteRequest) { r.RefundTo = "" },
+		"negative slip":  func(r *QuoteRequest) { r.SlippageBps = -100 },
 		"too much slip":  func(r *QuoteRequest) { r.SlippageBps = 1001 },
 	}
 	for name, change := range cases {
@@ -203,6 +210,11 @@ func TestTokensDropsUnusableAssets(t *testing.T) {
 }
 
 func TestQuoteFailsClosed(t *testing.T) {
+	now := time.Now().UTC()
+	_, key, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
 	good := QuoteRequest{
 		OriginAsset:      "nep141:wrap.near",
 		DestinationAsset: "nep141:eth.omft.near",
@@ -212,6 +224,7 @@ func TestQuoteFailsClosed(t *testing.T) {
 	}
 	echo := func(change string) string {
 		req := `{
+			"deadline": "2026-11-09T12:30:00Z",
 			"dry": true,
 			"swapType": "EXACT_INPUT",
 			"slippageTolerance": 100,
@@ -229,54 +242,50 @@ func TestQuoteFailsClosed(t *testing.T) {
 		}
 		return `{
 			"correlationId": "c1",
+			"timestamp": ` + quoteJSON(now.Format(time.RFC3339Nano)) + `,
 			"quoteRequest": ` + req + `,
 			"quote": {
 				"amountIn": "1000",
+				"amountInFormatted": "0.000001",
+				"amountInUsd": "0.002",
+				"minAmountIn": "1000",
 				"amountOut": "2000",
+				"amountOutFormatted": "0.000002",
+				"amountOutUsd": "0.002",
 				"minAmountOut": "1900"
 			}
 		}`
+	}
+	mutate := func(change func(map[string]json.RawMessage, map[string]json.RawMessage, map[string]json.RawMessage)) string {
+		top := mustRawMap(t, echo(""))
+		request := mustRawMap(t, string(top["quoteRequest"]))
+		quote := mustRawMap(t, string(top["quote"]))
+		change(top, request, quote)
+		top["quoteRequest"], _ = json.Marshal(request)
+		top["quote"], _ = json.Marshal(quote)
+		body, _ := json.Marshal(top)
+		return signTestQuote(t, key, string(body))
 	}
 	bodies := []string{
 		`{}`,
 		`null`,
 		`{"quote":null,"correlationId":"c1"}`,
 		`{"correlationId":"c1","quote":{"amountInFormatted":"1"}}`,
-		`{"correlationId":"","quoteRequest":` + `{
-			"dry": true, "swapType": "EXACT_INPUT", "slippageTolerance": 100,
-			"originAsset": "nep141:wrap.near", "depositType": "ORIGIN_CHAIN",
-			"destinationAsset": "nep141:eth.omft.near", "amount": "1000",
-			"refundTo": "alice.testnet", "refundType": "ORIGIN_CHAIN",
-			"recipient": "0xabc", "recipientType": "DESTINATION_CHAIN"
-		}` + `,"quote":{"amountIn":"1000","amountOut":"2000","minAmountOut":"1900"}}`,
-		`{"correlationId":"c1","quoteRequest":{
-			"dry": false, "swapType": "EXACT_INPUT", "slippageTolerance": 100,
-			"originAsset": "nep141:wrap.near", "depositType": "ORIGIN_CHAIN",
-			"destinationAsset": "nep141:eth.omft.near", "amount": "1000",
-			"refundTo": "alice.testnet", "refundType": "ORIGIN_CHAIN",
-			"recipient": "0xabc", "recipientType": "DESTINATION_CHAIN"
-		},"quote":{"amountIn":"1000","amountOut":"2000","minAmountOut":"1900"}}`,
-		`{"correlationId":"c1","quoteRequest":{
-			"dry": true, "swapType": "EXACT_INPUT", "slippageTolerance": 100,
-			"originAsset": "nep141:wrap.near", "depositType": "ORIGIN_CHAIN",
-			"destinationAsset": "nep141:eth.omft.near", "amount": "1000",
-			"refundTo": "alice.testnet", "refundType": "ORIGIN_CHAIN",
-			"recipient": "0xchanged", "recipientType": "DESTINATION_CHAIN"
-		},"quote":{"amountIn":"1000","amountOut":"2000","minAmountOut":"1900"}}`,
-		`{"correlationId":"c1","quoteRequest":{
-			"dry": true, "swapType": "EXACT_INPUT", "slippageTolerance": 100,
-			"originAsset": "nep141:wrap.near", "depositType": "ORIGIN_CHAIN",
-			"destinationAsset": "nep141:eth.omft.near", "amount": "1000",
-			"refundTo": "alice.testnet", "refundType": "ORIGIN_CHAIN",
-			"recipient": "0xabc", "recipientType": "DESTINATION_CHAIN"
-		},"quote":{"depositAddress":"0xATTACKERDEPOSIT","amountIn":"1000","amountOut":"2000","minAmountOut":"1900"}}`,
-		`{"correlationId":"c1","quoteRequest":{
-			"dry": true, "swapType": "EXACT_INPUT", "slippageTolerance": 100,
-			"originAsset": "nep141:wrap.near", "depositType": "ORIGIN_CHAIN",
-			"destinationAsset": "nep141:eth.omft.near", "amount": "1000",
-			"refundTo": "alice.testnet", "refundType": "ORIGIN_CHAIN",
-			"recipient": "0xabc", "recipientType": "DESTINATION_CHAIN"
-		},"quote":{"amountIn":"0","amountOut":"2000","minAmountOut":"1900"}}`,
+		mutate(func(top, _, _ map[string]json.RawMessage) {
+			top["correlationId"] = json.RawMessage(`""`)
+		}),
+		mutate(func(_, request, _ map[string]json.RawMessage) {
+			request["dry"] = json.RawMessage(`false`)
+		}),
+		mutate(func(_, request, _ map[string]json.RawMessage) {
+			request["recipient"] = json.RawMessage(`"0xchanged"`)
+		}),
+		mutate(func(_, _, quote map[string]json.RawMessage) {
+			quote["depositAddress"] = json.RawMessage(`"0xATTACKERDEPOSIT"`)
+		}),
+		mutate(func(_, _, quote map[string]json.RawMessage) {
+			quote["amountIn"] = json.RawMessage(`"0"`)
+		}),
 	}
 	for _, body := range bodies {
 		t.Run(body, func(t *testing.T) {
@@ -285,19 +294,19 @@ func TestQuoteFailsClosed(t *testing.T) {
 				io.WriteString(w, body)
 			}))
 			defer srv.Close()
-			if _, err := NewAt(srv.URL).Quote(context.Background(), good); err == nil {
+			if _, err := newSignedTestClient(srv.URL, key.Public().(ed25519.PublicKey), now).Quote(context.Background(), good); err == nil {
 				t.Fatal("a bad quote was accepted")
 			}
 		})
 	}
 	// The matching dry echo is accepted and carries no deposit address.
-	okBody := echo("")
+	okBody := signTestQuote(t, key, echo(""))
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		io.WriteString(w, okBody)
 	}))
 	defer srv.Close()
-	q, err := NewAt(srv.URL).Quote(context.Background(), good)
+	q, err := newSignedTestClient(srv.URL, key.Public().(ed25519.PublicKey), now).Quote(context.Background(), good)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -327,6 +336,26 @@ func TestClientDoesNotFollowRedirects(t *testing.T) {
 	}
 }
 
+func TestQuoteAcceptsLiveCreatedStatusWithValidSignature(t *testing.T) {
+	now := time.Date(2026, 11, 9, 0, 0, 0, 0, time.UTC)
+	_, key, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := signTestQuote(t, key, statusQuote(now, true))
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusCreated)
+		io.WriteString(w, body)
+	}))
+	defer srv.Close()
+	quote, err := newSignedTestClient(srv.URL, key.Public().(ed25519.PublicKey), now).Quote(context.Background(), QuoteRequest{
+		OriginAsset: "a", DestinationAsset: "b", Amount: "1000", Recipient: "p", RefundTo: "r", Deadline: now.Add(time.Hour),
+	})
+	if err != nil || !quote.Verified {
+		t.Fatalf("quote = %+v, err = %v", quote, err)
+	}
+}
+
 func TestOnlyOKIsSuccess(t *testing.T) {
 	body := `{
 		"correlationId": "c1",
@@ -339,7 +368,7 @@ func TestOnlyOKIsSuccess(t *testing.T) {
 		},
 		"quote": {"amountIn": "1", "amountOut": "1", "minAmountOut": "1"}
 	}`
-	for _, status := range []int{http.StatusCreated, 299, http.StatusTemporaryRedirect} {
+	for _, status := range []int{http.StatusAccepted, 299, http.StatusTemporaryRedirect} {
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(status)

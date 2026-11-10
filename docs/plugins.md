@@ -14,8 +14,9 @@ it returns with native UI. An app never draws, never injects HTML, never sees
 a key, and cannot open a window or an approval prompt. Everything it can do is
 a function the shell installs on the `host` global, granted by the manifest.
 
-Two official examples ship with the shell, so a first launch already has
-apps to open from the Apps launcher. **Gas** (`com.example.gas`) reads
+Two official examples are installed on first launch, so the launcher already
+has apps to open. Hyperliquid and NEAR Intents examples are also embedded as
+Agent authoring references; they are not automatically installed. **Gas** (`com.example.gas`) reads
 Ethereum and Base through `host.rpc`, naming chains and never an RPC URL.
 **Fear & Greed** (`com.example.feargreed`) fetches one allowlisted API and
 draws a chart. Their source is
@@ -149,7 +150,8 @@ than 256 KB is refused.
 ## Host functions
 
 The global `host` is the app's whole world. A function not listed here does
-not exist.
+not exist. `host.units` needs no permission. Hyperliquid and Intents use the
+manifest's network allowlist; `host.near.view` uses its declared NEAR chains.
 
 ### `host.setting(key)`
 
@@ -186,6 +188,48 @@ Methods that sign or send are refused before the request leaves the app:
 `eth_sendTransaction`, `eth_sendRawTransaction`, `eth_signTransaction`,
 anything starting with `personal_`, `wallet_` or `sign`, and the equivalent
 send methods. An app reads the chain; the shell signs.
+
+### `host.units.parse(value, decimals)` / `host.units.format(value, decimals)`
+
+Converts exact decimal strings with the shell's integer arithmetic. `parse`
+returns base units; `format` returns a human decimal without trailing zeros.
+`formatDisplay(value, decimals, maxFraction)` applies grouped display
+rounding. Amounts must be strings, never JavaScript numbers; decimals is
+0–255. Signed or exponent input, excess fractional digits and invalid bounds
+are rejected rather than rounded.
+
+### `host.hyperliquid.info(request)`
+
+Calls the trusted Hyperliquid Info adapter. The manifest must allow
+`api.hyperliquid.xyz`, or `api.hyperliquid-testnet.xyz` when `testnet:true` is
+present. `request.type` may be `meta`, `spotMeta`, `metaAndAssetCtxs`,
+`spotMetaAndAssetCtxs`, `allMids`, `l2Book`, `candleSnapshot`,
+`clearinghouseState`, `spotClearinghouseState`, `portfolio`, `openOrders` or
+`userFillsByTime`. Other fields are operation parameters. The shell fixes the
+HTTPS origin and `/info` path. Exchange actions, API wallets, signatures and
+withdrawals are not available.
+
+### `host.near.view(request)`
+
+Runs a contract view through the pinned NEAR RPC broker. The request is
+`{ chainId, contract, method, args? }`, where `args` defaults to `{}` and the
+chain must be declared in `permissions.chains`. The shell encodes arguments,
+uses `finality:"final"`, decodes the node's base64 result and returns its JSON
+value. It does not select an RPC URL or sign a transaction.
+
+### `host.intents.tokens()` / `host.intents.dryQuote(request)` / `host.intents.status(request)`
+
+Uses NEAR Intents 1Click when `1click.chaindefuser.com` is allowlisted.
+`tokens()` returns supported asset IDs, symbols, chains and decimals.
+`dryQuote` accepts `{originAsset, destinationAsset, amount, recipient,
+refundTo, slippageBps?, deadline?}`; amount is an exact base-unit string. The
+shell always sends `dry:true`, verifies the quote's Ed25519 signature and
+timestamp, and refuses dry responses containing a deposit address.
+`status({depositAddress, depositMemo?})` reads an existing execution and
+verifies its embedded original quote. Historical quotes keep signature and
+timestamp validation but are not subject to the dry quote's current
+five-minute freshness window. Wet quotes, deposits, hash submission and
+broadcasting are not available.
 
 ### `host.accounts()`
 

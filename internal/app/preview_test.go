@@ -58,6 +58,101 @@ func TestPreviewPendingCandidateDoesNotApproveOrInstall(t *testing.T) {
 	}
 }
 
+func TestPreviewUsesEphemeralKVForBothOrigins(t *testing.T) {
+	for _, via := range []string{"acp", "local-api"} {
+		t.Run(via, func(t *testing.T) {
+			a := newTestApp(t)
+			manifest, err := json.Marshal(plugin.Manifest{
+				ID: "local.personal.preview", Name: "Preview candidate", Version: "1.0.0", Main: "index.js",
+				Permissions: plugin.Permissions{StorageKb: 4},
+				Navigation:  []plugin.NavItem{{Title: "Overview", Page: "overview"}},
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			source := `export function page() {
+  const initial = host.kv.get("count") === undefined;
+  host.kv.put("count", 1);
+  host.kv.put("count", 2);
+  host.kv.delete("other");
+  return { title: String(initial) + "|" + host.kv.get("count"), sections: [] };
+}`
+			job, err := a.pluginManager.Propose(plugin.Source{Kind: "inline", Package: &plugin.Package{Plugin: manifest, Main: source}}, "install", "", "", via)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for i := 0; i < 2; i++ {
+				result, err := a.PreviewInstallationPage(job.RequestID, "overview", via)
+				if err != nil {
+					t.Fatal(err)
+				}
+				page := result.Page.(pages.Page)
+				if page.Title != "true|2" {
+					t.Fatalf("preview %d retained or lost KV: %q", i, page.Title)
+				}
+				if result.Signing != "disabled" || result.Storage != "ephemeral" || result.Network != "declared methods allowed" {
+					t.Fatalf("preview metadata = %+v", result)
+				}
+			}
+			if _, err := os.Stat(filepath.Join(a.plugins.Dir(), "local.personal.preview", "kv.json")); !errors.Is(err, os.ErrNotExist) {
+				t.Fatalf("preview persisted KV: %v", err)
+			}
+		})
+	}
+}
+
+func TestUpdatePreviewCannotReadOrMutateInstalledKV(t *testing.T) {
+	a := newTestApp(t)
+	manifest, err := json.Marshal(plugin.Manifest{
+		ID: "local.personal.preview", Name: "Preview candidate", Version: "1.0.0", Main: "index.js",
+		Permissions: plugin.Permissions{StorageKb: 4},
+		Navigation:  []plugin.NavItem{{Title: "Overview", Page: "overview"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	installed, err := a.pluginManager.Propose(plugin.Source{Kind: "inline", Package: &plugin.Package{Plugin: manifest, Main: `export function page(){return {title:"old",sections:[]};}`}}, "install", "", "", "acp")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := a.pluginManager.Decide(installed.RequestID, true); err != nil {
+		t.Fatal(err)
+	}
+	kv, err := a.plugins.KV("local.personal.preview")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := kv.Put("count", json.RawMessage(`99`)); err != nil {
+		t.Fatal(err)
+	}
+	var updated plugin.Manifest
+	if err := json.Unmarshal(manifest, &updated); err != nil {
+		t.Fatal(err)
+	}
+	updated.Version = "1.0.1"
+	updatedManifest, _ := json.Marshal(updated)
+	job, err := a.pluginManager.Propose(plugin.Source{Kind: "inline", Package: &plugin.Package{Plugin: updatedManifest, Main: `export function page(){
+  const before=host.kv.get("count");
+  host.kv.put("count", 2);
+  host.kv.delete("count");
+  return {title:String(before),sections:[]};
+}`}}, "update", "local.personal.preview", installed.PackageHash, "acp")
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := a.PreviewInstallationPage(job.RequestID, "overview", "acp")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Page.(pages.Page).Title != "undefined" {
+		t.Fatalf("preview read installed KV: %+v", result.Page)
+	}
+	stored, ok := kv.Get("count")
+	if !ok || string(stored) != "99" {
+		t.Fatalf("installed KV changed: %s, %v", stored, ok)
+	}
+}
+
 func nearApprovalExamplePackage(t *testing.T) *plugin.Package {
 	t.Helper()
 	root := filepath.Join("..", "plugin", "testdata", "examples", "near-approval")

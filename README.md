@@ -41,9 +41,11 @@ EVM 发送和 Solana 金库的创建、发送都还没有接入。
   works once the repository is public and both tags are pushed.
 
 What the slice deliberately does **not** do: no mnemonic/HD wallet, no Solana
-transaction signing, no Phoenix/Hyperliquid, no Chain Signatures, no mainnet
-Intents without the user's explicit consent, no loosening of the plugin
-sandbox, and no auto-approval. The Touch ID prompt is a system check, **not**
+transaction signing, no Hyperliquid Exchange signing, orders, withdrawals or
+API wallets, no Chain Signatures, no wet/mainnet Intents execution without the
+user's explicit consent, no loosening of the plugin sandbox, and no
+auto-approval. Generated apps can use allowlisted read-only Hyperliquid Info
+calls and signature-verified NEAR Intents dry quotes/status. The Touch ID prompt is a system check, **not**
 the Passkey wallet: that is a separate WebAuthn credential. Its EVM smart
 account is shown and watched but not yet used to send (that needs a bundler).
 Its Solana address is the LazorKit v1 vault derived from the same P-256 key;

@@ -51,16 +51,61 @@ const quoteLifetime = 30 * time.Minute
 type Client struct {
 	baseURL string
 	http    *http.Client
+	now     func() time.Time
+	key     string
 }
 
 // New returns a client for the public 1Click API.
 func New() *Client { return NewAt(DefaultBaseURL) }
 
 // NewAt returns a client for another 1Click-compatible endpoint, as tests
-// use.
+// use. Alternate endpoints still have to use the production signing key.
 func NewAt(baseURL string) *Client {
+	return newClient(baseURL, time.Now, productionManagerPublicKey)
+}
+
+// Option supplies deterministic verifier configuration for integration tests.
+// Verification is always enabled; no option can skip signature or freshness
+// checks.
+type Option func(*Client)
+
+// WithClock sets the clock used for freshness checks and default deadlines.
+// It is intended for deterministic tests.
+func WithClock(now func() time.Time) Option {
+	return func(c *Client) {
+		if now != nil {
+			c.now = now
+		}
+	}
+}
+
+// WithVerifierKey sets the Ed25519 manager public key. It is intended for
+// signed integration fixtures; production callers should use New or NewAt.
+func WithVerifierKey(publicKey string) Option {
+	return func(c *Client) {
+		if publicKey != "" {
+			c.key = publicKey
+		}
+	}
+}
+
+// NewAtWithOptions returns a client with explicit verifier configuration for
+// integration tests. Omitting options is identical to NewAt.
+func NewAtWithOptions(baseURL string, options ...Option) *Client {
+	c := NewAt(baseURL)
+	for _, option := range options {
+		if option != nil {
+			option(c)
+		}
+	}
+	return c
+}
+
+func newClient(baseURL string, now func() time.Time, publicKey string) *Client {
 	return &Client{
 		baseURL: strings.TrimRight(baseURL, "/"),
+		now:     now,
+		key:     publicKey,
 		http: &http.Client{
 			Timeout: clientTimeout,
 			// A redirect would replay the quote, including recipient and
@@ -75,45 +120,47 @@ func NewAt(baseURL string) *Client {
 
 // Token is one asset 1Click can swap.
 type Token struct {
-	AssetID    string
-	Symbol     string
-	Blockchain string
-	Decimals   int
-	Price      float64
-	IconURL    string
+	AssetID    string  `json:"assetId"`
+	Symbol     string  `json:"symbol"`
+	Blockchain string  `json:"blockchain"`
+	Decimals   int     `json:"decimals"`
+	Price      float64 `json:"price"`
+	IconURL    string  `json:"icon"`
 }
 
 // QuoteRequest is one swap the user is asking about. Amount is in the
 // origin asset's smallest unit.
 type QuoteRequest struct {
-	OriginAsset      string
-	DestinationAsset string
-	Amount           string
-	Recipient        string
-	RefundTo         string
-	SlippageBps      int
+	OriginAsset      string `json:"originAsset"`
+	DestinationAsset string `json:"destinationAsset"`
+	Amount           string `json:"amount"`
+	Recipient        string `json:"recipient"`
+	RefundTo         string `json:"refundTo"`
+	SlippageBps      int    `json:"slippageBps"`
 	// Deadline is when a deposit would stop being accepted. Zero means the
 	// default, quoteLifetime from now.
-	Deadline time.Time
+	Deadline time.Time `json:"deadline"`
 }
 
 // Quote is 1Click's answer, in the shell's own shape.
 type Quote struct {
-	DepositAddress string
-	DepositMemo    string
-	AmountIn       string
-	AmountInText   string
-	AmountInUSD    string
-	MinAmountIn    string
-	AmountOut      string
-	AmountOutText  string
-	AmountOutUSD   string
-	MinAmountOut   string
-	Deadline       time.Time
-	TimeEstimate   int
-	CorrelationID  string
-	Signature      string
-	Request        QuoteRequest
+	DepositAddress string       `json:"depositAddress,omitempty"`
+	DepositMemo    string       `json:"depositMemo,omitempty"`
+	AmountIn       string       `json:"amountIn"`
+	AmountInText   string       `json:"amountInFormatted"`
+	AmountInUSD    string       `json:"amountInUsd"`
+	MinAmountIn    string       `json:"minAmountIn"`
+	AmountOut      string       `json:"amountOut"`
+	AmountOutText  string       `json:"amountOutFormatted"`
+	AmountOutUSD   string       `json:"amountOutUsd"`
+	MinAmountOut   string       `json:"minAmountOut"`
+	Deadline       time.Time    `json:"deadline"`
+	TimeEstimate   int          `json:"timeEstimate"`
+	CorrelationID  string       `json:"correlationId"`
+	Signature      string       `json:"signature"`
+	Timestamp      time.Time    `json:"timestamp"`
+	Verified       bool         `json:"verified"`
+	Request        QuoteRequest `json:"quoteRequest"`
 }
 
 // wireToken is the part of a token on the wire this client reads. 1Click
@@ -172,14 +219,17 @@ func (c *Client) Quote(ctx context.Context, req QuoteRequest) (Quote, error) {
 	case req.RefundTo == "":
 		return Quote{}, errors.New("the refund address is required")
 	}
-	if req.SlippageBps <= 0 {
+	if req.SlippageBps < 0 {
+		return Quote{}, errors.New("the slippage tolerance must not be negative")
+	}
+	if req.SlippageBps == 0 {
 		req.SlippageBps = DefaultSlippageBps
 	}
 	if req.SlippageBps > 1000 {
 		return Quote{}, errors.New("the slippage tolerance must be at most 10%")
 	}
 	if req.Deadline.IsZero() {
-		req.Deadline = time.Now().Add(quoteLifetime).UTC()
+		req.Deadline = c.now().Add(quoteLifetime).UTC()
 	}
 
 	// Dry is always true here. A wet quote would issue a deposit address,
@@ -202,7 +252,7 @@ func (c *Client) Quote(ctx context.Context, req QuoteRequest) (Quote, error) {
 	if err := c.post(ctx, "/v0/quote", body, &raw); err != nil {
 		return Quote{}, err
 	}
-	return decodeQuote(raw, req)
+	return decodeQuote(raw, req, c.key, c.now())
 }
 
 // acceptToken drops a token the shell must not price. A missing, null,
@@ -264,8 +314,11 @@ type wireQuote struct {
 // decodeQuote fails closed. A missing amount, an empty correlation id, a
 // null quote, or a deposit address on a dry answer is an error, not a blank
 // quote the approval window can show.
-func decodeQuote(data []byte, req QuoteRequest) (Quote, error) {
+func decodeQuote(data []byte, req QuoteRequest, publicKey string, now time.Time) (Quote, error) {
 	data = bytes.TrimSpace(data)
+	if _, err := verifyQuoteResponse(data, publicKey, now); err != nil {
+		return Quote{}, err
+	}
 	if len(data) == 0 || string(data) == "null" {
 		return Quote{}, errors.New("1Click: the quote is missing")
 	}
@@ -307,6 +360,7 @@ func decodeQuote(data []byte, req QuoteRequest) (Quote, error) {
 	if err := json.Unmarshal(qraw, &parsed); err != nil {
 		return Quote{}, errors.New("1Click: the quote could not be read")
 	}
+	timestamp, _ := time.Parse(time.RFC3339Nano, mustJSONString(top["timestamp"]))
 	out := Quote{
 		DepositMemo:   parsed.DepositMemo,
 		AmountIn:      amountIn,
@@ -319,6 +373,8 @@ func decodeQuote(data []byte, req QuoteRequest) (Quote, error) {
 		MinAmountOut:  minAmountOut,
 		TimeEstimate:  int(parsed.TimeEstimate),
 		CorrelationID: correlationID,
+		Timestamp:     timestamp,
+		Verified:      true,
 		Request:       req,
 	}
 	if sig, ok := jsonString(top["signature"]); ok {
@@ -328,6 +384,11 @@ func decodeQuote(data []byte, req QuoteRequest) (Quote, error) {
 		out.Deadline = *parsed.Deadline
 	}
 	return out, nil
+}
+
+func mustJSONString(raw json.RawMessage) string {
+	value, _ := jsonString(raw)
+	return value
 }
 
 func positiveField(fields map[string]json.RawMessage, key string) (string, bool) {
@@ -416,12 +477,14 @@ func (c *Client) post(ctx context.Context, path string, body, out any) error {
 		return err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	return c.do(req, out)
+	// The live quote route currently returns 201 Created even for dry quotes.
+	// Keep all other success statuses rejected and still verify the signed body.
+	return c.do(req, out, http.StatusCreated)
 }
 
 // do sends the request, keeps 1Click's own error message, and decodes a
 // successful answer into out.
-func (c *Client) do(req *http.Request, out any) error {
+func (c *Client) do(req *http.Request, out any, additionalSuccess ...int) error {
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("User-Agent", "lintel")
 	res, err := c.http.Do(req)
@@ -433,9 +496,13 @@ func (c *Client) do(req *http.Request, out any) error {
 	if err != nil {
 		return err
 	}
-	// Only 200 is a quote or a token list. 3xx is the redirect we refused
-	// to follow; other 2xx bodies are not this API's success shape.
-	if res.StatusCode != http.StatusOK {
+	// 3xx is the redirect we refused to follow; arbitrary 2xx bodies are not
+	// this API's success shape. A caller may name one observed route exception.
+	success := res.StatusCode == http.StatusOK
+	for _, status := range additionalSuccess {
+		success = success || res.StatusCode == status
+	}
+	if !success {
 		return apiError(res.StatusCode, data)
 	}
 	if err := json.Unmarshal(data, out); err != nil {

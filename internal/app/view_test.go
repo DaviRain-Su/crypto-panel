@@ -10,7 +10,9 @@ import (
 
 	"github.com/davirain-su/lintel/internal/chain"
 	"github.com/davirain-su/lintel/internal/chains"
+	"github.com/davirain-su/lintel/internal/hyperliquid"
 	"github.com/davirain-su/lintel/internal/i18n"
+	"github.com/davirain-su/lintel/internal/intents"
 	"github.com/davirain-su/lintel/internal/plugin"
 	"github.com/davirain-su/lintel/internal/wallet"
 )
@@ -30,6 +32,8 @@ func newTestApp(t *testing.T) *App {
 		pluginSecrets: memStore{},
 	}
 	a.newReader()
+	a.intentsClient = intents.New()
+	a.hyperliquidClient = hyperliquid.New()
 	a.initPlugins(t.TempDir())
 	a.keyring = wallet.NewKeyring(memStore{}, nil)
 	a.nearKeyring = wallet.NewNearKeyring(memStore{}, nil)

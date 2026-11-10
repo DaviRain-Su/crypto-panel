@@ -1153,7 +1153,7 @@ var messages = map[Key]map[string]string{
 	CodingValidated:           {English: "%s v%s passed validation. Preview the frozen candidate, then review its permissions before installation.", Chinese: "%s v%s 已通过校验，可预览冻结候选，再于安装前审阅权限"},
 	CodingPreview:             {English: "Preview", Chinese: "预览"},
 	CodingPreviewTitle:        {English: "Candidate preview", Chinese: "候选应用预览"},
-	CodingPreviewNotice:       {English: "This is a frozen pending candidate. Signing is disabled. Previewing does not install or approve it.", Chinese: "这是冻结的待确认候选，签名已禁用。预览不会安装或批准该应用。"},
+	CodingPreviewNotice:       {English: "Frozen pending candidate: signing is disabled and storage is ephemeral. Declared network methods may still run. Preview does not install or approve the app.", Chinese: "这是冻结的待确认候选：签名禁用，存储为临时状态；声明的网络方法仍可能执行。预览不会安装或批准该应用。"},
 	CodingPreviewBack:         {English: "Back to creator", Chinese: "返回创建"},
 	CodingCanceling:           {English: "Canceling…", Chinese: "正在取消…"},
 	CodingWindowTitle:         {English: "Coding tool permission", Chinese: "编码工具许可"},

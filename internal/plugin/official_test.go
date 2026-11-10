@@ -30,7 +30,7 @@ func TestEnsureOfficialInstallsTheTwoExamples(t *testing.T) {
 	for _, inst := range list {
 		got[inst.Manifest.ID] = inst
 	}
-	for _, id := range officialExampleIDs {
+	for _, id := range firstLaunchExampleIDs {
 		inst, ok := got[id]
 		if !ok {
 			t.Fatalf("missing %s in %+v", id, list)
@@ -53,6 +53,26 @@ func TestEnsureOfficialInstallsTheTwoExamples(t *testing.T) {
 	}
 	assertSameFiles(t, gas.Dir, filepath.Join(examplesDir, "gas"))
 	assertSameFiles(t, fear.Dir, filepath.Join(examplesDir, "fear-greed"))
+}
+
+func TestAuthoringExamplesAreEmbeddedButNotAutoInstalled(t *testing.T) {
+	store := NewStore(filepath.Join(t.TempDir(), "plugins"), nil)
+	if err := store.EnsureOfficial(); err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []string{"com.example.hyperliquid", "com.example.intents"} {
+		pkg, hash, err := OfficialPackage(id)
+		if err != nil || hash == "" {
+			t.Fatalf("OfficialPackage(%s): hash=%q err=%v", id, hash, err)
+		}
+		manifest, err := ParseManifest(pkg.Plugin)
+		if err != nil || manifest.Permissions.Sign || len(manifest.Permissions.Network) != 1 {
+			t.Fatalf("%s manifest=%+v err=%v", id, manifest, err)
+		}
+		if _, err := store.Get(id); !errors.Is(err, ErrNotInstalled) {
+			t.Fatalf("authoring example %s was auto-installed: %v", id, err)
+		}
+	}
 }
 
 func TestSeededGasRunsWithItsManifest(t *testing.T) {

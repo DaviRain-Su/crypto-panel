@@ -393,7 +393,7 @@ func (a *App) startGeneration() {
 	profile, _ := a.codingProfile()
 	catalog, _ := json.Marshal(agent.Catalog(true))
 	var examples []plugin.Package
-	for _, id := range []string{"com.example.gas", "com.example.feargreed"} {
+	for _, id := range []string{"com.example.gas", "com.example.feargreed", "com.example.hyperliquid", "com.example.intents"} {
 		if pkg, _, err := plugin.OfficialPackage(id); err == nil {
 			examples = append(examples, pkg)
 		}

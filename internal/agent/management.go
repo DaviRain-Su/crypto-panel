@@ -33,6 +33,11 @@ type PageResult struct {
 	Page        any
 	PackageHash string
 	EvaluatedAt time.Time
+	// Candidate previews explicitly report their remaining side effects.
+	// Empty fields mean this is an ordinary installed-app refresh.
+	Signing string
+	Storage string
+	Network string
 }
 
 func (s *Server) managed(w http.ResponseWriter) (Management, *plugin.Manager) {

@@ -35,7 +35,7 @@ func (d *managedData) PreviewInstallationPage(requestID, page, via string) (Page
 	if err != nil {
 		return PageResult{}, err
 	}
-	return PageResult{Page: d.pages[candidate.Manifest.ID], PackageHash: hash, EvaluatedAt: time.Now().UTC()}, nil
+	return PageResult{Page: d.pages[candidate.Manifest.ID], PackageHash: hash, EvaluatedAt: time.Now().UTC(), Signing: "disabled", Storage: "ephemeral", Network: "declared methods allowed"}, nil
 }
 
 type credentialMemory map[string][]byte
@@ -163,6 +163,15 @@ func TestPreviewRouteReturnsOnlyOwnedPendingPage(t *testing.T) {
 		}
 		if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "Pending preview") || rec.Header().Get("X-Lintel-Package-Hash") != job.PackageHash {
 			t.Fatalf("preview: %d %s", rec.Code, rec.Body)
+		}
+		for header, want := range map[string]string{
+			"X-Lintel-Preview-Signing": "disabled",
+			"X-Lintel-Preview-Storage": "ephemeral",
+			"X-Lintel-Preview-Network": "declared methods allowed",
+		} {
+			if got := rec.Header().Get(header); got != want {
+				t.Errorf("%s = %q, want %q", header, got, want)
+			}
 		}
 	}
 	manifest := json.RawMessage(`{"id":"local.personal.acp-preview","name":"ACP preview","version":"1.0.0","main":"index.js","navigation":[{"title":"Overview","page":"overview"}]}`)

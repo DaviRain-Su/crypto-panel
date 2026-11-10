@@ -1,0 +1,16 @@
+{
+  "id": "com.example.hyperliquid",
+  "name": "Hyperliquid markets",
+  "version": "1.0.0",
+  "main": "index.js",
+  "description": "Read-only Hyperliquid mids and BTC order book through the shell.",
+  "author": "Lintel",
+  "permissions": {
+    "network": ["api.hyperliquid.xyz"],
+    "chains": [],
+    "read": [],
+    "sign": false,
+    "storageKb": 0
+  },
+  "navigation": [{"title": "Markets", "page": "overview"}]
+}

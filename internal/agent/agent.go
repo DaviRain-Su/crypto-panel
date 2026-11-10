@@ -356,6 +356,15 @@ func setRefreshMeta(w http.ResponseWriter, result PageResult) {
 		w.Header().Set("X-Crypto-Panel-Evaluated-At", formatted)
 		w.Header().Set("X-Lintel-Evaluated-At", formatted)
 	}
+	if result.Signing != "" {
+		w.Header().Set("X-Lintel-Preview-Signing", result.Signing)
+	}
+	if result.Storage != "" {
+		w.Header().Set("X-Lintel-Preview-Storage", result.Storage)
+	}
+	if result.Network != "" {
+		w.Header().Set("X-Lintel-Preview-Network", result.Network)
+	}
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {

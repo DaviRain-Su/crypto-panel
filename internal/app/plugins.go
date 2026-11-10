@@ -16,6 +16,7 @@ import (
 	"github.com/davirain-su/lintel/internal/chain"
 	"github.com/davirain-su/lintel/internal/chains"
 	"github.com/davirain-su/lintel/internal/i18n"
+	"github.com/davirain-su/lintel/internal/intents"
 	"github.com/davirain-su/lintel/internal/pages"
 	"github.com/davirain-su/lintel/internal/plugin"
 	"github.com/davirain-su/lintel/internal/wallet"
@@ -860,6 +861,69 @@ func (a *App) pluginHostDeps(m plugin.Manifest) plugin.HostDeps {
 			return reader.RPC(ctx, method, params)
 		},
 		Accounts: func() []plugin.Account { return accounts },
+		HyperliquidInfo: func(testnet bool, operation string, params map[string]any) (json.RawMessage, error) {
+			if a.hyperliquidClient == nil {
+				return nil, errors.New("hyperliquid is not configured")
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+			if testnet {
+				return a.hyperliquidClient.InfoAt(ctx, "https://api.hyperliquid-testnet.xyz", operation, params)
+			}
+			return a.hyperliquidClient.Info(ctx, operation, params)
+		},
+		IntentsTokens: func() (any, error) {
+			if a.intentsClient == nil {
+				return nil, errors.New("NEAR Intents is not configured")
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+			return a.intentsClient.Tokens(ctx)
+		},
+		IntentsDryQuote: func(request map[string]any) (any, error) {
+			if a.intentsClient == nil {
+				return nil, errors.New("NEAR Intents is not configured")
+			}
+			data, err := json.Marshal(request)
+			if err != nil {
+				return nil, err
+			}
+			var input struct {
+				OriginAsset      string `json:"originAsset"`
+				DestinationAsset string `json:"destinationAsset"`
+				Amount           string `json:"amount"`
+				Recipient        string `json:"recipient"`
+				RefundTo         string `json:"refundTo"`
+				SlippageBps      int    `json:"slippageBps,omitempty"`
+				Deadline         string `json:"deadline,omitempty"`
+			}
+			if err := plugin.DecodeJSON(data, &input); err != nil {
+				return nil, errors.New("intents.dryQuote has invalid or unknown fields")
+			}
+			quoteRequest := intents.QuoteRequest{
+				OriginAsset: input.OriginAsset, DestinationAsset: input.DestinationAsset,
+				Amount: input.Amount, Recipient: input.Recipient, RefundTo: input.RefundTo,
+				SlippageBps: input.SlippageBps,
+			}
+			if input.Deadline != "" {
+				deadline, err := time.Parse(time.RFC3339, input.Deadline)
+				if err != nil {
+					return nil, errors.New("intents.dryQuote deadline must be RFC3339")
+				}
+				quoteRequest.Deadline = deadline
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+			return a.intentsClient.Quote(ctx, quoteRequest)
+		},
+		IntentsStatus: func(address, memo string) (any, error) {
+			if a.intentsClient == nil {
+				return nil, errors.New("NEAR Intents is not configured")
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+			return a.intentsClient.Status(ctx, address, memo)
+		},
 		Sign: func(req plugin.SignRequest) (plugin.SignResult, error) {
 			return a.signForPlugin(m, readers, req)
 		},

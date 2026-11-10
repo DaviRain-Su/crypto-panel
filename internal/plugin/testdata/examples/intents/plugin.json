@@ -1,0 +1,16 @@
+{
+  "id": "com.example.intents",
+  "name": "NEAR Intents dry quote",
+  "version": "1.0.0",
+  "main": "index.js",
+  "description": "Inspect supported assets and request a signature-verified dry quote.",
+  "author": "Lintel",
+  "permissions": {
+    "network": ["1click.chaindefuser.com"],
+    "chains": [],
+    "read": [],
+    "sign": false,
+    "storageKb": 0
+  },
+  "navigation": [{"title": "Assets", "page": "overview"}]
+}
