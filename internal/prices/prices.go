@@ -35,6 +35,9 @@ const DefaultTTL = 60 * time.Second
 var ids = map[string]string{
 	"ETH":   "ethereum",
 	"WETH":  "weth",
+	"BNB":   "binancecoin",
+	"POL":   "polygon-ecosystem-token",
+	"AVAX":  "avalanche-2",
 	"SOL":   "solana",
 	"NEAR":  "near",
 	"USDC":  "usd-coin",
@@ -133,11 +136,15 @@ func (c *Client) Prices(ctx context.Context, symbols []string) (map[string]float
 // Unlike Prices, it does not use ticker symbols, so distinct assets that
 // share a symbol cannot borrow each other's value.
 func (c *Client) PricesByID(ctx context.Context, assetIDs []string) (map[string]float64, error) {
+	knownIDs := make(map[string]bool, len(ids))
+	for _, id := range ids {
+		knownIDs[id] = true
+	}
 	unique := make(map[string]bool)
 	var wanted []string
 	for _, id := range assetIDs {
 		id = strings.TrimSpace(id)
-		if id != "" && !unique[id] {
+		if knownIDs[id] && !unique[id] {
 			unique[id] = true
 			wanted = append(wanted, id)
 		}

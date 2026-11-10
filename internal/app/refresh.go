@@ -142,20 +142,6 @@ func (a *App) fetch(gen int, jobs []familyFetch) {
 	// Read the main-thread state before the goroutine starts.
 	source := a.priceSource
 	hideFiat := a.settings.HideFiat
-	// The vault check is best-effort: it rides along with the refresh and
-	// leaves the state unknown when the reader cannot answer. It belongs to
-	// the Solana family's reader, when one is in this refresh.
-	var vaultAddr string
-	var exister accountExister
-	if pk := a.settings.Passkey; pk != nil && pk.SolanaAddress != "" {
-		vaultAddr = pk.SolanaAddress
-		for _, job := range jobs {
-			if ex, ok := job.reader.(accountExister); ok {
-				exister = ex
-				break
-			}
-		}
-	}
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 		defer cancel()
@@ -190,6 +176,15 @@ func (a *App) fetch(gen int, jobs []familyFetch) {
 		}
 		wg.Wait()
 		close(results)
+		var firstErr error
+		for rows := range results {
+			for _, row := range rows {
+				if row.err != "" && firstErr == nil {
+					firstErr = errors.New(row.err)
+				}
+			}
+			snap.accounts = append(snap.accounts, rows...)
+		}
 		order := make(map[string]int, len(jobs))
 		for i, job := range jobs {
 			order[job.network.ID] = i
@@ -201,15 +196,6 @@ func (a *App) fetch(gen int, jobs []familyFetch) {
 			}
 			return left.addr < right.addr
 		})
-		var firstErr error
-		for rows := range results {
-			for _, row := range rows {
-				if row.err != "" && firstErr == nil {
-					firstErr = errors.New(row.err)
-				}
-			}
-			snap.accounts = append(snap.accounts, rows...)
-		}
 		if exister != nil && vaultAddr != "" {
 			exists, err := exister.AccountExists(ctx, vaultAddr)
 			switch {
@@ -388,7 +374,7 @@ func (a *App) accountSnapshot(addr string, networkID ...string) *accountSnapshot
 				gotAddr = normalized
 			}
 		}
-		if gotAddr == wantAddr && snap.network.ID == wantNetwork {
+		if gotAddr == wantAddr && (snap.network.ID == wantNetwork || snap.network.ID == "") {
 			return snap
 		}
 	}

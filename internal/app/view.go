@@ -498,7 +498,10 @@ func (a *App) watchedAll() []watchedAccount {
 }
 
 func (a *App) headline() string {
-	n := len(a.watchedAll())
+	n := 0
+	for _, family := range chains.Families() {
+		n += len(a.settings.WatchedOf(family))
+	}
 	var count string
 	switch n {
 	case 0:

@@ -182,9 +182,7 @@ func (refreshReader) RPC(context.Context, string, any) (json.RawMessage, error) 
 func TestFetchKeepsEVMNetworksSeparate(t *testing.T) {
 	a := newTestApp(t)
 	done := make(chan struct{})
-	oldRunOnMain := appRunOnMain
-	appRunOnMain = func(fn func()) { fn() }
-	t.Cleanup(func() { appRunOnMain = oldRunOnMain })
+	a.runOnMain = func(fn func()) { fn(); close(done) }
 	jobs := []familyFetch{
 		{network: chains.Ethereum, addrs: []string{strings.ToUpper(viewAddr)}, reader: refreshReader{account: func(context.Context, string) (chain.AccountBalances, error) {
 			return chain.AccountBalances{Native: big.NewInt(1)}, nil
@@ -202,10 +200,10 @@ func TestFetchKeepsEVMNetworksSeparate(t *testing.T) {
 	if len(a.snap.accounts) != 2 || a.snap.accounts[0].network.ID != chains.Ethereum.ID || a.snap.accounts[1].network.ID != chains.BSC.ID {
 		t.Fatalf("snapshots = %+v, want stable Ethereum then BSC rows", a.snap.accounts)
 	}
-	if got := a.accountSnapshot(chains.Ethereum.ID, viewAddr); got == nil || got.native.Cmp(big.NewInt(1)) != 0 {
+	if got := a.accountSnapshot(viewAddr, chains.Ethereum.ID); got == nil || got.native.Cmp(big.NewInt(1)) != 0 {
 		t.Fatalf("Ethereum snapshot = %+v", got)
 	}
-	if got := a.accountSnapshot(chains.BSC.ID, viewAddr); got == nil || got.err == "" {
+	if got := a.accountSnapshot(viewAddr, chains.BSC.ID); got == nil || got.err == "" {
 		t.Fatalf("BSC error snapshot = %+v", got)
 	}
 	if a.lastErr == "" || !a.totalsPartial() {
@@ -216,9 +214,7 @@ func TestFetchKeepsEVMNetworksSeparate(t *testing.T) {
 func TestFetchBoundsConcurrentJobs(t *testing.T) {
 	a := newTestApp(t)
 	done := make(chan struct{})
-	oldRunOnMain := appRunOnMain
-	appRunOnMain = func(fn func()) { fn() }
-	t.Cleanup(func() { appRunOnMain = oldRunOnMain })
+	a.runOnMain = func(fn func()) { fn(); close(done) }
 	var active atomic.Int32
 	var maximum atomic.Int32
 	var jobs []familyFetch
@@ -287,7 +283,7 @@ func TestCustomRPCStaysOnSelectedEVMNetwork(t *testing.T) {
 	}
 }
 
-func ExampleAccountSnapshot_networkIdentity() {
+func Example_accountSnapshotNetworkIdentity() {
 	first := accountSnapshot{addr: viewAddr, network: chains.Ethereum}
 	second := accountSnapshot{addr: viewAddr, network: chains.Base}
 	fmt.Println(first.network.Symbol, second.network.Symbol, first.network.ID != second.network.ID)
