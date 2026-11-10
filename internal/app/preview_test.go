@@ -58,6 +58,55 @@ func TestPreviewPendingCandidateDoesNotApproveOrInstall(t *testing.T) {
 	}
 }
 
+func nearApprovalExamplePackage(t *testing.T) *plugin.Package {
+	t.Helper()
+	root := filepath.Join("..", "plugin", "testdata", "examples", "near-approval")
+	manifest, err := os.ReadFile(filepath.Join(root, "plugin.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	source, err := os.ReadFile(filepath.Join(root, "index.js"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var parsed plugin.Manifest
+	if err := json.Unmarshal(manifest, &parsed); err != nil {
+		t.Fatal(err)
+	}
+	parsed.ID = "local.personal.near-approval"
+	manifest, err = json.Marshal(parsed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return &plugin.Package{Plugin: manifest, Main: string(source)}
+}
+
+func TestPreviewNearApprovalExampleRefusesSigning(t *testing.T) {
+	a := newTestApp(t)
+	job, err := a.pluginManager.Propose(plugin.Source{Kind: "inline", Package: nearApprovalExamplePackage(t)}, "install", "", "", "acp")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := a.PreviewInstallationPage(job.RequestID, "overview", "acp"); err != nil {
+		t.Fatalf("safe overview preview: %v", err)
+	}
+	result, err := a.PreviewInstallationPage(job.RequestID, "transfer", "acp")
+	if err != nil {
+		t.Fatalf("the example should render its refusal: %v", err)
+	}
+	page, ok := result.Page.(pages.Page)
+	if !ok || page.Title != "Request not signed" {
+		t.Fatalf("preview page = %+v", result.Page)
+	}
+	current, _ := a.pluginManager.GetInstallation(job.RequestID)
+	if current.Status != "pending" {
+		t.Fatalf("preview changed status to %s", current.Status)
+	}
+	if _, err := a.plugins.Get(job.PluginID); !errors.Is(err, plugin.ErrNotInstalled) {
+		t.Fatalf("preview installed the example: %v", err)
+	}
+}
+
 func TestPreviewPendingCandidateRefusesSigning(t *testing.T) {
 	for _, tc := range []struct{ name, call string }{
 		{"evm", `host.requestSign({ chainId: "eip155:1", to: "0x2c7536e3605d9c16a7a3d7b1898e529396a65c23", value: "1" });`},

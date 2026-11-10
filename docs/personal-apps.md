@@ -13,7 +13,7 @@ Lintel 的个人应用仍是沙箱 JS 与原生页面数据。编码 agent 负�
 7. 安装后若有设置项，先填写 API key 等字段并保存，壳随后验证首页；也可点击“验证首页”跳过可选设置。秘密字段只显示是否配置；留空保存保留旧秘密，使用清除按钮才删除。
 8. 没有设置项时，安装后自动验证首页。应用设置和启动器显示等待设置、验证中、通过或失败；失败不会移除已安装应用，可以调整设置或修改应用后重试。验证使用禁止 EVM / NEAR 签名的独立 runtime，检查页面执行和结构；通过后仍需打开应用核对数据。
 
-预设执行本机 `claude-code-acp` 和 `codex-acp`，不会自动下载或执行 npx / uvx 安装。Claude 适配器的当前上游已迁至 [agentclientprotocol/claude-agent-acp](https://github.com/agentclientprotocol/claude-agent-acp)，新版命令为 `claude-agent-acp`；若使用新版，在 executable 中改为该命令。Codex 的普通 CLI / app-server 不是 ACP server，使用 [zed-industries/codex-acp](https://github.com/zed-industries/codex-acp) 或其他兼容适配器。
+预设执行本机 `claude-agent-acp` 和 `codex-acp`，不会自动下载或执行 npx / uvx 安装。Claude 适配器使用 [agentclientprotocol/claude-agent-acp](https://github.com/agentclientprotocol/claude-agent-acp)，旧 `claude-code-acp` 如仍安装也可在 executable 中明确填写，但握手成功不等于真实生成可用。Codex 的普通 CLI / app-server 不是 ACP server，使用 [zed-industries/codex-acp](https://github.com/zed-industries/codex-acp) 或其他兼容适配器。
 
 取消生成会取消 ACP prompt 并回收拥有的进程；取消、拒绝、连接断开、超时以及非成功 stopReason 都不会当成完成。生成文件位于数据目录的独立 agent-workspaces 中，任务结束、取消或完成交接后删除，启动时清扫上次留下的目录。不把 Local API token 交给 agent，不把应用设置、KV 或凭据复制到修改工作目录。
 

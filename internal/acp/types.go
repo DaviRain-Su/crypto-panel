@@ -19,6 +19,7 @@ const (
 	// 原生 UI 只会收到这些上限以内的配置字段，不能仅依赖总消息大小。
 	MaxConfigOptions       = 32
 	MaxConfigValues        = 128
+	MaxConfigWireValues    = 1024
 	MaxConfigGroups        = 32
 	MaxConfigIDBytes       = 128
 	MaxConfigNameRunes     = 256
@@ -208,7 +209,7 @@ func parseConfigOptions(raw json.RawMessage) ([]ConfigOption, error) {
 				return nil, ErrProtocol
 			}
 			var values []json.RawMessage
-			if len(wire.Options) == 0 || string(wire.Options) == "null" || json.Unmarshal(wire.Options, &values) != nil || len(values) > MaxConfigValues {
+			if len(wire.Options) == 0 || string(wire.Options) == "null" || json.Unmarshal(wire.Options, &values) != nil || len(values) > MaxConfigWireValues {
 				return nil, ErrProtocol
 			}
 			seenValues := make(map[string]bool)
@@ -242,8 +243,8 @@ func parseConfigOptions(raw json.RawMessage) ([]ConfigOption, error) {
 					}
 					group.Group, group.Name = header.Group, *header.Name
 				}
-				// 以整项累计选值，分组不能绕过渲染上限。
-				if len(entries) > MaxConfigValues-len(o.Options) {
+				// 以整项累计选值，分组不能绕过协议上限。
+				if len(entries) > MaxConfigWireValues-len(o.Options) {
 					return nil, ErrProtocol
 				}
 				for _, entry := range entries {

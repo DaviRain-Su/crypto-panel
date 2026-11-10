@@ -19,6 +19,34 @@ import (
 	"time"
 )
 
+func TestConfigOptionsAcceptALargeValidModelCatalog(t *testing.T) {
+	var values []map[string]string
+	for i := 0; i < 868; i++ {
+		values = append(values, map[string]string{"value": fmt.Sprintf("model-%d", i), "name": fmt.Sprintf("Model %d", i)})
+	}
+	raw, _ := json.Marshal([]any{map[string]any{"id": "model", "name": "Model", "type": "select", "currentValue": "model-867", "options": values}})
+	options, err := parseConfigOptions(raw)
+	if err != nil || len(options) != 1 || len(options[0].Options) != 868 || options[0].CurrentValue != "model-867" {
+		t.Fatalf("large model catalog: len=%d err=%v", len(options), err)
+	}
+}
+
+func TestConfigOptionsRejectTooManyOrDuplicateValues(t *testing.T) {
+	for _, count := range []int{2, MaxConfigWireValues + 1} {
+		values := make([]map[string]string, count)
+		for i := range values {
+			values[i] = map[string]string{"value": "duplicate", "name": "Duplicate"}
+			if count > 2 {
+				values[i]["value"] = fmt.Sprintf("model-%d", i)
+			}
+		}
+		raw, _ := json.Marshal([]any{map[string]any{"id": "model", "name": "Model", "type": "select", "currentValue": "duplicate", "options": values}})
+		if _, err := parseConfigOptions(raw); !errors.Is(err, ErrProtocol) {
+			t.Fatalf("%d values: %v", count, err)
+		}
+	}
+}
+
 // 假 peer 复用测试二进制，绝不启动真实 agent 或访问模型服务。
 func TestACPHelperProcess(t *testing.T) {
 	if os.Getenv("ACP_TEST_PEER") != "1" {

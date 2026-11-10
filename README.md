@@ -1,18 +1,22 @@
 # Lintel
 
-**A native desktop app for a multi-chain wallet and sandboxed apps. Keys stay in the OS keychain, and every signature goes through the shell's own approval.**
+**Describe an app to your computer's coding agent. Lintel turns the result into a native app you can preview, review and use, without giving the agent your wallet's approval power.**
 
-The window is the product: a sidebar of Portfolio, Wallet, Apps, Intents, DApp, and Settings. It is not a menu-bar widget and not a metrics-only dashboard. A wallet is a named container. Creating one prepares an EVM account, a NEAR account, and a Solana account together, and the network menu shows that wallet's account for the selected network. There is no mnemonic. Apps are sandboxed plugins (`plugin.json` + `index.js`); the shell draws native page blocks, and a plugin never supplies HTML. A local agent can read the portfolio, validate personal apps and propose installation over a token-protected loopback API. Installation still requires the user's native permission review.
+The Apps page is the product's center: a locally configured ACP agent creates an ordinary `plugin.json` + `index.js` package in a separate workspace. Lintel validates the package, renders its native pages in a signing-disabled preview, and installs it only after a separate native permission review. The same app can be revised later. Tool permission, installation permission and wallet approval are three different decisions.
 
-NEAR is the first chain it can truly sign on and connect to web apps: a native
+**中文简介**：你用自然语言告诉电脑里的 Agent 想要什么应用，Agent 自动生成应用文件，Lintel 负责校验、原生预览、权限审阅和持续修改。应用安装后由沙箱运行；预览禁止签名，安装和每一笔钱包交易都需要独立的人类批准。
+
+The window also includes a multi-chain portfolio, native wallet, NEAR Intents dry quotes, isolated DApp view and settings. Apps are sandboxed plugins: the shell draws native page blocks, never plugin-supplied HTML. Keys stay in the OS keychain. Creating a wallet prepares EVM, NEAR and Solana accounts; there is no mnemonic. An optional token-protected loopback API lets an external agent propose and manage personal apps without exposing an approval, signing or key endpoint.
+
+NEAR is the primary signing and DApp integration for the security demo: a native
 NEAR wallet whose ed25519 keys live in the OS keychain, a shell-drawn approval
-for every transfer, function call and access key, an isolated web view with an
-injected NEAR wallet bridge, and a dry-run NEAR Intents quote shown in the
-language of the result.
+for every transfer, function call and access key, standard injected-wallet
+discovery alongside the legacy bridge, and a dry-run NEAR Intents quote shown
+in the language of the result.
 
 Design: [`docs/design.md`](docs/design.md). License: [MIT](LICENSE).
 
-**中文简介**：门厅（Lintel）是一个 Go + MyGo 写成的原生桌面应用，不是菜单栏小组件，也不是只看指标的仪表盘。侧边栏是持仓、钱包、应用、Intents、DApp 和设置。插件是沙箱里的
+**实现说明**：门厅（Lintel）使用 Go + MyGo 构建原生桌面界面。侧边栏包括持仓、钱包、应用、Intents、DApp 和设置。插件是沙箱里的
 JavaScript，页面是数据，钥匙留在系统钥匙串，每一次签名都由壳自己解码并弹窗确认。
 钱包是一个有名字的多链容器：新建时同时准备 EVM、NEAR 和 Solana 账户。
 这次黑客松把 NEAR 接成第一条能真正签名、能连接网页应用的链：测试网 NEAR 钱包、
@@ -25,7 +29,7 @@ EVM 发送和 Solana 金库的创建、发送都还没有接入。
 
 ## The hackathon slice
 
-- **Tracks:** `security` (main narrative) and `defi` (secondary).
+- **Track:** `security` (AI Security & Defense).
 - **Baseline:** tag [`pre-hackathon`](https://github.com/DaviRain-Su/lintel/releases/tag/pre-hackathon)
   at `ccde05d` — the EVM + Solana read-only shell, the sandboxed plugin runtime
   and signed store, and the native EVM wallet with decoded approvals and a
@@ -168,7 +172,7 @@ A plugin with `permissions.sign` and a NEAR chain in `permissions.chains` can
 call `host.requestNearSign`:
 
 ```js
-const result = await host.requestNearSign({
+const result = host.requestNearSign({
   chainId: "near:testnet",
   receiver: "bob.testnet",
   description: "Pay for the report",
@@ -244,9 +248,10 @@ prices endpoint; the window's approximate USD values are not exposed by this API
 
 ### NEAR Intents (dry quote)
 
-The Intents page uses the official
-[1Click Go SDK](https://github.com/defuse-protocol/one-click-sdk-go) to list
-the supported assets and to ask for a **`dry: true`** quote. A dry quote
+The Intents page uses a bounded HTTP client for the 1Click API to list
+supported assets and ask for a **`dry: true`** quote. It tolerates additive
+response fields instead of depending on the official Go SDK's strict decoding.
+A dry quote
 prices the swap and issues no deposit address, so no funds can move and
 nothing is signed. The approval window shows the result in the user's
 language:
@@ -330,10 +335,22 @@ its public recovery file**:
   an unconfigured second key or an automatic recovery service.
 - A passkey's private key **cannot be exported** and re-imported like a mnemonic.
 
-## Try it: step by step
+## Try it: create an app with your computer's agent
 
-Requirements: macOS (the native UI and the system check), Go 1.27.3, and
-network access to the NEAR testnet RPC and 1Click.
+Requirements: macOS, Go 1.27.3, and a locally installed ACP-compatible coding agent that you have signed in to yourself. Lintel does not download an agent or handle its account login. The coding agent has its own operating-system permissions; only the generated app runs in Lintel's moejs sandbox.
+
+1. Run `go run .` and open **Settings → Coding Agent**. Choose your installed ACP adapter and **Test connection**. This checks the handshake and advertised configuration without sending a generation prompt.
+2. Open **Apps → Create app**, enter a short lowercase name and describe the tool. For example: `Create a NEAR briefing with a static seven-day activity sparkline and a preparation gauge. Label the numbers as sample data. No network, signing, secrets or storage.`
+3. Review each native coding-tool request. This permission applies only to the agent's work in its separate workspace; it does not install the app or approve a wallet transaction.
+4. When generation finishes, select **Preview**. Lintel executes the frozen candidate's declared pages with signing disabled. Preview does not install, approve or modify the candidate, although declared fetch and KV capabilities can still have side effects.
+5. Select **Review permissions** and approve or reject in the native window. Only approval installs the package. The app then appears in Apps, where its first-page run check, settings, logs and **Edit app** are available.
+6. To revise it, describe the change in **Edit app**. The same ID is kept, the version must increase, and the updated package needs a new native permission review.
+
+Pending candidates expire after 30 minutes and are canceled on restart. A model handshake, generated files or a successful preview is not an installation approval. See the [personal-app guide](docs/personal-apps.md) for the external-agent Skill and HTTP alternative.
+
+### Try the wallet and security boundary
+
+The following steps require network access to the NEAR Testnet RPC and, for Intents, 1Click.
 
 1. **Run the app.**
 
@@ -378,17 +395,18 @@ network access to the NEAR testnet RPC and 1Click.
 
    In the app: DApp → `http://localhost:8080` → **Open**. Press **Connect
    wallet** and approve the shell's connect dialog. Then send `0.01` NEAR to a
-   testnet account and approve the transaction. The page sees only the hash;
-   it never sees a key, and it cannot approve anything itself.
+   testnet account and approve the transaction. The page receives the full
+   execution outcome; it never sees a key, and it cannot approve anything itself.
 
 8. **See a function-call key limit refuse a request.** The limit is enforced
    by `neartx.Prepare` before the approval window and covered by
    `TestPrepareAppliesFunctionCallKeyLimits` and
    `TestSignNearTransactionAppliesTheKeyLimit`. To see it live, add a
    function-call key to a testnet account with `near-cli` (contract, method
-   list, allowance), import that key as the wallet's signing key, and try a
-   transfer or an unauthorized method. The shell refuses with a visible
-   error; the approval window never opens.
+   list, allowance), import that key as the wallet's signing key, and try the
+   fixed example's **Restricted key demo** or an unauthorized method. The shell
+   refuses with a visible error; the approval window never opens. A NEAR
+   function-call allowance is not a general cumulative agent-spending budget.
 
 9. **Ask for a NEAR Intents dry quote.** Intents → **Load supported assets**
    → pay with `wNEAR · NEAR`, receive `USDC · Ethereum`, amount `1`, a
@@ -411,12 +429,16 @@ network access to the NEAR testnet RPC and 1Click.
     signature covers exactly that transfer. Solana shows the vault address and
     does not send.
 
-11. **Ask a plugin for a NEAR signature (optional).** Install a plugin whose
-    manifest grants `sign` and a NEAR chain; its `host.requestNearSign` opens
-    the same approval window. Gas and Fear & Greed ship with the shell as
-    official examples of how apps are used; neither one asks to sign, and no
-    NEAR plugin is shipped. Their source is
-    `internal/plugin/testdata/examples`.
+11. **Try the fixed NEAR approval example.** In Apps → **Install from
+    folder…**, choose `internal/plugin/testdata/examples/near-approval`. The
+    permission review requests NEAR Testnet signing only. Replace the public
+    `RECEIVER` constant in its `index.js` with a testnet account you control
+    before installing. **Overview** has no signing side effect. **Request
+    0.001 NEAR** opens the native approval; rejecting shows **Request not
+    signed** and no transaction hash, while approving shows the real returned
+    hash. **Restricted key demo** requests a deliberately unauthorized method
+    for a function-call-key demonstration. This example does not automatically
+    detect malicious transactions; the user reviews the shell's decode.
 
 ## Tests
 
@@ -451,8 +473,8 @@ Other useful tests: `TestDappOrigin` (https / loopback only),
   runtime, one realm per plugin.
 - [go-ethereum](https://github.com/ethereum/go-ethereum) — EVM encoding,
   signing and RPC types.
-- [`github.com/defuse-protocol/one-click-sdk-go`](https://github.com/defuse-protocol/one-click-sdk-go)
-  — the official 1Click Go SDK (no transitive dependencies).
+- A small standard-library 1Click HTTP client with bounded, tolerant JSON
+  decoding. The official Go SDK is not linked.
 - `golang.org/x/crypto` (ed25519/base58 helpers), `purego` (LocalAuthentication
   without cgo), `golang.org/x/image` (the app icon).
 - No JavaScript build step: the DApp and passkey pages are static files.
@@ -468,8 +490,9 @@ Other useful tests: `TestDappOrigin` (https / loopback only),
   slice; only NEAR signs.
 - **Named NEAR accounts are imported, not created.** The app creates implicit
   accounts; a named account's key must be imported.
-- **The DApp bridge is a small custom `window.nearWallet`**, not the full
-  Wallet Selector package. A page must use the injected object.
+- **The DApp bridge supports standard injected-wallet discovery and a legacy
+  `window.nearWallet` object.** It is not a complete Wallet Selector package:
+  NEP-413, `verifyOwner` and offline signing are explicitly unsupported.
 - **NEAR Intents has no testnet.** This build only asks for `dry: true`
   quotes. No deposit address is issued and no funds move. A wet quote and a
   solver execution are deliberately not implemented; they would need the

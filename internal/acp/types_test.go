@@ -80,6 +80,18 @@ func TestConfigResourceBoundaries(t *testing.T) {
 	}
 }
 
+func TestConfigLargeCatalogStaysWithinWireBounds(t *testing.T) {
+	for _, count := range []int{129, MaxConfigWireValues} {
+		o := configOption()
+		o["options"] = configValues(0, count)
+		data, _ := json.Marshal([]any{o})
+		options, err := parseConfigOptions(data)
+		if err != nil || len(options) != 1 || len(options[0].Options) != count {
+			t.Fatalf("%d valid values: count=%d err=%v", count, len(options), err)
+		}
+	}
+}
+
 func TestConfigResourceOverflowRejected(t *testing.T) {
 	t.Run("33 options", func(t *testing.T) {
 		data, _ := json.Marshal(excessiveConfigOptions())
@@ -91,9 +103,9 @@ func TestConfigResourceOverflowRejected(t *testing.T) {
 		name   string
 		mutate func(map[string]any)
 	}{
-		{"129 values", func(o map[string]any) { o["options"] = configValues(0, 129) }},
-		{"129 values across groups", func(o map[string]any) {
-			o["options"] = []any{map[string]any{"group": "a", "name": "A", "options": configValues(0, 64)}, map[string]any{"group": "b", "name": "B", "options": configValues(64, 65)}}
+		{"1025 values", func(o map[string]any) { o["options"] = configValues(0, MaxConfigWireValues+1) }},
+		{"1025 values across groups", func(o map[string]any) {
+			o["options"] = []any{map[string]any{"group": "a", "name": "A", "options": configValues(0, MaxConfigWireValues-1)}, map[string]any{"group": "b", "name": "B", "options": configValues(MaxConfigWireValues-1, MaxConfigWireValues+1)}}
 		}},
 		{"33 groups", func(o map[string]any) { o["options"] = configGroups(33) }},
 		{"id bytes", func(o map[string]any) { o["id"] = strings.Repeat("i", 129) }},

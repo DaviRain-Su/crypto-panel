@@ -50,7 +50,7 @@ type candidatePreview struct {
 
 func (a *App) codingProfiles() []authoring.Profile {
 	return []authoring.Profile{
-		{ID: "claude", Name: "Claude Code (ACP)", Executable: "claude-code-acp"},
+		{ID: "claude", Name: "Claude Code (ACP)", Executable: "claude-agent-acp"},
 		{ID: "codex", Name: "Codex (ACP)", Executable: "codex-acp"},
 		{ID: "custom", Name: a.t(i18n.CreatorCustomAgent)},
 	}
@@ -158,6 +158,17 @@ func (a *App) saveCodingProfile() bool {
 	return true
 }
 
+func codingSelectChoices(option acp.ConfigOption) []acp.ConfigValue {
+	choices := append([]acp.ConfigValue{}, option.Options...)
+	for _, group := range option.Groups {
+		choices = append(choices, group.Options...)
+	}
+	if len(choices) > acp.MaxConfigValues {
+		choices = choices[:acp.MaxConfigValues]
+	}
+	return choices
+}
+
 func (a *App) codingSettings(c *ui.Context) {
 	a.initAuthoring()
 	p := a.pal
@@ -198,10 +209,7 @@ func (a *App) codingSettings(c *ui.Context) {
 			if option.Type != "select" {
 				continue
 			}
-			choices := append([]acp.ConfigValue{}, option.Options...)
-			for _, group := range option.Groups {
-				choices = append(choices, group.Options...)
-			}
+			choices := codingSelectChoices(option)
 			labels := []string{}
 			value, ok := a.coding.values[option.ID]
 			if !ok {

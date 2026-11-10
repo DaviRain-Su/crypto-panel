@@ -69,9 +69,19 @@ Claude 当前上游命令已更名为 `claude-agent-acp`。本机旧版仍可握
 
 发布前已同步远程 `main` 的图标更新 `1113d5c`。重新检查时，既有 `TestRebindSamePort` 返回 `use of closed network connection`，100 次重复复现 2 次；原本先关闭 listener 再停止 HTTP 服务，会使服务重复关闭已关闭的连接。调整为先停止 HTTP 服务，再关闭可能尚未登记的 listener，保留原有端口复用断言与回环绑定。修正后端口重绑定测试连续 100 次通过，全仓测试、App / Agent race 检查与生产 MyGo 构建重新执行并全部通过。
 
+## 2026-11-10 真实 Claude Agent 补充验收
+
+环境：darwin/arm64，Go 1.27.3，`@agentclientprotocol/claude-agent-acp 0.102.0` 与 Claude Code `2.1.322`。实时测试通过显式 `LINTEL_TEST_ACP_EXECUTABLE=/opt/homebrew/bin/claude-agent-acp` 启动；默认全量测试不会调用模型。
+
+首次真实握手发现新版 adapter 在 `session/new.configOptions` 中公布 868 个唯一模型值，旧解析上限 128 使整个会话以 `invalid protocol message` 失败。修复将协议解析上限与 UI 上限分离：wire 保留 4 MiB 总帧限制并允许最多 1024 个值，原生选择器最多绘制 128 个；重复值、畸形分组、1025 个值及字段上限仍拒绝。回归测试为 `TestConfigOptionsAcceptALargeModelCatalog`、`TestConfigOptionsRejectTooManyOrDuplicateValues`、`TestConfigLargeCatalogStaysWithinWireBounds` 和 `TestCodingSelectChoicesBoundsLargeModelCatalog`。默认 Claude executable 更新为 `claude-agent-acp`。
+
+`TestInstalledACPCreatesPreviewsAndInstalls` 已通过，耗时 215.00 秒（包总耗时 218.356 秒）。真实模型创建 `local.personal.near-briefing` 1.0.0，无签名、无网络、无存储、无设置和秘密；生成后未安装，预览保持 pending，经受控原生审阅回调后安装，首页运行和安装后验证通过。第二次真实模型调用将**同一 ID** 修改为 1.0.1，并在另一次独立审阅后安装更新。测试工具许可回调没有被调用，模型只写独立临时工作目录。
+
+这不是桌面鼠标验收：`Manager.Decide` 由原生审阅入口下的受控测试回调触发，没有人工点击窗口，也没有 NEAR 签名或广播。因此 A20 的 Claude 模型生成、生命周期与同 ID 更新路径已取得真实模型证据，A20 的第二种真实 agent 和真实窗口操作仍未完成；A24 外部 Skill 流程也未完成。
+
 ## 尚未覆盖
 
-- A20：两种真实适配器分别完成需求 → 文件 → 校验 → 原生确认 → 安装 → 查看 → 同 id 更新，记录版本与平台。
+- A20：Claude 的真实模型创建、预览、受控审阅、安装、运行和同 ID 更新已通过；第二种真实适配器，以及两种 agent 的真实桌面窗口操作仍未完成。
 - A24：外部 agent 仅凭 Skill、连接信息、catalog 和模板完成应用。
 - 其他操作系统的原生界面、进程清理与凭据服务。
 - 真实系统凭据服务的部分失败和机器断电恢复；当前由自动化故障注入覆盖。

@@ -2,9 +2,11 @@ package plugin
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -81,4 +83,58 @@ func TestExampleFearGreedCompiles(t *testing.T) {
 		t.Fatalf("NewRunner: %v", err)
 	}
 	r.Close()
+}
+
+func TestExampleNearApprovalOnlySignsOnRequest(t *testing.T) {
+	m, source := installExample(t, "near-approval")
+	if !m.Permissions.Sign || len(m.Permissions.Chains) != 1 || m.Permissions.Chains[0] != "near:testnet" || len(m.Permissions.Network) != 0 {
+		t.Fatalf("permissions = %+v", m.Permissions)
+	}
+	calls := 0
+	var got NearSignRequest
+	host := NewHost(HostDeps{Manifest: m, NearSign: func(req NearSignRequest) (SignResult, error) {
+		calls++
+		got = req
+		return SignResult{Hash: "real-testnet-hash"}, nil
+	}})
+	r, err := NewRunner(m, source, host, "en-US")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.Close()
+	overview, err := r.Page("overview")
+	if err != nil || calls != 0 || len(overview.Sections) == 0 {
+		t.Fatalf("overview = %+v, calls = %d, err = %v", overview, calls, err)
+	}
+	page, err := r.Page("transfer")
+	if err != nil || calls != 1 || page.Title != "Transaction submitted" {
+		t.Fatalf("transfer = %+v, calls = %d, err = %v", page, calls, err)
+	}
+	if got.ChainID != "near:testnet" || got.Receiver != "bob.testnet" || len(got.Actions) != 1 || got.Actions[0].Amount != "1000000000000000000000" {
+		t.Fatalf("request = %+v", got)
+	}
+	data, _ := json.Marshal(page)
+	if !strings.Contains(string(data), "real-testnet-hash") {
+		t.Fatalf("hash missing from %s", data)
+	}
+}
+
+func TestExampleNearApprovalShowsARejectionWithoutAHash(t *testing.T) {
+	m, source := installExample(t, "near-approval")
+	host := NewHost(HostDeps{Manifest: m, NearSign: func(NearSignRequest) (SignResult, error) {
+		return SignResult{}, errors.New("the user rejected the transaction")
+	}})
+	r, err := NewRunner(m, source, host, "en-US")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.Close()
+	page, err := r.Page("transfer")
+	if err != nil || page.Title != "Request not signed" {
+		t.Fatalf("page = %+v, err = %v", page, err)
+	}
+	data, _ := json.Marshal(page)
+	if !strings.Contains(string(data), "rejected") || strings.Contains(string(data), "transactionHash") {
+		t.Fatalf("rejection page = %s", data)
+	}
 }

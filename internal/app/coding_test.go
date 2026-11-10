@@ -15,6 +15,16 @@ import (
 	"github.com/davirain-su/lintel/internal/i18n"
 )
 
+func TestCodingSelectChoicesBoundsLargeModelCatalog(t *testing.T) {
+	values := make([]acp.ConfigValue, acp.MaxConfigWireValues)
+	for i := range values {
+		values[i] = acp.ConfigValue{Value: "model", Name: "Model"}
+	}
+	if got := len(codingSelectChoices(acp.ConfigOption{Options: values})); got != acp.MaxConfigValues {
+		t.Fatalf("rendered options = %d, want %d", got, acp.MaxConfigValues)
+	}
+}
+
 func TestCodingAgentSettingsAndCreateEntry(t *testing.T) {
 	a := newTestApp(t)
 	a.initAuthoring()
