@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -17,6 +16,7 @@ import (
 	"github.com/davirain-su/lintel/internal/acp"
 	"github.com/davirain-su/lintel/internal/agent"
 	"github.com/davirain-su/lintel/internal/agent/authoring"
+	"github.com/davirain-su/lintel/internal/i18n"
 	"github.com/davirain-su/lintel/internal/plugin"
 )
 
@@ -35,11 +35,11 @@ type codingState struct {
 	generation                                        int
 }
 
-func codingProfiles() []authoring.Profile {
+func (a *App) codingProfiles() []authoring.Profile {
 	return []authoring.Profile{
 		{ID: "claude", Name: "Claude Code (ACP)", Executable: "claude-code-acp"},
 		{ID: "codex", Name: "Codex (ACP)", Executable: "codex-acp"},
-		{ID: "custom", Name: "自定义 ACP Agent"},
+		{ID: "custom", Name: a.t(i18n.CreatorCustomAgent)},
 	}
 }
 
@@ -48,6 +48,7 @@ func (a *App) initAuthoring() {
 		return
 	}
 	a.coding.initialized = true
+	_ = authoring.SweepStaleWorkspaces(a.workspaceRoot())
 	if a.pluginManager != nil {
 		a.coding.service = authoring.New(a.pluginManager)
 	}
@@ -60,7 +61,7 @@ func (a *App) initAuthoring() {
 
 func (a *App) selectCodingProfile(id string) {
 	var profile authoring.Profile
-	for _, preset := range codingProfiles() {
+	for _, preset := range a.codingProfiles() {
 		if preset.ID == id {
 			profile = preset
 			break
@@ -73,7 +74,7 @@ func (a *App) selectCodingProfile(id string) {
 		}
 	}
 	if profile.ID == "" {
-		profile = codingProfiles()[0]
+		profile = a.codingProfiles()[0]
 	}
 	a.coding.profileID = profile.ID
 	a.coding.executable = profile.Executable
@@ -92,20 +93,20 @@ func (a *App) selectCodingProfile(id string) {
 
 func (a *App) codingProfile() (authoring.Profile, error) {
 	p := authoring.Profile{ID: a.coding.profileID, Executable: strings.TrimSpace(a.coding.executable)}
-	for _, preset := range codingProfiles() {
+	for _, preset := range a.codingProfiles() {
 		if preset.ID == p.ID {
 			p.Name = preset.Name
 		}
 	}
 	if p.Executable == "" || len(p.Executable) > 4096 || strings.ContainsAny(p.Executable, "\x00\r\n") {
-		return p, errors.New("请填写已安装的 ACP 可执行文件")
+		return p, errors.New(a.t(i18n.CodingNeedExecutable))
 	}
 	if err := json.Unmarshal([]byte(a.coding.args), &p.Args); err != nil || p.Args == nil || len(p.Args) > 32 {
-		return p, errors.New("参数必须是 JSON 字符串数组，例如 [\"--flag\"]")
+		return p, errors.New(a.t(i18n.CodingArgsJSON))
 	}
 	for _, arg := range p.Args {
 		if len(arg) > 4096 || strings.ContainsRune(arg, 0) {
-			return p, errors.New("参数过长或包含无效字符")
+			return p, errors.New(a.t(i18n.CodingArgsInvalid))
 		}
 	}
 	return p, nil
@@ -148,32 +149,37 @@ func (a *App) codingSettings(c *ui.Context) {
 	a.initAuthoring()
 	p := a.pal
 	ui.Column(c).Gap(10).Padding(14, 16).Children(func() {
-		ui.Text(c, "用本机编码 Agent 创建、修改个人应用").FontSize(12.5).FontWeight(600)
-		ui.Text(c, "先安装 ACP 适配器并完成它自己的登录；测试连接只做协议握手，不发送生成请求。").FontSize(11).TextColor(p.muted).MaxLines(3)
+		ui.Text(c, a.t(i18n.CodingIntro)).FontSize(12.5).FontWeight(600)
+		ui.Text(c, a.t(i18n.CodingIntroBody)).FontSize(12).TextColor(p.muted).MaxLines(3)
 		names := []string{}
 		selected := ""
-		for _, profile := range codingProfiles() {
+		for _, profile := range a.codingProfiles() {
 			names = append(names, profile.Name)
 			if profile.ID == a.coding.profileID {
 				selected = profile.Name
 			}
 		}
 		if ui.Select(c.Key("coding-profile"), &selected, names).Changed() {
-			for _, profile := range codingProfiles() {
+			for _, profile := range a.codingProfiles() {
 				if profile.Name == selected {
 					a.selectCodingProfile(profile.ID)
 					break
 				}
 			}
 		}
-		ui.TextInput(c.Key("coding-executable"), &a.coding.executable).Label("ACP 可执行文件")
-		ui.TextInput(c.Key("coding-args"), &a.coding.args).Label("参数（JSON 数组）")
+		ui.TextInput(c.Key("coding-executable"), &a.coding.executable).Label(a.t(i18n.CodingExecutable))
+		ui.TextInput(c.Key("coding-args"), &a.coding.args).Label(a.t(i18n.CodingArgs))
 		ui.Row(c).Gap(8).Children(func() {
-			a.primaryButton(c, "保存 Agent", nil, a.coding.busy || a.coding.checking, func() { a.saveCodingProfile() })
-			a.primaryButton(c, "测试连接", nil, a.coding.busy || a.coding.checking, a.checkCodingAgent)
+			a.primaryButton(c, a.t(i18n.CodingSave), nil, a.coding.busy || a.coding.checking, func() { a.saveCodingProfile() })
+			a.softButton(c, a.t(i18n.CodingTest), nil, p.muted, func() {
+				if a.coding.busy || a.coding.checking {
+					return
+				}
+				a.checkCodingAgent()
+			})
 		})
 		if info := a.coding.initialization.AgentInfo; info != nil {
-			ui.Text(c, "已连接 "+safeAgentText(info.Name, 120)+" "+safeAgentText(info.Version, 80)).FontSize(11).TextColor(p.success)
+			ui.Text(c, a.t(i18n.CodingConnected, safeAgentText(info.Name, 120), safeAgentText(info.Version, 80))).FontSize(12).TextColor(p.success)
 		}
 		for _, option := range a.coding.session.ConfigOptions {
 			if option.Type != "select" {
@@ -208,7 +214,7 @@ func (a *App) codingSettings(c *ui.Context) {
 			}
 		}
 		if a.coding.checking {
-			ui.Text(c, "正在检查 ACP 握手与会话能力…").FontSize(11).TextColor(p.muted)
+			ui.Text(c, a.t(i18n.CodingChecking)).FontSize(12).TextColor(p.muted)
 		}
 		if a.coding.err != "" {
 			ui.Text(c, a.coding.err).FontSize(11).TextColor(p.danger).MaxLines(4)
@@ -246,7 +252,7 @@ func (a *App) checkCodingAgent() {
 				return
 			}
 			if err != nil {
-				a.coding.err = "连接失败：" + safeAgentText(err.Error(), 600)
+				a.coding.err = a.t(i18n.CodingConnectFailed, safeAgentText(err.Error(), 600))
 			} else {
 				a.coding.initialization = initialization
 				a.coding.session = session
@@ -271,13 +277,13 @@ func (a *App) openCreator(id string) {
 	if id != "" {
 		inst, err := a.plugins.Get(id)
 		if err != nil || inst.Official || inst.Signed || !strings.HasPrefix(id, "local.") {
-			a.pluginNotice = "只能修改 local.* 命名空间的 Unsigned 个人应用"
+			a.pluginNotice = a.t(i18n.CodingPersonalOnly)
 			a.invalidate()
 			return
 		}
 		hash, err := a.plugins.PackageHash(id)
 		if err != nil {
-			a.pluginNotice = "无法校验当前应用"
+			a.pluginNotice = a.t(i18n.CodingCannotVerify)
 			a.invalidate()
 			return
 		}
@@ -295,27 +301,27 @@ func (a *App) openCreator(id string) {
 func (a *App) creatorView(c *ui.Context) {
 	p := a.pal
 	ui.Column(c).Gap(12).Padding(16).Radius(14).Background(p.card).Border(1, p.hairline).Children(func() {
-		title := "创建个人应用"
+		title := a.t(i18n.CreateAppTitle)
 		if a.coding.targetID != "" {
-			title = "修改个人应用 · " + a.coding.targetID
+			title = a.t(i18n.EditAppTitle, a.coding.targetID)
 		}
 		ui.Text(c, title).FontSize(17).FontWeight(600).MaxLines(2)
-		ui.Text(c, "描述你要使用的功能和数据来源。生成完成后，先审阅权限，再决定安装。").FontSize(12).TextColor(p.muted).MaxLines(3)
-		ui.Text(c, "不要在需求中填写私钥或 API key；应用凭据在安装后的设置中填写。").FontSize(11).TextColor(p.muted).MaxLines(2)
+		ui.Text(c, a.t(i18n.CreateAppBody)).FontSize(12).TextColor(p.muted).MaxLines(3)
+		ui.Text(c, a.t(i18n.CreateAppSecret)).FontSize(12).TextColor(p.muted).MaxLines(2)
 		if a.coding.targetID == "" {
-			ui.TextInput(c.Key("coding-slug"), &a.coding.slug).Label("应用短名，例如 my-pools")
+			ui.TextInput(c.Key("coding-slug"), &a.coding.slug).Label(a.t(i18n.CreateAppSlug))
 		}
-		ui.TextArea(c.Key("coding-prompt"), &a.coding.prompt).Label("需求").Height(130)
+		ui.TextArea(c.Key("coding-prompt"), &a.coding.prompt).Label(a.t(i18n.CreateAppPrompt)).Height(130)
 		ui.Row(c).Gap(8).Wrap().Children(func() {
-			a.primaryButton(c, "开始生成", nil, a.coding.busy || a.coding.checking || strings.TrimSpace(a.coding.prompt) == "", a.startGeneration)
+			a.primaryButton(c, a.t(i18n.CreateAppStart), nil, a.coding.busy || a.coding.checking || strings.TrimSpace(a.coding.prompt) == "", a.startGeneration)
 			if a.coding.busy {
-				a.softButton(c, "取消生成", nil, p.danger, a.cancelGeneration)
+				a.softButton(c, a.t(i18n.CreateAppCancel), nil, p.danger, a.cancelGeneration)
 			}
-			a.softButton(c, "Agent 设置", nil, p.muted, func() { a.goTo(routeSettings) })
-			a.softButton(c, "返回应用", nil, p.muted, func() { a.coding.open = false; a.invalidate() })
+			a.softButton(c, a.t(i18n.CreateAppSettings), nil, p.muted, func() { a.goTo(routeSettings) })
+			a.softButton(c, a.t(i18n.CreateAppBack), nil, p.muted, func() { a.coding.open = false; a.invalidate() })
 		})
 		if a.coding.busy {
-			ui.Text(c, "正在生成…").FontSize(12).TextColor(p.accent)
+			ui.Text(c, a.t(i18n.CreateAppWorking)).FontSize(12).TextColor(p.accent)
 		}
 		if a.coding.notice != "" {
 			ui.Text(c, a.coding.notice).FontSize(12).TextColor(p.success).MaxLines(4)
@@ -336,7 +342,7 @@ func (a *App) startGeneration() {
 	}
 	prompt := strings.TrimSpace(a.coding.prompt)
 	if prompt == "" || len(prompt) > 32<<10 {
-		a.coding.err = "需求不能为空，且不能超过 32 KiB"
+		a.coding.err = a.t(i18n.CodingPromptEmpty)
 		a.invalidate()
 		return
 	}
@@ -344,13 +350,13 @@ func (a *App) startGeneration() {
 	if target == "" {
 		slug := strings.TrimSpace(a.coding.slug)
 		if slug == "" {
-			a.coding.err = "请填写应用短名"
+			a.coding.err = a.t(i18n.CodingSlugRequired)
 			a.invalidate()
 			return
 		}
 		target = "local.personal." + slug
 		if len(slug) > 64 || !regexp.MustCompile(`^[a-z0-9][a-z0-9-]*$`).MatchString(slug) {
-			a.coding.err = "短名只能使用小写字母、数字和连字符，最多 64 字符"
+			a.coding.err = a.t(i18n.CodingSlugInvalid)
 			a.invalidate()
 			return
 		}
@@ -396,6 +402,10 @@ func (a *App) startGeneration() {
 	service := a.coding.service
 	a.goAsync(func() {
 		result, err := service.Run(ctx, request)
+		// 调用方拥有工作目录：Run 返回后即可回收，冻结候选已复制到 Manager。
+		if result.Workspace != "" {
+			_ = os.RemoveAll(result.Workspace)
+		}
 		cancelled := ctx.Err() != nil
 		cancel()
 		if cancelled && result.Installation.RequestID != "" {
@@ -408,12 +418,12 @@ func (a *App) startGeneration() {
 			a.coding.busy = false
 			a.coding.cancel = nil
 			if cancelled {
-				a.coding.notice = "已取消生成"
+				a.coding.notice = a.t(i18n.CodingCanceled)
 			} else if err != nil {
-				a.coding.err = "生成未完成：" + safeAgentText(err.Error(), 800)
+				a.coding.err = a.t(i18n.CodingIncomplete, safeAgentText(a.pluginErrorText(err), 800))
 			} else {
 				a.coding.installationID = result.Installation.RequestID
-				a.coding.notice = fmt.Sprintf("%s v%s 已通过校验，请在待确认区域审阅权限", result.Installation.Manifest.Name, result.Installation.Version)
+				a.coding.notice = a.t(i18n.CodingValidated, result.Installation.Manifest.Name, result.Installation.Version)
 				a.coding.initialization = result.Initialization
 				a.coding.session = result.Session
 			}
@@ -430,7 +440,7 @@ func (a *App) cancelGeneration() {
 	if service := a.coding.service; service != nil {
 		a.goAsync(service.Cancel)
 	}
-	a.coding.notice = "正在取消…"
+	a.coding.notice = a.t(i18n.CodingCanceling)
 	a.invalidate()
 }
 

@@ -1,7 +1,6 @@
 package plugin
 
 import (
-	"crypto/ed25519"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -15,9 +14,10 @@ func TestLifecycleDedupAcrossEntrypointsAndHistoryBounds(t *testing.T) {
 	_, m := newTestManager(t, nil)
 	pkg := personalPackage(t, "local.personal.dedup", "1.0.0")
 	first := proposeTest(t, m, pkg, "install", "")
-	second, err := m.Propose(Source{Kind: "inline", Package: &pkg}, "install", "", "", "acp")
-	if err != nil || second.RequestID != first.RequestID {
-		t.Fatalf("跨入口同候选未去重: %+v %v", second, err)
+	_, err := m.Propose(Source{Kind: "inline", Package: &pkg}, "install", "", "", "acp")
+	requireCode(t, err, "CANDIDATE_CONFLICT")
+	if got, getErr := m.GetInstallation(first.RequestID); getErr != nil || got.Via != "local-api" || got.Status != "pending" {
+		t.Fatalf("ACP 附着到了 API 任务: %+v %v", got, getErr)
 	}
 	_, _ = m.Cancel(first.RequestID)
 	for range MaxInstallationHistory + 2 {
@@ -95,33 +95,36 @@ func TestUpdateRejectsSignedAndSecretTypeMigration(t *testing.T) {
 	s, m := newTestManager(t, sec)
 	first := installTest(t, m, personalPackage(t, "local.personal.types", "1.0.0"))
 	p := personalPackage(t, first.PluginID, "2.0.0")
-	p.Plugin = []byte(strings.Replace(string(p.Plugin), `"key":"plain","label":"普通"`, `"key":"plain","label":"普通","secret":true`, 1))
-	_, err := m.Propose(Source{Kind: "inline", Package: &p}, "update", first.PluginID, first.PackageHash, "local-api")
+	var flipped Manifest
+	if err := json.Unmarshal(p.Plugin, &flipped); err != nil {
+		t.Fatal(err)
+	}
+	for i := range flipped.Settings {
+		if flipped.Settings[i].Key == "plain" {
+			flipped.Settings[i].Secret = true
+		}
+	}
+	raw, err := json.Marshal(flipped)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p.Plugin = raw
+	_, err = m.Propose(Source{Kind: "inline", Package: &p}, "update", first.PluginID, first.PackageHash, "local-api")
 	requireCode(t, err, "SETTINGS_MIGRATION_REQUIRED")
 	dir := t.TempDir()
 	writeVersion(t, dir, "local.personal.signed", "1.0.0", personalSource)
-	_, private, err := ed25519.GenerateKey(nil)
+	if _, err := s.Install(dir); err != nil {
+		t.Fatal(err)
+	}
+	if err := signInstall(t, filepath.Join(s.Dir(), "local.personal.signed")); err != nil {
+		t.Fatal(err)
+	}
+	hash, err := s.PackageHash("local.personal.signed")
 	if err != nil {
 		t.Fatal(err)
 	}
-	entry := signEntry(t, dir, "https://example.com/signed.zip", private)
-	archive, err := ZipDir(dir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	prepared, err := s.Prepare(archive, entry)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := prepared.Install(); err != nil {
-		t.Fatal(err)
-	}
-	hash, err := s.PackageHash(entry.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	p = personalPackage(t, entry.ID, "2.0.0")
-	_, err = m.Propose(Source{Kind: "inline", Package: &p}, "update", entry.ID, hash, "local-api")
+	p = personalPackage(t, "local.personal.signed", "2.0.0")
+	_, err = m.Propose(Source{Kind: "inline", Package: &p}, "update", "local.personal.signed", hash, "local-api")
 	requireCode(t, err, "SOURCE_NOT_ALLOWED")
 }
 

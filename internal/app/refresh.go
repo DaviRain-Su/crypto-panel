@@ -20,6 +20,24 @@ type accountSnapshot struct {
 	err    string
 }
 
+// vaultState says whether the passkey's Solana vault address already has an
+// account on the selected network. The zero value is unknown: no answer yet,
+// or the selected network is not Solana.
+type vaultState int
+
+const (
+	vaultUnknown vaultState = iota
+	vaultAbsent
+	vaultExists
+)
+
+// accountExister is a reader that can say whether an account exists. The
+// Solana client implements it; the interface keeps fetch honest about what
+// it may ask.
+type accountExister interface {
+	AccountExists(ctx context.Context, addr string) (bool, error)
+}
+
 // snapshot is everything one refresh learned.
 type snapshot struct {
 	accounts []accountSnapshot
@@ -29,7 +47,15 @@ type snapshot struct {
 	// values beside balances. fiatErr says why it is empty.
 	usd     map[string]float64
 	fiatErr string
+	// vault is the passkey's Solana vault: whether the derived address
+	// already has an account on this network. Someone else may have created
+	// that account first, so an existing vault must not be shown as the
+	// user's.
+	vault vaultState
 }
+
+// runOnUI delivers a finished refresh to the main thread. Tests replace it.
+var runOnUI = mygo.RunOnMain
 
 // priceSource prices assets in USD. *prices.Client implements it.
 type priceSource interface {
@@ -77,6 +103,16 @@ func (a *App) fetch(gen int, reader chain.Reader, addrs []string) {
 	symbol := a.network().Symbol
 	source := a.priceSource
 	hideFiat := a.settings.HideFiat
+	// The vault check is best-effort: it rides along with the refresh and
+	// leaves the state unknown when the reader cannot answer.
+	var vaultAddr string
+	var exister accountExister
+	if pk := a.settings.Passkey; pk != nil && pk.SolanaAddress != "" {
+		vaultAddr = pk.SolanaAddress
+		if ex, ok := reader.(accountExister); ok {
+			exister = ex
+		}
+	}
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 		defer cancel()
@@ -99,6 +135,19 @@ func (a *App) fetch(gen int, reader chain.Reader, addrs []string) {
 			}
 			snap.accounts = append(snap.accounts, s)
 		}
+		if exister != nil && vaultAddr != "" {
+			exists, err := exister.AccountExists(ctx, vaultAddr)
+			switch {
+			case err != nil:
+				// Leave the check unknown. The card must not treat a failed
+				// lookup as "this address is free" and show a balance.
+				snap.vault = vaultUnknown
+			case exists:
+				snap.vault = vaultExists
+			default:
+				snap.vault = vaultAbsent
+			}
+		}
 		if block, err := reader.Block(ctx); err == nil {
 			snap.block = block
 		}
@@ -119,7 +168,7 @@ func (a *App) fetch(gen int, reader chain.Reader, addrs []string) {
 				snap.fiatErr = err.Error()
 			}
 		}
-		mygo.RunOnMain(func() {
+		runOnUI(func() {
 			a.loading = false
 			if gen != a.gen {
 				// The user changed what is watched while this ran; its
@@ -161,6 +210,26 @@ func (a *App) refreshLoop() {
 // totalNative sums the native balances the last snapshot holds. ok is false
 // when no account's balance is known, so an all-failed refresh is not shown
 // as zero.
+// totalsPartial reports that the headline total leaves some watched
+// address out: its refresh failed, or it has no balance yet while another
+// address does.
+func (a *App) totalsPartial() bool {
+	if a.snap == nil {
+		return false
+	}
+	known := false
+	missing := false
+	for _, acc := range a.settings.WatchedOf(a.network().Family) {
+		snap := a.accountSnapshot(acc.Addr)
+		if snap == nil || snap.err != "" || snap.native == nil {
+			missing = true
+			continue
+		}
+		known = true
+	}
+	return known && missing
+}
+
 func (a *App) totalNative() (*big.Int, bool) {
 	if a.snap == nil || len(a.snap.accounts) == 0 {
 		return nil, false

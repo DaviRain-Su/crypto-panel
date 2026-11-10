@@ -17,34 +17,54 @@ import (
 	"github.com/davirain-su/lintel/internal/plugin"
 )
 
-// 凭据探针让修改准备阶段的意外读取直接失败。
-type secretProbe struct{ reads int }
+// 凭据探针让修改准备阶段的意外读取直接失败。安装来源账户不是插件秘密，
+// 宿主提议更新时要读写它。
+type secretProbe struct {
+	reads int
+	m     map[string][]byte
+}
 
-func (s *secretProbe) Get(string) ([]byte, error) {
+func (s *secretProbe) Get(key string) ([]byte, error) {
+	if strings.HasPrefix(key, "provenance:") {
+		v, ok := s.m[key]
+		if !ok {
+			return nil, os.ErrNotExist
+		}
+		return append([]byte(nil), v...), nil
+	}
 	s.reads++
 	return nil, errors.New("不应读取凭据")
 }
-func (*secretProbe) Set(string, []byte) error { return nil }
-func (*secretProbe) Delete(string) error      { return nil }
+func (s *secretProbe) Set(key string, value []byte) error {
+	if strings.HasPrefix(key, "provenance:") {
+		if s.m == nil {
+			s.m = map[string][]byte{}
+		}
+		s.m[key] = append([]byte(nil), value...)
+	}
+	return nil
+}
+func (s *secretProbe) Delete(key string) error {
+	delete(s.m, key)
+	return nil
+}
 
 func TestUpdateCopiesCompleteCodeWithoutStateOrSecrets(t *testing.T) {
 	probe := &secretProbe{}
 	s, p, _, store := harnessSecrets(t, probe)
 	// 使用现有的本地文件夹安装接口准备旧版，不调用 Decide。
+	// 包内容必须在安装时就位，宿主才会记下与磁盘一致的来源；之后只追加
+	// 不参与包摘要的状态和凭据文件，不能改写 install.json。
 	storeWithSecrets := store
 	old := t.TempDir()
 	if err := writeApp(old, "local.personal.existing", "1.0.0", testCode); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := storeWithSecrets.Install(old); err != nil {
-		t.Fatal(err)
-	}
-	existing := filepath.Join(store.Dir(), "local.personal.existing")
-	if err := os.MkdirAll(filepath.Join(existing, "src", "lib"), 0700); err != nil {
+	if err := os.MkdirAll(filepath.Join(old, "src", "lib"), 0700); err != nil {
 		t.Fatal(err)
 	}
 	for name, value := range map[string]string{"src/main.mjs": testCode, "src/lib/helper.js": "export const helper = 1;", "asset.txt": "non-secret resource"} {
-		if err := os.WriteFile(filepath.Join(existing, filepath.FromSlash(name)), []byte(value), 0600); err != nil {
+		if err := os.WriteFile(filepath.Join(old, filepath.FromSlash(name)), []byte(value), 0600); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -57,11 +77,7 @@ func TestUpdateCopiesCompleteCodeWithoutStateOrSecrets(t *testing.T) {
 	meta.Permissions.StorageKb = 4
 	meta.Settings = []plugin.SettingField{{Key: "apiKey", Label: "凭据", Secret: true}}
 	data, _ := json.Marshal(meta)
-	if err := os.WriteFile(filepath.Join(existing, "plugin.json"), data, 0600); err != nil {
-		t.Fatal(err)
-	}
-	baseline, err := storeWithSecrets.PackageHash(meta.ID)
-	if err != nil {
+	if err := os.WriteFile(filepath.Join(old, "plugin.json"), data, 0600); err != nil {
 		t.Fatal(err)
 	}
 	random := make([]byte, 16)
@@ -69,30 +85,30 @@ func TestUpdateCopiesCompleteCodeWithoutStateOrSecrets(t *testing.T) {
 		t.Fatal(err)
 	}
 	secret := hex.EncodeToString(random)
-	for _, name := range []string{"state.json", "kv.json", "install.json", "settings.json", "secrets.json", "credentials.json", ".seeded-official", ".env", ".env.local", "private.key", "src/state.json"} {
-		if err := os.WriteFile(filepath.Join(existing, filepath.FromSlash(name)), []byte(secret), 0600); err != nil {
+	for _, name := range []string{"settings.json", "secrets.json", "credentials.json", ".seeded-official", ".env", ".env.local", "private.key", "src/state.json"} {
+		if err := os.WriteFile(filepath.Join(old, filepath.FromSlash(name)), []byte(secret), 0600); err != nil {
 			t.Fatal(err)
 		}
 	}
 	for _, name := range []string{"settings", "credentials", ".git", ".ssh"} {
-		if err := os.Mkdir(filepath.Join(existing, name), 0700); err != nil {
+		if err := os.Mkdir(filepath.Join(old, name), 0700); err != nil {
 			t.Fatal(err)
 		}
-		if err := os.WriteFile(filepath.Join(existing, name, "private"), []byte(secret), 0600); err != nil {
+		if err := os.WriteFile(filepath.Join(old, name, "private"), []byte(secret), 0600); err != nil {
 			t.Fatal(err)
 		}
 	}
-	// 安装记录使用合法的空记录，避免测试夹具破坏 Manager 的来源检查。
-	if err := os.Remove(filepath.Join(existing, "install.json")); err != nil {
+	if _, err := storeWithSecrets.Install(old); err != nil {
 		t.Fatal(err)
 	}
+	existing := filepath.Join(store.Dir(), "local.personal.existing")
 	if err := os.WriteFile(filepath.Join(existing, "state.json"), []byte(`{"enabled":true,"settings":{"label":"`+secret+`"}}`), 0600); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(existing, "kv.json"), []byte(`{"data":"`+secret+`"}`), 0600); err != nil {
 		t.Fatal(err)
 	}
-	baseline, err = storeWithSecrets.PackageHash(meta.ID)
+	baseline, err := storeWithSecrets.PackageHash(meta.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -149,6 +165,96 @@ func TestUpdateCopiesCompleteCodeWithoutStateOrSecrets(t *testing.T) {
 	before, err := store.Get(meta.ID)
 	if err != nil || before.Manifest.Version != "1.0.0" {
 		t.Fatal("生成直接修改了活跃版本")
+	}
+}
+
+func TestEmptyWorkspaceRootDoesNotSweepTempDir(t *testing.T) {
+	sentinel := filepath.Join(os.TempDir(), "lintel-authoring-sentinel-"+strings.ReplaceAll(t.Name(), "/", "-"))
+	if err := os.MkdirAll(filepath.Join(sentinel, "context"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_ = os.Chmod(filepath.Join(sentinel, "context"), 0700)
+		_ = os.RemoveAll(sentinel)
+	})
+	if err := os.WriteFile(filepath.Join(sentinel, "context", "catalog.json"), []byte("{}"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := SweepStaleWorkspaces(""); err != nil {
+		t.Fatal(err)
+	}
+	if err := SweepStaleWorkspaces("   "); err != nil {
+		t.Fatal(err)
+	}
+	dir, err := createWorkspace(context.Background(), "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { removeWorkspace(dir) })
+	if _, err := os.Stat(sentinel); err != nil {
+		t.Fatal("未指定工作根时清扫了系统临时目录")
+	}
+	if _, err := os.Stat(dir); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestWorkspaceSourceOverlapGuard(t *testing.T) {
+	src := t.TempDir()
+	nested := filepath.Join(src, "lintel-authoring-child")
+	if err := checkWorkspaceOverlap(nested, src); !errors.Is(err, ErrSource) {
+		t.Fatalf("工作目录位于来源内部时被接受: %v", err)
+	}
+	if err := checkWorkspaceOverlap(src, src); !errors.Is(err, ErrSource) {
+		t.Fatalf("工作目录与来源相同时被接受: %v", err)
+	}
+	other := t.TempDir()
+	if err := checkWorkspaceOverlap(other, src); err != nil {
+		t.Fatalf("互不包含的路径被拒绝: %v", err)
+	}
+}
+
+func TestSweepStaleWorkspacesKeepsUnrelatedEntries(t *testing.T) {
+	root := t.TempDir()
+	stale := filepath.Join(root, "lintel-authoring-stale")
+	contextDir := filepath.Join(stale, "context")
+	if err := os.MkdirAll(contextDir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(contextDir, "catalog.json"), []byte("{}"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(filepath.Join(contextDir, "catalog.json"), 0400); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(contextDir, 0500); err != nil {
+		t.Fatal(err)
+	}
+	keep := filepath.Join(root, "notes")
+	if err := os.Mkdir(keep, 0700); err != nil {
+		t.Fatal(err)
+	}
+	note := filepath.Join(root, "lintel-authoring-note.txt")
+	if err := os.WriteFile(note, []byte("keep"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(root, "lintel-authoring-link")
+	if err := os.Symlink(keep, link); err != nil {
+		t.Fatal(err)
+	}
+	if err := SweepStaleWorkspaces(root); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(stale); !errors.Is(err, os.ErrNotExist) {
+		t.Fatal("过期生成目录还在")
+	}
+	for _, path := range []string{keep, note, link} {
+		if _, err := os.Lstat(path); err != nil {
+			t.Fatalf("清扫删除了 %s: %v", path, err)
+		}
+	}
+	if err := SweepStaleWorkspaces(filepath.Join(root, "missing")); err != nil {
+		t.Fatal(err)
 	}
 }
 

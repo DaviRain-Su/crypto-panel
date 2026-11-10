@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	"strings"
 
 	"github.com/davirain-su/lintel/internal/base58"
 )
@@ -87,6 +88,7 @@ func checkPermission(key AccessKey, signerID, receiverID string, actions []Actio
 			return fmt.Errorf("a function-call key cannot %s", a.Kind)
 		}
 	}
+	// A nil allowance spends without a cap; only an explicit limit rejects.
 	if fc.Allowance != nil && total.Cmp(fc.Allowance) > 0 {
 		return fmt.Errorf("the deposit of %s yoctoNEAR is above the key's allowance of %s", total, fc.Allowance)
 	}
@@ -203,28 +205,84 @@ func AccessKeyOf(ctx context.Context, rpc RPC, signer Signer) (AccessKey, error)
 	if string(out.Permission) == `"FullAccess"` {
 		return key, nil
 	}
-	var fc struct {
-		FunctionCall struct {
-			Allowance   string   `json:"allowance"`
-			ReceiverID  string   `json:"receiver_id"`
-			MethodNames []string `json:"method_names"`
-		} `json:"FunctionCall"`
+	var envelope map[string]json.RawMessage
+	if err := json.Unmarshal(out.Permission, &envelope); err != nil || envelope == nil {
+		return AccessKey{}, errors.New("reading the access key's permission")
 	}
-	if err := json.Unmarshal(out.Permission, &fc); err != nil {
-		return AccessKey{}, fmt.Errorf("reading the access key's permission: %w", err)
+	rawFC, ok := envelope["FunctionCall"]
+	if !ok || string(bytesTrim(rawFC)) == "null" {
+		return AccessKey{}, errors.New("reading the access key's permission")
 	}
-	allowance := new(big.Int)
-	if fc.FunctionCall.Allowance != "" {
-		if _, ok := allowance.SetString(fc.FunctionCall.Allowance, 10); !ok {
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(rawFC, &fields); err != nil || fields == nil {
+		return AccessKey{}, errors.New("reading the access key's permission")
+	}
+	rawAllowance, ok := fields["allowance"]
+	if !ok {
+		// A missing allowance is not the on-chain null that means unlimited.
+		return AccessKey{}, errors.New("reading the access key's allowance")
+	}
+	var allowance *big.Int
+	if string(bytesTrim(rawAllowance)) != "null" {
+		var text string
+		if err := json.Unmarshal(rawAllowance, &text); err != nil {
 			return AccessKey{}, errors.New("reading the access key's allowance")
 		}
+		parsed, err := parseU128(text)
+		if err != nil {
+			return AccessKey{}, err
+		}
+		allowance = parsed
+	}
+	rawReceiver, ok := fields["receiver_id"]
+	if !ok || string(bytesTrim(rawReceiver)) == "null" {
+		return AccessKey{}, errors.New("reading the access key's permission")
+	}
+	var receiver string
+	if err := json.Unmarshal(rawReceiver, &receiver); err != nil || receiver == "" {
+		return AccessKey{}, errors.New("reading the access key's permission")
+	}
+	rawMethods, ok := fields["method_names"]
+	if !ok || string(bytesTrim(rawMethods)) == "null" {
+		// A missing list is not "any method". Only an explicit empty array is.
+		return AccessKey{}, errors.New("reading the access key's permission")
+	}
+	var methods []string
+	if err := json.Unmarshal(rawMethods, &methods); err != nil {
+		return AccessKey{}, errors.New("reading the access key's permission")
 	}
 	key.Permission.FunctionCall = &FunctionCallPermission{
 		Allowance:   allowance,
-		ReceiverID:  fc.FunctionCall.ReceiverID,
-		MethodNames: fc.FunctionCall.MethodNames,
+		ReceiverID:  receiver,
+		MethodNames: methods,
 	}
 	return key, nil
+}
+
+func bytesTrim(raw json.RawMessage) json.RawMessage {
+	return json.RawMessage(strings.TrimSpace(string(raw)))
+}
+
+// parseU128 accepts a decimal integer in 0..2^128-1. A sign, a fraction,
+// or a value past u128 is an error, not an unlimited key.
+func parseU128(s string) (*big.Int, error) {
+	if s == "" {
+		return nil, errors.New("reading the access key's allowance")
+	}
+	for _, r := range s {
+		if r < '0' || r > '9' {
+			return nil, errors.New("reading the access key's allowance")
+		}
+	}
+	n, ok := new(big.Int).SetString(s, 10)
+	if !ok {
+		return nil, errors.New("reading the access key's allowance")
+	}
+	max := new(big.Int).Sub(new(big.Int).Lsh(big.NewInt(1), 128), big.NewInt(1))
+	if n.Cmp(max) > 0 {
+		return nil, errors.New("reading the access key's allowance")
+	}
+	return n, nil
 }
 
 // RecentBlockHash reads the latest final block's hash, which a transaction
@@ -268,7 +326,10 @@ func Send(ctx context.Context, rpc RPC, signed []byte, expected [32]byte) (strin
 		return "", fmt.Errorf("reading the transaction outcome: %w", err)
 	}
 	want := base58.Encode(expected[:])
-	if out.TransactionOutcome.ID != "" && out.TransactionOutcome.ID != want {
+	if out.TransactionOutcome.ID == "" {
+		return "", errors.New("the node did not report the transaction id")
+	}
+	if out.TransactionOutcome.ID != want {
 		return "", fmt.Errorf("the node reported %s, but the signed transaction is %s", out.TransactionOutcome.ID, want)
 	}
 	var status map[string]json.RawMessage
@@ -278,7 +339,15 @@ func Send(ctx context.Context, rpc RPC, signed []byte, expected [32]byte) (strin
 	if failure, ok := status["Failure"]; ok {
 		return "", fmt.Errorf("the transaction failed: %s", failure)
 	}
-	return want, nil
+	// A null or empty status is "Unknown": the outcome is not final, so it
+	// is not a success either. Only a success variant confirms the send.
+	if _, ok := status["SuccessValue"]; ok {
+		return want, nil
+	}
+	if _, ok := status["SuccessReceiptId"]; ok {
+		return want, nil
+	}
+	return "", errors.New("the transaction status is not a success")
 }
 
 // Status reads the node's chain id, for checking that an endpoint serves the

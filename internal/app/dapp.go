@@ -50,10 +50,12 @@ type dappRequest struct {
 	Capability string          `json:"capability"`
 }
 
-// dappResponse is the answer, matched to the request by ID.
+// dappResponse is the answer, matched to the request by ID and origin: an
+// event mis-delivered to the next document must not be readable there.
 type dappResponse struct {
 	ID         string `json:"id"`
 	Capability string `json:"capability"`
+	Origin     string `json:"origin"`
 	Result     any    `json:"result,omitempty"`
 	Error      string `json:"error,omitempty"`
 }
@@ -133,7 +135,7 @@ func (a *App) serveDappRequestFrom(w http.ResponseWriter, r *http.Request, bridg
 	// scheme 任务持续到处理结束，让导航、关闭或 fetch.abort() 取消 context。
 	// 在批准前返回 204 会丢失这条取消链。
 	result, err := a.handleDappRequest(call.ctx, origin, req)
-	out := dappResponse{ID: req.ID, Capability: call.binding.capability, Result: result}
+	out := dappResponse{ID: req.ID, Capability: call.binding.capability, Origin: call.binding.origin, Result: result}
 	if err != nil {
 		out.Result, out.Error = nil, err.Error()
 	}
@@ -187,7 +189,7 @@ func (a *App) dappConnect(ctx context.Context, origin string, params json.RawMes
 			return nil, errors.New("connect: the parameters are not understood")
 		}
 	}
-	network, _, _ := a.dappState(origin)
+	network, _, connected := a.dappState(origin)
 	if network.Family != chain.Near {
 		return nil, errors.New("switch to a NEAR network before connecting")
 	}
@@ -195,7 +197,8 @@ func (a *App) dappConnect(ctx context.Context, origin string, params json.RawMes
 	if err != nil {
 		return nil, err
 	}
-	if !a.confirmDappConnect(ctx, origin) {
+	// An origin that is already connected must not open the question again.
+	if !connected && !a.confirmDappConnect(ctx, origin) {
 		return nil, errors.New("the user rejected the connection")
 	}
 	a.onMain(func() {
@@ -215,6 +218,10 @@ func (a *App) dappConnect(ctx context.Context, origin string, params json.RawMes
 func (a *App) dappGetAccounts(origin string) (any, error) {
 	if !a.dappIsConnected(origin) {
 		return nil, errors.New("connect first")
+	}
+	network, _, _ := a.dappState(origin)
+	if network.Family != chain.Near {
+		return nil, errors.New("switch to a NEAR network before reading the accounts")
 	}
 	return a.dappAccounts()
 }
@@ -510,10 +517,11 @@ func (a *App) dappBody(c *ui.Context) {
 		if a.dappErr != "" {
 			ui.Text(c, a.dappErr).FontSize(11).TextColor(p.danger).MaxLines(2)
 		}
-		if a.network().Family != chain.Near {
+		wrongNetwork := a.network().Family != chain.Near
+		if wrongNetwork {
 			ui.Row(c).Gap(10).Padding(10, 12).Radius(9).Background(p.inset).
 				AlignItems(ui.Center).Children(func() {
-				ui.Text(c, a.t(i18n.DappNearOnly)).FontSize(11.5).TextColor(p.muted).
+				ui.Text(c, a.t(i18n.DappNearOnly)).FontSize(12).TextColor(p.muted).
 					Grow(1).MaxLines(2)
 				a.softButton(c, a.t(i18n.DappSwitchNear), nil, p.accent, func() {
 					a.setNetwork(chains.NearTestnet.ID)
@@ -522,6 +530,10 @@ func (a *App) dappBody(c *ui.Context) {
 		}
 		if a.dappView != nil {
 			ui.WebView(c, a.dappView).Grow(1).Radius(12).Border(1, p.hairline)
+			return
+		}
+		// The banner or the error already says why nothing is open.
+		if a.dappErr != "" || wrongNetwork {
 			return
 		}
 		ui.Column(c).Grow(1).Center().Gap(8).Padding(30).Radius(14).

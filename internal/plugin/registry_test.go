@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/fs"
+	"log"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -523,5 +524,132 @@ func TestFetchRegistryAndArchive(t *testing.T) {
 
 	if _, err := FetchRegistry(t.Context(), srv.Client(), srv.URL+"/missing.json"); err == nil {
 		t.Fatal("a 404 was accepted")
+	}
+}
+
+func TestSignedInstallRejectsLocalIDs(t *testing.T) {
+	if err := (RegistryEntry{ID: "local.personal.store"}).Validate(); err == nil || !strings.Contains(err.Error(), "local.*") {
+		t.Fatalf("Validate: %v", err)
+	}
+	store := NewStore(t.TempDir(), nil)
+	_, priv, err := ed25519.GenerateKey(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	localDir := t.TempDir()
+	writeVersion(t, localDir, "local.personal.store", "1.0.0", `export function page(){return {title:"Local"};}`)
+	localEntry := signEntry(t, localDir, "https://example.com/local.zip", priv)
+	localZip, err := ZipDir(localDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Prepare(localZip, localEntry); err == nil || !strings.Contains(err.Error(), "local.*") {
+		t.Fatalf("Prepare: %v", err)
+	}
+	if _, err := store.Install(localDir); err != nil {
+		t.Fatalf("目录安装仍应允许 local.*: %v", err)
+	}
+	signedDir := t.TempDir()
+	writeVersion(t, signedDir, "com.example.signedapp", "1.0.0", `export function page(){return {title:"Signed"};}`)
+	signedEntry := signEntry(t, signedDir, "https://example.com/signed.zip", priv)
+	signedZip, err := ZipDir(signedDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ready, err := store.Prepare(signedZip, signedEntry)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ready.Close()
+}
+
+func TestParseRegistrySkipsLocalEntries(t *testing.T) {
+	dir := t.TempDir()
+	writeVersion(t, dir, "com.example.catalog", "1.0.0", `export function page(){return {title:"Catalog"};}`)
+	_, priv, err := ed25519.GenerateKey(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	good := signEntry(t, dir, "https://example.com/catalog.zip", priv)
+	local := good
+	local.ID = "local.personal.legacy"
+	broken := good
+	broken.ID = "com.example.broken"
+	broken.Hash = ""
+	body, err := json.Marshal(Registry{Version: 1, Name: "Mixed", Plugins: []RegistryEntry{local, good}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	reg, err := ParseRegistry(body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(reg.Plugins) != 1 || reg.Plugins[0].ID != good.ID {
+		t.Fatalf("目录 = %+v", reg.Plugins)
+	}
+	onlyLocal, err := json.Marshal(Registry{Version: 1, Name: "Old", Plugins: []RegistryEntry{local}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	reg, err = ParseRegistry(onlyLocal)
+	if err != nil || len(reg.Plugins) != 0 {
+		t.Fatalf("只有 local.* 的目录: %+v %v", reg.Plugins, err)
+	}
+	bad, err := json.Marshal(Registry{Version: 1, Name: "Bad", Plugins: []RegistryEntry{broken}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ParseRegistry(bad); err == nil {
+		t.Fatal("非 local.* 的无效条目被跳过了")
+	}
+}
+
+func TestParseRegistrySkipLogIsQuotedAndCapped(t *testing.T) {
+	var buf bytes.Buffer
+	prev := log.Writer()
+	log.SetOutput(&buf)
+	t.Cleanup(func() { log.SetOutput(prev) })
+	nasty := "local.bad\r\ninjected\x1b[31m"
+	long := "local." + strings.Repeat("a", 80)
+	plugins := []RegistryEntry{{ID: nasty}, {ID: long}}
+	for i := 0; i < 4; i++ {
+		plugins = append(plugins, RegistryEntry{ID: fmt.Sprintf("local.personal.extra%d", i)})
+	}
+	body, err := json.Marshal(Registry{Version: 1, Name: "Skip", Plugins: plugins})
+	if err != nil {
+		t.Fatal(err)
+	}
+	reg, err := ParseRegistry(body)
+	if err != nil || len(reg.Plugins) != 0 {
+		t.Fatalf("跳过 local.* 失败: %+v %v", reg.Plugins, err)
+	}
+	out := buf.String()
+	if strings.Contains(out, "\ninjected") || strings.Contains(out, "\r") {
+		t.Fatalf("跳过日志写入了未引用的控制字符: %q", out)
+	}
+	if !strings.Contains(out, `\n`) || !strings.Contains(out, `\r`) || !strings.Contains(out, `\x1b`) {
+		t.Fatalf("跳过日志没有按引用转义: %q", out)
+	}
+	if strings.Contains(out, strings.Repeat("a", 80)) {
+		t.Fatalf("跳过日志没有截断 id: %q", out)
+	}
+	if got := strings.Count(out, "skipping registry entry"); got != 5 {
+		t.Fatalf("跳过日志条数 = %d, 正文 %q", got, out)
+	}
+	if !strings.Contains(out, "skipped 1 more local.* registry entries") {
+		t.Fatalf("没有汇总被省略的条目: %q", out)
+	}
+	buf.Reset()
+	wide := "local." + strings.Repeat("中", 80)
+	body, err = json.Marshal(Registry{Version: 1, Name: "Wide", Plugins: []RegistryEntry{{ID: wide}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ParseRegistry(body); err != nil {
+		t.Fatal(err)
+	}
+	logged := buf.String()
+	if !strings.Contains(logged, strings.Repeat("中", 58)) || strings.Contains(logged, strings.Repeat("中", 59)) {
+		t.Fatalf("截断没有按字符而不是字节: %q", logged)
 	}
 }

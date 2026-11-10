@@ -143,7 +143,7 @@ func (a *App) storeCard(c *ui.Context, entry plugin.RegistryEntry) {
 			ui.Text(c, entry.Description).FontSize(12).TextColor(p.muted).MaxLines(3)
 		}
 		if inst != nil && inst.Err != "" {
-			ui.Text(c, inst.Err).FontSize(11).TextColor(p.danger).MaxLines(2)
+			ui.Text(c, a.pluginErrText(inst.Err)).FontSize(11).TextColor(p.danger).MaxLines(2)
 		}
 	})
 }
@@ -162,6 +162,79 @@ func (a *App) storeState(entry plugin.RegistryEntry) (*plugin.Installed, bool) {
 		return item, plugin.CompareVersions(entry.Version, item.Manifest.Version) > 0
 	}
 	return nil, false
+}
+
+// openProvenanceConfirm is the native approval for re-saving one personal
+// app's install provenance after a credential-store failure. It does not
+// read install.json; ConfirmProvenance runs only after the user agrees.
+func (a *App) openProvenanceConfirm(view plugin.ProvenanceView, done func(bool)) {
+	if a.win == nil || a.installOpen {
+		done(false)
+		return
+	}
+	a.installOpen = true
+	var win *mygo.Window
+	finish := func(ok bool) {
+		a.installOpen = false
+		if win != nil {
+			closeProvenanceWindow(win)
+		}
+		done(ok)
+	}
+	var decided bool
+	decide := func(ok bool) {
+		if decided {
+			return
+		}
+		decided = true
+		finish(ok)
+	}
+	cancel := provenanceConfirmClosed(decide)
+	win = newProvenanceWindow(mygo.WindowOptions{
+		Title:           a.t(i18n.ProvenanceLockedTitle),
+		Width:           460,
+		Height:          360,
+		MinWidth:        400,
+		MinHeight:       300,
+		Parent:          a.win,
+		Modal:           true,
+		BackgroundColor: "light-dark(#f6f4ef, #141513)",
+		Content:         ui.View(a.provenanceConfirmView(view, decide, cancel)),
+	})
+	win.OnClose(cancel)
+	focusProvenanceWindow(win)
+}
+
+// newProvenanceWindow creates the confirm window. Tests replace it so they
+// can run the registered close callback without a display.
+var newProvenanceWindow = mygo.NewWindow
+
+var focusProvenanceWindow = (*mygo.Window).Focus
+
+var closeProvenanceWindow = (*mygo.Window).Close
+
+// provenanceConfirmClosed is the window's close path. Closing must not confirm.
+func provenanceConfirmClosed(decide func(bool)) func(*mygo.CloseEvent) {
+	return func(*mygo.CloseEvent) { decide(false) }
+}
+
+func (a *App) provenanceConfirmView(view plugin.ProvenanceView, decide func(bool), cancel func(*mygo.CloseEvent)) func(*ui.Context) {
+	return func(c *ui.Context) {
+		p := a.pal
+		c.Root().Background(p.bg)
+		ui.Column(c).Fill().Padding(20).Gap(12).Children(func() {
+			ui.Text(c, a.t(i18n.ProvenanceLockedTitle)).FontSize(20).FontWeight(700).MaxLines(2)
+			ui.Text(c, view.Name).FontSize(14).FontWeight(600).MaxLines(1)
+			ui.Text(c, a.t(i18n.ProvenanceLockedPath, view.Path)).FontSize(12).MaxLines(3)
+			ui.Text(c, a.t(i18n.ProvenanceLockedHash, view.PackageHash)).FontSize(12).MaxLines(2)
+			ui.Text(c, a.t(i18n.ProvenanceLockedUnsigned)).FontSize(12).MaxLines(1)
+			ui.Text(c, a.t(i18n.ProvenanceLockedWarn)).FontSize(13).MaxLines(6)
+			ui.Row(c).Gap(8).Children(func() {
+				a.primaryButton(c, a.t(i18n.Cancel), nil, false, func() { cancel(nil) })
+				a.softButton(c, a.t(i18n.ProvenanceLockedAction, view.Name), nil, p.muted, func() { decide(true) })
+			})
+		})
+	}
 }
 
 // askInstall is the shell's permission prompt: what the plugin may do, in
@@ -239,6 +312,9 @@ func (ip *installPrompt) view(c *ui.Context) {
 				ui.Text(c, ip.m.Name).FontSize(14).FontWeight(600).MaxLines(1)
 				ui.Text(c, "v"+ip.m.Version).FontSize(11).TextColor(p.muted)
 			})
+			if ip.m.ID != "" {
+				ui.Text(c, ip.t(i18n.StoreInstallID, ip.m.ID)).FontSize(11).TextColor(p.muted).MaxLines(1)
+			}
 			if ip.m.Author != "" {
 				ui.Text(c, ip.t(i18n.StoreBy, ip.m.Author)).FontSize(11).TextColor(p.faint).MaxLines(1)
 			}
@@ -278,7 +354,7 @@ func (ip *installPrompt) view(c *ui.Context) {
 			if ip.req.update {
 				label = i18n.StoreUpdate
 			}
-			ui.Button(c, ip.t(label)).OnClick(func() { ip.decide(true) })
+			ui.PrimaryButton(c, ip.t(label)).OnClick(func() { ip.decide(true) })
 		})
 	})
 }

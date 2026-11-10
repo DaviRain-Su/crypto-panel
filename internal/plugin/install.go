@@ -44,6 +44,9 @@ func (s *Store) Prepare(data []byte, entry RegistryEntry) (*Archive, error) {
 	if err := entry.Validate(); err != nil {
 		return nil, err
 	}
+	if strings.HasPrefix(entry.ID, "local.") {
+		return nil, fmt.Errorf("%s: a signed install cannot use a local.* id", entry.ID)
+	}
 	if len(data) > MaxArchiveBytes {
 		return nil, fmt.Errorf("the download is larger than %d bytes", MaxArchiveBytes)
 	}
@@ -163,6 +166,9 @@ func (ar *Archive) Install() (Manifest, error) {
 	if ar.done || ar.dir == "" || ar.store == nil {
 		return Manifest{}, errors.New("this archive was already installed or closed")
 	}
+	if strings.HasPrefix(ar.Manifest.ID, "local.") || strings.HasPrefix(ar.Entry.ID, "local.") {
+		return Manifest{}, fmt.Errorf("%s: a signed install cannot use a local.* id", ar.Manifest.ID)
+	}
 	release, err := ar.store.tryLease(ar.Manifest.ID)
 	if err != nil {
 		return Manifest{}, err
@@ -213,6 +219,9 @@ func (ar *Archive) Install() (Manifest, error) {
 	} else if err := os.Rename(ar.dir, dest); err != nil {
 		return Manifest{}, err
 	}
+	if err := ar.store.rememberInstall(ar.Manifest.ID, info, dest); err != nil && !errors.Is(err, errProvenanceUnconfirmed) {
+		return Manifest{}, err
+	}
 	ar.done = true
 	ar.dir = ""
 	return ar.Manifest, nil
@@ -241,27 +250,70 @@ type installInfo struct {
 	PackageHash  string `json:"packageHash,omitempty"`
 }
 
+var errInstallNotRegular = errors.New("install record is not a regular file")
+
 func loadInstallInfo(dir string) (installInfo, error) {
-	data, err := os.ReadFile(filepath.Join(dir, "install.json"))
-	if errors.Is(err, fs.ErrNotExist) {
+	record, _, err := readInstallBytes(dir)
+	// A missing or non-regular record does not make Get fail. Host provenance
+	// decides whether the API may treat the app as unsigned. Opening a FIFO
+	// here would block.
+	if errors.Is(err, fs.ErrNotExist) || errors.Is(err, errInstallNotRegular) {
 		return installInfo{}, nil
 	}
+	return record, err
+}
+
+// readInstallInfoNoFollow 只接受普通 install.json。缺失、符号链接、目录和其他
+// 非普通文件都是错误，而且不会打开链接目标。
+func readInstallInfoNoFollow(dir string) (installInfo, error) {
+	record, _, err := readInstallBytes(dir)
+	return record, err
+}
+
+// readInstallBytes rejects anything that is not a regular file before opening
+// it, so a FIFO cannot block the caller. The unix opener is also non-blocking.
+func readInstallBytes(dir string) (installInfo, []byte, error) {
+	recordPath := filepath.Join(dir, "install.json")
+	info, err := os.Lstat(recordPath)
 	if err != nil {
-		return installInfo{}, err
+		return installInfo{}, nil, err
 	}
-	var info installInfo
-	if err := json.Unmarshal(data, &info); err != nil {
-		return installInfo{}, err
+	if info.Mode()&fs.ModeSymlink != 0 || !info.Mode().IsRegular() {
+		return installInfo{}, nil, errInstallNotRegular
 	}
-	return info, nil
+	f, err := openInstallRecord(recordPath)
+	if err != nil {
+		return installInfo{}, nil, err
+	}
+	defer f.Close()
+	opened, err := f.Stat()
+	if err != nil || !opened.Mode().IsRegular() || !os.SameFile(info, opened) {
+		return installInfo{}, nil, errors.New("install record changed")
+	}
+	data, err := io.ReadAll(io.LimitReader(f, 1<<20))
+	if err != nil {
+		return installInfo{}, nil, err
+	}
+	var record installInfo
+	if err := json.Unmarshal(data, &record); err != nil {
+		return installInfo{}, nil, err
+	}
+	return record, data, nil
+}
+
+func marshalInstallInfo(info installInfo) ([]byte, error) {
+	data, err := json.MarshalIndent(info, "", "  ")
+	if err != nil {
+		return nil, err
+	}
+	return append(data, '\n'), nil
 }
 
 func saveInstallInfo(dir string, info installInfo) error {
-	data, err := json.MarshalIndent(info, "", "  ")
+	data, err := marshalInstallInfo(info)
 	if err != nil {
 		return err
 	}
-	data = append(data, '\n')
 	return writeFileAtomic(filepath.Join(dir, "install.json"), data, 0o600)
 }
 

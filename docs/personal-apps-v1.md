@@ -201,7 +201,7 @@ HTTP、ACP 消息或模型输出都没有“批准安装”的状态变更接口
 
 ### 8.2 排队、取消与重启
 
-- 最多五个待处理任务，同一应用最多一个 pending / installing；完全相同操作、摘要及更新基线的重复提交返回已有任务，不重复弹卡。
+- 最多五个待处理任务，同一应用最多一个 pending / installing；同一入口上完全相同操作、摘要及更新基线的重复提交返回已有任务，不重复弹卡。另一个入口的相同候选返回冲突，不能附着到已有任务。
 - 同 id 的不同候选同时提议返回冲突；队列满返回 429。
 - 用户在 Apps 的“待确认”区域可以查看、允许、拒绝或取消。已有弹窗不能使新的 HTTP 请求被悄悄当作批准或无限阻塞。
 - API 的取消接口只作用于 pending；installing 时返回 409，不声称已撤销提交。
@@ -247,11 +247,11 @@ V1 支持更高版本的同 id 个人应用更新，通过与首次安装相同�
 | `POST /v0/plugins` | 提议新安装 | 202，含任务 |
 | `PUT /v0/plugins/{id}` | 提议个人更新 | 202，含任务 |
 | `GET /v0/installations/{requestId}` | 查询任务状态 | 200 |
-| `DELETE /v0/installations/{requestId}` | 取消尚待确认的任务 | 200，含 cancelled 任务 |
-| `GET /v0/plugins` | 已安装应用、设置元数据和待确认摘要 | 200 |
-| `PUT /v0/plugins/{id}/settings` | 写入声明过的设置 | 200 |
+| `DELETE /v0/installations/{requestId}` | 取消本机 API 尚待确认的任务。ACP 任务返回 403 `INSTALLATION_ORIGIN_FORBIDDEN` | 200，含 cancelled 任务 |
+| `GET /v0/plugins` | 已安装应用、设置元数据和本机 API 待确认摘要。不返回 ACP 任务 requestId | 200 |
+| `PUT /v0/plugins/{id}/settings` | 写入未签名 `local.*` 应用声明过的设置。宿主安装记录在现有凭据服务的 `provenance:<id>` 账户中，必须存在并与包摘要及 `install.json` 一致。缺失、校验失败、不匹配、普通伪造文件、硬链接、符号链接或无法解析时返回 403 `API_MUTATION_FORBIDDEN` | 200 |
 | `POST /v0/plugins/{id}/refresh` | 在 API 上下文中求页面 | 200，页面 JSON |
-| `DELETE /v0/plugins/{id}` | 卸载 | 204 |
+| `DELETE /v0/plugins/{id}` | 卸载未签名 `local.*` 应用。官方、已签名，或宿主安装记录缺失、无法校验、与磁盘不一致、`install.json` 为伪造普通文件、硬链接、符号链接、目录、管道或无法解析时返回 403 `API_MUTATION_FORBIDDEN` | 204 |
 
 ### 10.2 应用输入
 
@@ -348,7 +348,7 @@ agent 在活跃等待时查询间隔不短于两秒，离开 pending 即按结�
 
 ### 10.6 设置
 
-请求形状为 `{"values":{"label":"我的池子","apiKey":"<经私密渠道提供的值>"}}`。values 是部分更新：缺省键保持原值；普通空字符串设为空；secret 空字符串明确清除已存凭据。
+请求形状为 `{"values":{"label":"我的池子","apiKey":"<经私密渠道提供的值>"}}`。values 是部分更新：缺省键保持原值；普通空字符串设为空；secret 空字符串明确清除已存凭据。显式 JSON `null`（`{"values":{"apiKey":null}}`）解码成空字符串，和传 `""` 一样会清空该 secret，不表示「不修改」。
 
 所有键先完整验证，再开始写入：未声明键、非字符串、重复键或超限导致整个请求拒绝且无写入。每个值最多 8192 字节，正文最多 1 MiB。secret 写入既有系统凭据存储；不可用时明确失败，不能回落到明文文件。
 
@@ -375,7 +375,7 @@ secret 条目永远没有 value，不用掩码泄露长度或前后缀。清除�
 
 API 上下文同时拒绝 `host.requestSign` 和 `host.requestNearSign`，在进入批准窗之前拒绝。壳内 ACP 的安装后验证也使用这个上下文。返回页面受同一积木 schema 和 256 KiB 限制。
 
-响应头增加 `X-Crypto-Panel-Package-Hash` 和 `X-Crypto-Panel-Evaluated-At`。后者是本次脚本执行完成时间，不保证 RPC 缓存或上游数据的时间。API 刷新不负责导航主窗口，也不声称已把返回值同步为当前 UI 页面。
+响应头增加 `X-Crypto-Panel-Package-Hash` 和 `X-Crypto-Panel-Evaluated-At`，并同时发送同值的 `X-Lintel-Package-Hash` 和 `X-Lintel-Evaluated-At`。后者是本次脚本执行完成时间，不保证 RPC 缓存或上游数据的时间。API 刷新不负责导航主窗口，也不声称已把返回值同步为当前 UI 页面。
 
 `DELETE /v0/plugins/{id}` 幂等卸载，应用已不存在也返回 204；停止对应 runner，协调存储写入、删除声明凭据并使相关待确认任务失效。仍在 committing 的操作须串行化，不能出现删除后被旧任务重新安装。
 
@@ -386,13 +386,13 @@ API 上下文同时拒绝 `host.requestSign` 和 `host.requestNearSign`，在进
 HTTP 错误保留原来的字符串 error 字段，补充稳定 code；需要时增加只含字段位置的 details。示例：
 
 ```json
-{"error":"已安装内容发生变化，请重新读取后提议更新","code":"BASE_CHANGED"}
+{"error":"The installed app's content or state changed; read it again and propose.","code":"BASE_CHANGED"}
 ```
 
 | 状态码 | 使用范围 |
 | --- | --- |
 | 400 | 请求 JSON、字段、类型或页名错误 |
-| 401 / 403 | token 无效 / 浏览器 Origin 被拒绝 |
+| 401 / 403 | token 无效 / 浏览器 Origin 被拒绝 / `API_MUTATION_FORBIDDEN`（卸载或改设置的不是已确认宿主记录与磁盘一致的未签名 `local.*`。记录在现有凭据服务 `crypto-panel-plugins` 的账户 `provenance:<id>`。缺失、读错误、写入未确认、无法解析、包摘要不一致、伪造普通文件、硬链接、符号链接、目录、管道都拒绝。凭据服务只提高了相对索引文件的门槛：同一用户在 Linux/Windows 上通常可以静默写入该服务；macOS 登录钥匙串读取秘密数据可能弹窗，列出或创建通常不会。升级迁移只在记录确认落盘后完成；未确认的应用保持 403，可在原生确认窗里重新确认，而不是自动再信 install.json。列表和确认窗写「无法确认来源」，不根据 install.json 标成未签名。新的商店安装和注册表条目不能使用 `local.*` id。目录里的 `local.*` 条目会被跳过，其余条目仍显示。这个限制之前已经签名安装的 `local.*` 应用不能通过商店更新。残留：这个限制之前已经签名安装的 `local.*` 应用，若同一用户的进程在打开窗口之前改写了 install.json（或硬链接后再删掉外面的名字，使链接数回到 1），用户的确认点击是唯一关口，可以把该应用变成可编辑应用。重新迁移需要同时删掉哨兵、`provenance:migration-started`、`provenance:migration` 和该应用的 `provenance:<id>`。只是哨兵没写成功，下一次启动就和升级前伪造 install.json 一样）/ `INSTALLATION_ORIGIN_FORBIDDEN`（取消 ACP 任务） |
 | 404 | 应用、模板、源路径或任务不存在 |
 | 409 | id 冲突、版本冲突、基线变化、已有不同候选、任务不可取消、应用禁用或正忙 |
 | 413 / 415 | 大小超限 / 不支持的请求媒体类型 |

@@ -157,7 +157,7 @@ func TestIntentsQuoteShowsResultLanguage(t *testing.T) {
 		"NEAR INTENTS · DRY RUN", "Swap via NEAR Intents?",
 		"You pay", "1 wNEAR", "You receive at least", "9.9 USDC",
 		"Deadline", "Deposit", "None — a dry quote issues no deposit address",
-		"Refund to", "alice.testnet", "Recipient", testRecipient,
+		"Refund to", "alice.testnet", "Recipient", wallet.Short(testRecipient),
 		"Intent", "Swap 1 wNEAR on NEAR for at least 9.9 USDC on Ethereum; refund to alice.testnet.",
 		"Requested by", "Lintel · dry run",
 		"no funds move and nothing is signed", "Accept quote", "Reject",

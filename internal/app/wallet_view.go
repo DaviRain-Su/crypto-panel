@@ -24,46 +24,49 @@ func (a *App) walletView(c *ui.Context) {
 		ui.Text(c, a.walletNotice).FontSize(11.5).TextColor(p.success).
 			Margin(0, 0, 10, 0).MaxLines(2)
 	}
+	// Accounts come before the security essay, so the balances are the
+	// first thing on the page. The header already offers New wallet, so
+	// the empty state does not repeat it.
+	hasAccounts := len(a.settings.Wallets) > 0 || a.viewingPasskey()
+	if hasAccounts {
+		a.walletPickers(c)
+	}
+	switch {
+	case a.passkeyPrepared && a.settings.Passkey != nil:
+		a.passkeyPreparedCard(c)
+	case len(a.settings.Wallets) == 0 && !a.viewingPasskey():
+		a.emptyWallet(c)
+		a.walletImportForm(c)
+	case a.viewingPasskey():
+		a.passkeyChainCard(c)
+		a.walletImportForm(c)
+	default:
+		w, _, ok := a.activeKeyWallet()
+		if !ok {
+			a.emptyWallet(c)
+			a.walletImportForm(c)
+			break
+		}
+		kind := kindForFamily(a.network().Family)
+		if !w.Has(kind) {
+			a.missingChain(c, w)
+		} else {
+			switch kind {
+			case wallet.Near:
+				a.nearAccountCard(c, *w.Near)
+				a.nearSendForm(c)
+			case wallet.Solana:
+				a.solanaAccountCard(c, *w.Solana)
+			default:
+				a.walletAccountCard(c, *w.EVM)
+			}
+		}
+		a.walletImportForm(c)
+	}
 	a.walletSecurityCard(c)
 	if a.settings.Passkey == nil {
 		a.passkeyCard(c)
 	}
-	a.walletPickers(c)
-	if a.passkeyPrepared && a.settings.Passkey != nil {
-		a.passkeyPreparedCard(c)
-		return
-	}
-	if len(a.settings.Wallets) == 0 && !a.viewingPasskey() {
-		a.emptyWallet(c)
-		a.walletImportForm(c)
-		return
-	}
-	if a.viewingPasskey() {
-		a.passkeyChainCard(c)
-		a.walletImportForm(c)
-		return
-	}
-	w, _, ok := a.activeKeyWallet()
-	if !ok {
-		a.emptyWallet(c)
-		a.walletImportForm(c)
-		return
-	}
-	kind := kindForFamily(a.network().Family)
-	if !w.Has(kind) {
-		a.missingChain(c, w)
-	} else {
-		switch kind {
-		case wallet.Near:
-			a.nearAccountCard(c, *w.Near)
-			a.nearSendForm(c)
-		case wallet.Solana:
-			a.solanaAccountCard(c, *w.Solana)
-		default:
-			a.walletAccountCard(c, *w.EVM)
-		}
-	}
-	a.walletImportForm(c)
 }
 
 // walletKeyCard shows a key that must not be missed: a new account's key,
@@ -139,16 +142,7 @@ func (a *App) walletPickers(c *ui.Context) {
 	if a.settings.Passkey != nil {
 		wallets = append(wallets, choice{id: wallet.PasskeyContainerID, label: a.t(i18n.PasskeyTitle)})
 	}
-	networks := chains.All()
-	names := make([]string, len(networks))
-	nidx := 0
-	for i, n := range networks {
-		names[i] = n.Name
-		if n.ID == a.settings.NetworkID {
-			nidx = i
-		}
-	}
-	network := names[nidx]
+	network := a.network().Name
 	ui.Row(c).Gap(16).Margin(14, 0, 12, 0).Children(func() {
 		if len(wallets) >= 2 {
 			labels := make([]string, len(wallets))
@@ -183,14 +177,28 @@ func (a *App) walletPickers(c *ui.Context) {
 		ui.Column(c).Gap(6).Grow(1).MaxWidth(360).Children(func() {
 			ui.Text(c, a.t(i18n.WalletNetwork)).FontSize(11).FontWeight(600).
 				TextColor(p.muted).MaxLines(1)
-			if ui.Select(c.Key("wallet-network"), &network, names).Changed() {
-				for i, name := range names {
-					if name == network {
-						a.setNetwork(networks[i].ID)
-						break
+			// Grouped by family. MyGo's Select is a flat list and always
+			// opens downward, so this is a menu the shell draws itself.
+			ui.PopoverMenuButton(c, network, func(m *ui.Menu) {
+				first := true
+				for _, family := range chains.Families() {
+					group := chains.NetworksOf(family)
+					if len(group) == 0 {
+						continue
+					}
+					if !first {
+						m.Separator()
+					}
+					first = false
+					m.Item(familyName(family)).Disabled(true)
+					for _, n := range group {
+						n := n
+						if m.Item(n.Name).Checked(n.ID == a.settings.NetworkID).Chosen() {
+							a.setNetwork(n.ID)
+						}
 					}
 				}
-			}
+			}).FillWidth().Justify(ui.SpaceBetween)
 		})
 	})
 }
@@ -222,7 +230,8 @@ func (a *App) walletSecurityCard(c *ui.Context) {
 		body = a.t(i18n.AuthBody, a.authName())
 	}
 	ui.Row(c).Gap(14).Padding(16).Radius(14).Background(p.card).
-		Border(1, p.hairline).Shadow(0, 1, 2, 0, p.shadow).AlignItems(ui.Center).Children(func() {
+		Border(1, p.hairline).Shadow(0, 1, 2, 0, p.shadow).AlignItems(ui.Center).
+		Margin(0, 0, 16, 0).Children(func() {
 		ui.Box(c).Size(38, 38).Radius(11).Background(p.accentSoft).Center().Children(func() {
 			iconShield.draw(c, 19, p.accent)
 		})
@@ -249,7 +258,6 @@ func (a *App) emptyWallet(c *ui.Context) {
 		ui.Text(c, a.t(i18n.WalletEmpty)).FontSize(15).FontWeight(700)
 		ui.Text(c, a.t(i18n.WalletEmptyWhy)).FontSize(12.5).TextColor(p.muted).
 			TextAlign(ui.Center).MaxLines(4)
-		a.primaryButton(c, a.t(i18n.WalletNew), nil, false, a.createWalletAccount)
 	})
 }
 
@@ -263,7 +271,8 @@ func (a *App) walletAccountCard(c *ui.Context, acc wallet.Account) {
 	}
 	busy := a.authBusy == "unlock:"+acc.Addr || a.authBusy == "reveal:"+acc.Addr
 	ui.Column(c).Key("wallet:"+acc.Addr).Gap(12).Padding(16).Radius(14).
-		Background(p.card).Border(1, p.hairline).Shadow(0, 1, 2, 0, p.shadow).Children(func() {
+		Background(p.card).Border(1, p.hairline).Shadow(0, 1, 2, 0, p.shadow).
+		Margin(0, 0, 16, 0).Children(func() {
 		ui.Row(c).AlignItems(ui.Center).Gap(12).Children(func() {
 			a.identicon(c, acc.Addr)
 			ui.Column(c).Grow(1).Gap(3).Children(func() {
@@ -279,12 +288,12 @@ func (a *App) walletAccountCard(c *ui.Context, acc wallet.Account) {
 						ui.Text(c, badge).FontSize(9.5).FontWeight(700).TextColor(color)
 					})
 				})
-				ui.Text(c, a.displayAddress(acc.Addr)).Font("monospace").FontSize(10.5).
+				ui.Text(c, a.displayAddress(acc.Addr)).Font("monospace").FontSize(12).
 					TextColor(p.muted).MaxLines(1)
 			})
 			ui.Column(c).AlignItems(ui.End).Gap(1).Children(func() {
 				ui.Text(c, a.nativeText(snap)).FontSize(15).FontWeight(700)
-				ui.Text(c, a.network().Symbol).FontSize(10).TextColor(p.faint)
+				ui.Text(c, a.network().Symbol).FontSize(12).TextColor(p.muted)
 			})
 			a.iconButton(c, iconCopy, a.t(i18n.WalletCopy), func() { a.copyKey(a.displayAddress(acc.Addr)) })
 			a.iconButton(c, iconTrash, a.t(i18n.Remove), func() {
@@ -325,8 +334,9 @@ func (a *App) walletImportForm(c *ui.Context) {
 	}
 	family := a.network().Family
 	a.sectionTitle(c, title)
-	ui.Column(c).Gap(10).Padding(16).Radius(14).MaxWidth(600).
-		Background(p.card).Border(1, p.hairline).Shadow(0, 1, 2, 0, p.shadow).Children(func() {
+	ui.Column(c).Gap(10).Padding(16).Radius(14).
+		Background(p.card).Border(1, p.hairline).Shadow(0, 1, 2, 0, p.shadow).
+		Margin(0, 0, 16, 0).Children(func() {
 		ui.Text(c, a.t(i18n.WalletImportChain, a.network().Name)).FontSize(12).
 			TextColor(p.muted).MaxLines(2)
 		if family == chain.Near {
@@ -402,7 +412,8 @@ func (a *App) nearAccountCard(c *ui.Context, acc wallet.NearAccount) {
 	}
 	busy := a.authBusy == "near-unlock:"+acc.AccountID || a.authBusy == "near-reveal:"+acc.AccountID
 	ui.Column(c).Key("near:"+acc.AccountID).Gap(12).Padding(16).Radius(14).
-		Background(p.card).Border(1, p.hairline).Shadow(0, 1, 2, 0, p.shadow).Children(func() {
+		Background(p.card).Border(1, p.hairline).Shadow(0, 1, 2, 0, p.shadow).
+		Margin(0, 0, 16, 0).Children(func() {
 		ui.Row(c).AlignItems(ui.Center).Gap(12).Children(func() {
 			a.identicon(c, acc.AccountID)
 			ui.Column(c).Grow(1).Gap(3).Children(func() {
@@ -472,9 +483,9 @@ func (a *App) nearSendForm(c *ui.Context) {
 	if a.nearSendFrom != w.Near.AccountID {
 		a.nearSendFrom = w.Near.AccountID
 	}
-	ui.Column(c).Gap(10).Padding(16).Radius(14).MaxWidth(600).
+	ui.Column(c).Gap(10).Padding(16).Radius(14).
 		Background(p.card).Border(1, p.hairline).Shadow(0, 1, 2, 0, p.shadow).
-		Margin(12, 0, 0, 0).Children(func() {
+		Margin(0, 0, 16, 0).Children(func() {
 		ui.Text(c, a.t(i18n.WalletNearSendTitle)).FontSize(13).FontWeight(700)
 		if a.network().Family != chain.Near {
 			ui.Text(c, a.t(i18n.WalletNearSendNoNetwork)).FontSize(11.5).
@@ -566,7 +577,8 @@ func (a *App) solanaAccountCard(c *ui.Context, acc wallet.SolanaAccount) {
 	}
 	busy := a.authBusy == "solana-unlock:"+acc.Address || a.authBusy == "solana-reveal:"+acc.Address
 	ui.Column(c).Key("solana:"+acc.Address).Gap(12).Padding(16).Radius(14).
-		Background(p.card).Border(1, p.hairline).Shadow(0, 1, 2, 0, p.shadow).Children(func() {
+		Background(p.card).Border(1, p.hairline).Shadow(0, 1, 2, 0, p.shadow).
+		Margin(0, 0, 16, 0).Children(func() {
 		ui.Row(c).AlignItems(ui.Center).Gap(12).Children(func() {
 			a.identicon(c, acc.Address)
 			ui.Column(c).Grow(1).Gap(3).Children(func() {

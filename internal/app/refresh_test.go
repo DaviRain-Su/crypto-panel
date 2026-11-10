@@ -1,6 +1,7 @@
 package app
 
 import (
+	"math/big"
 	"testing"
 
 	"github.com/davirain-su/lintel/internal/chain"
@@ -86,5 +87,58 @@ func TestRequestRefreshWithOnlyOtherFamily(t *testing.T) {
 	a.requestRefresh()
 	if calls != 0 {
 		t.Fatalf("calls = %d, want 0", calls)
+	}
+}
+
+func TestPasskeyVaultExists(t *testing.T) {
+	a := newTestApp(t)
+	a.settings.NetworkID = chains.SolanaMainnet.ID
+	a.newReader()
+	vault := "Vault1111111111111111111111111111111111111"
+	a.settings.Passkey = &PasskeyAccount{
+		ID:            "cred",
+		PublicKey:     "p256:AA",
+		NEARAccount:   "0s.test",
+		SolanaAddress: vault,
+	}
+	// Nothing learned yet: the last refresh did not answer.
+	if a.passkeyVaultExists() {
+		t.Fatal("no snapshot: vault reported as existing")
+	}
+	a.snap = &snapshot{accounts: []accountSnapshot{{addr: vault}}}
+	if a.passkeyVaultExists() {
+		t.Fatal("unknown state: vault reported as existing")
+	}
+	// The refresh learned the address already has an account.
+	a.snap.vault = vaultExists
+	if !a.passkeyVaultExists() {
+		t.Fatal("vaultExists state not reported")
+	}
+	// The balance is withheld once the account may not be the user's.
+	if got := a.passkeySolanaBalance(); got != "" {
+		t.Fatalf("balance = %q, want empty for an existing vault", got)
+	}
+	// A failed check is not "the address is free": no balance, and the
+	// card says the check did not succeed.
+	a.snap.vault = vaultUnknown
+	a.snap.accounts = []accountSnapshot{{addr: vault, native: big.NewInt(5_000_000_000)}}
+	if got := a.passkeySolanaBalance(); got != "" {
+		t.Fatalf("balance = %q, want empty when the vault check failed", got)
+	}
+	if !a.passkeyVaultUnchecked() {
+		t.Fatal("a failed vault check was treated as an answer")
+	}
+	a.snap.vault = vaultAbsent
+	if a.passkeyVaultUnchecked() {
+		t.Fatal("a confirmed-absent vault was treated as unchecked")
+	}
+	if got := a.passkeySolanaBalance(); got == "" {
+		t.Fatal("an absent vault hid the balance")
+	}
+	// The state belongs to the Solana page only.
+	a.settings.NetworkID = chains.Ethereum.ID
+	a.newReader()
+	if a.passkeyVaultExists() {
+		t.Fatal("Ethereum network: vault reported as existing")
 	}
 }

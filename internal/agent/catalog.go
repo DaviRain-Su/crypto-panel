@@ -81,7 +81,7 @@ func Catalog(managed bool) map[string]any {
 		"examples": examples,
 		"limits": map[string]int{
 			"manifestBytes": 64 << 10, "sourceBytes": 1 << 20, "fileCount": 200, "fileBytes": 2 << 20,
-			"packageBytes": 8 << 20, "applicationRequestBytes": maxApplicationRequest,
+			"packageBytes": plugin.MaxPackageBytes, "applicationRequestBytes": maxApplicationRequest,
 			"settingsRequestBytes": maxSettingsRequest, "settingValueBytes": 8192, "pageBytes": 256 << 10,
 			"sections": 32, "stats": 12, "tableColumns": 8, "tableRows": 200, "cards": 32, "links": 16,
 			"chartPoints": 60, "settings": 20, "navigation": 8, "kvValueBytes": 64 << 10,

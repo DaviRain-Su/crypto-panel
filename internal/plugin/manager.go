@@ -35,6 +35,7 @@ type Manager struct {
 	candidateSlots    chan struct{}
 	removalGeneration uint64
 	viaGeneration     [2]uint64
+	viaClosed         [2]bool
 }
 
 // NewManager 先恢复已确认提交，再清除上次进程未确认的快照。
@@ -56,6 +57,9 @@ func NewManager(store *Store) (*Manager, error) {
 	if err := m.recoverTransactions(); err != nil {
 		return nil, err
 	}
+	// 迁移失败或索引损坏都不能阻止管理器启动。没有可信来源记录时，
+	// local.* 的 API 修改会在稍后失败关闭。
+	store.migrateProvenance()
 	entries, err := os.ReadDir(m.pendingDir)
 	if err != nil {
 		return nil, managementError("STORE_UNAVAILABLE", "无法清理旧候选", 503)
@@ -127,12 +131,21 @@ func (m *Manager) Propose(source Source, operation, targetID, expectedHash, via 
 	if targetID != "" && targetID != c.manifest.ID {
 		return Installation{}, managementError("PLUGIN_ID_MISMATCH", "目标 id 与候选清单不一致", 409)
 	}
+	// 生产路径为空。测试在任务写入前关闭入口，以观察代际是否作废仍在校验的提议。
+	if beforeProposalCommit != nil {
+		beforeProposalCommit()
+	}
 	m.mu.Lock()
-	defer m.mu.Unlock()
 	if m.closed {
+		m.mu.Unlock()
 		return Installation{}, managementError("MANAGER_CLOSED", "应用生命周期服务已关闭", 503)
 	}
+	if m.viaClosed[viaIndex(via)] {
+		m.mu.Unlock()
+		return Installation{}, managementError("PROPOSAL_CANCELLED", "提议来源已关闭，未登记安装任务", 409)
+	}
 	if m.removalGeneration != removalGeneration || m.viaGeneration[viaIndex(via)] != viaGeneration {
+		m.mu.Unlock()
 		return Installation{}, managementError("PROPOSAL_CANCELLED", "提议期间来源已取消或应用被卸载，请重新提议", 409)
 	}
 	m.pruneLocked(time.Now().UTC())
@@ -145,22 +158,48 @@ func (m *Manager) Propose(source Source, operation, targetID, expectedHash, via 
 		if task.record.PluginID != c.manifest.ID {
 			continue
 		}
-		if task.record.Operation == operation && task.record.PackageHash == c.hash && task.record.ExpectedHash == expectedHash {
+		// 相同内容只复用同一入口的任务。API 不能挂到 ACP 任务上，否则关闭 API 撤不掉它。
+		if task.record.Operation == operation && task.record.PackageHash == c.hash && task.record.ExpectedHash == expectedHash && task.record.Via == via {
+			m.mu.Unlock()
 			return cloneInstallation(task.record), nil
 		}
+		m.mu.Unlock()
 		return Installation{}, managementError("CANDIDATE_CONFLICT", "该应用已有其他待处理候选", 409)
 	}
 	if active >= MaxPendingInstallations {
+		m.mu.Unlock()
 		return Installation{}, managementError("QUEUE_FULL", "待安装队列已满", 429)
 	}
 	release, err := m.store.tryLease(c.manifest.ID)
 	if err != nil {
+		m.mu.Unlock()
 		return Installation{}, err
 	}
+	m.mu.Unlock()
 	defer release()
+	// 整树拷贝、哈希与迁移检查在 m.mu 之外执行：lease 已持有，同 id 的
+	// 提交、卸载与执行无法穿插，UI 每帧的 Installations() 也不会被阻塞。
 	old, err := m.checkTarget(c.manifest, operation, expectedHash)
 	if err != nil {
 		return Installation{}, err
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.closed {
+		return Installation{}, managementError("MANAGER_CLOSED", "应用生命周期服务已关闭", 503)
+	}
+	if m.viaClosed[viaIndex(via)] || m.removalGeneration != removalGeneration || m.viaGeneration[viaIndex(via)] != viaGeneration {
+		return Installation{}, managementError("PROPOSAL_CANCELLED", "提议期间来源已取消或应用被卸载，请重新提议", 409)
+	}
+	// 其他 id 的提议可能在锁外期间占满队列；同 id 因 lease 独占不会新增。
+	active = 0
+	for _, task := range m.tasks {
+		if activeInstallation(task.record.Status) {
+			active++
+		}
+	}
+	if active >= MaxPendingInstallations {
+		return Installation{}, managementError("QUEUE_FULL", "待安装队列已满", 429)
 	}
 	var random [24]byte
 	if _, err := rand.Read(random[:]); err != nil {
@@ -252,14 +291,50 @@ func (m *Manager) Decide(id string, allow bool) (Installation, error) {
 	return cloneInstallation(task.record), nil
 }
 
+// beforeProposalCommit 仅测试设置。它在候选通过校验、写入任务表之前运行。
+var beforeProposalCommit func()
+
+// APIMayMutate 只放行宿主安装记录与磁盘一致的未签名 local.* 个人应用。
+// 记录在应用目录之外。缺失、不匹配，或 install.json 被替换、硬链接、链接、
+// 管道化或无法解析时一律拒绝。原生界面卸载不经过这里。
+// 应用目录本身不存在时不在这里报错，因此删除一个已经不存在的 local.* 应用保持幂等。
+func (m *Manager) APIMayMutate(id string) error {
+	if !strings.HasPrefix(id, "local.") {
+		return apiMutationForbidden()
+	}
+	inst, err := m.store.Get(id)
+	if errors.Is(err, ErrNotInstalled) {
+		return nil
+	}
+	if err != nil {
+		return installedError(err)
+	}
+	return m.store.authorizeAPIMutation(inst)
+}
+
 // Cancel 仅取消 pending，不能宣称撤销正在提交的安装。
 func (m *Manager) Cancel(id string) (Installation, error) {
+	return m.cancel(id, "")
+}
+
+// CancelFrom 只取消指定入口的任务。本机 API 不能取消 ACP 发起的安装。
+func (m *Manager) CancelFrom(id, via string) (Installation, error) {
+	if via != "local-api" && via != "acp" {
+		return Installation{}, managementError("INVALID_VIA", "提议来源无效", 400)
+	}
+	return m.cancel(id, via)
+}
+
+func (m *Manager) cancel(id, via string) (Installation, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.pruneLocked(time.Now().UTC())
 	task, ok := m.tasks[id]
 	if !ok {
 		return Installation{}, managementError("INSTALLATION_NOT_FOUND", "安装任务不存在", 404)
+	}
+	if via != "" && task.record.Via != via {
+		return cloneInstallation(task.record), managementError("INSTALLATION_ORIGIN_FORBIDDEN", "本机 API 不能取消其他来源的安装任务", 403)
 	}
 	if task.record.Status == "cancelled" {
 		return cloneInstallation(task.record), nil
@@ -272,12 +347,14 @@ func (m *Manager) Cancel(id string) (Installation, error) {
 }
 
 // CancelVia 使已关闭入口的未批准任务失效；已经开始提交的任务继续完成。
+// 入口保持关闭，直到 ResumeVia 重新开放，关闭期间开始的提议不会被登记。
 func (m *Manager) CancelVia(via string) {
 	if via != "local-api" && via != "acp" {
 		return
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	m.viaClosed[viaIndex(via)] = true
 	m.viaGeneration[viaIndex(via)]++
 	m.pruneLocked(time.Now().UTC())
 	for _, task := range m.tasks {
@@ -285,6 +362,37 @@ func (m *Manager) CancelVia(via string) {
 			m.finishLocked(task, "cancelled", "", "")
 		}
 	}
+}
+
+// ResumeVia 重新开放一个入口；不恢复已取消的任务。
+func (m *Manager) ResumeVia(via string) {
+	if via != "local-api" && via != "acp" {
+		return
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.viaClosed[viaIndex(via)] = false
+}
+
+// RemoveAt 清理一个无法读取清单的目录；能校验的 id 仍走 lease 与待确认撤销。
+func (m *Manager) RemoveAt(dir string) error {
+	id := filepath.Base(filepath.Clean(dir))
+	if validatePluginID(id) == nil {
+		release, err := m.store.tryLease(id)
+		if err != nil {
+			return err
+		}
+		defer release()
+		m.mu.Lock()
+		m.removalGeneration++
+		for _, task := range m.tasks {
+			if task.record.PluginID == id && task.record.Status == "pending" {
+				m.finishLocked(task, "cancelled", "", "")
+			}
+		}
+		m.mu.Unlock()
+	}
+	return m.store.RemoveAt(dir)
 }
 
 // Remove 与执行、设置、提交共用 lease，并先撤销同 id 的待确认任务。
@@ -339,6 +447,9 @@ func (m *Manager) beginCandidate(via string) (uint64, uint64, error) {
 	defer m.mu.Unlock()
 	if m.closed {
 		return 0, 0, managementError("MANAGER_CLOSED", "应用生命周期服务已关闭", 503)
+	}
+	if m.viaClosed[viaIndex(via)] {
+		return 0, 0, managementError("PROPOSAL_CANCELLED", "提议来源已关闭，未登记安装任务", 409)
 	}
 	select {
 	case m.candidateSlots <- struct{}{}:

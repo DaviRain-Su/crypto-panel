@@ -1,7 +1,6 @@
 package app
 
 import (
-	"errors"
 	"math/big"
 	"os"
 	"strings"
@@ -25,7 +24,7 @@ func (m memStore) Set(key string, value []byte) error {
 func (m memStore) Get(key string) ([]byte, error) {
 	v, ok := m[key]
 	if !ok {
-		return nil, errors.New("no such secret")
+		return nil, os.ErrNotExist
 	}
 	return v, nil
 }

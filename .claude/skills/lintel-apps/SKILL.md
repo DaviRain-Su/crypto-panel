@@ -75,11 +75,11 @@ source 只能选一种：
 {"values":{"label":"My pool"}}
 ```
 
-发送到 `PUT /v0/plugins/{id}/settings`。这是部分更新：缺省键不改，普通空串设空，secret 空串清除。不要用空串表示保留 secret。先核对全部键，系统凭据写入部分失败时按 appliedKeys / failedKeys 处理，不重传未授权的值。不要读取、打印或猜测秘密值。
+发送到 `PUT /v0/plugins/{id}/settings`。这是部分更新：缺省键不改，普通空串设空，secret 空串清除。不要用空串表示保留 secret。先核对全部键，系统凭据写入部分失败时按 appliedKeys / failedKeys 处理，不重传未授权的值。不要读取、打印或猜测秘密值。只对未签名的 `local.*` 个人应用生效，而且宿主必须已在现有凭据服务里确认安装来源（账户 `provenance:<id>`，服务名不变）。这份记录要存在、能解析，并与当前包摘要和 `install.json` 一致。官方应用、已签名应用，宿主记录缺失、读失败、尚未确认写入、损坏或与磁盘不一致，以及 `install.json` 被换成 `{}`、无签名字段的普通文件、硬链接、符号链接、目录、管道或无法解析内容时，返回 403 `API_MUTATION_FORBIDDEN`，文件和凭据保持不变。链接和管道都不会被打开。磁盘上的索引文件不能代替这份记录。凭据服务比文件难改，但不是同一用户的硬边界：Linux 和 Windows 上能写该服务的进程通常可以静默伪造记录；macOS 登录钥匙串读取秘密数据可能弹窗，列出或创建通常不会。编码代理没有沙箱。升级前的普通 install.json 只在记录确认写入后迁移一次；没确认的应用保持 403。新的商店安装和注册表条目不能使用 `local.*` id，新的 `local.*` 应用只能是个人目录安装。目录里的单条 `local.*` 会被跳过，其余条目仍可用。这个限制之前已经签名安装的 `local.*` 应用不能通过商店更新。窗口打开前 `index.js` 若已变化，确认会拒绝且不写记录。取消或关闭确认窗会清掉「正在检查」。Apps 页会提示，列表和确认窗写「无法确认来源」，不根据 install.json 标成未签名。确认窗打开时固定 id、路径、摘要和文件身份；点确认时若与快照不一致或安装记录是硬链接，都不会写记录，也不会先写下一条已签名记录。取消是默认按钮。确认文案写明本机 API 和编码代理之后可以修改并卸载该应用，只应确认自己创建的应用。确认成功后锁定列表会刷新。残留：这个限制之前已经签名安装的 `local.*` 应用，如果同一用户的进程在打开窗口之前改写了 install.json（或硬链接后再删掉外面的名字，使链接数回到 1），确认点击是唯一关口，点下去会把它变成可编辑应用。仓库里没有另一份离线签名证据。重新迁移需要同时删掉哨兵、`provenance:migration-started`、`provenance:migration` 和该应用的 `provenance:<id>`。只是哨兵文件没写成功，下一次启动就和升级前伪造 install.json 一样。
 
 原生确认安装后，壳会对无设置应用自动检查首页；有设置时先等待保存，也可由用户在壳中点击验证。完整保存设置且没有清除秘密时会自动验证；清除秘密后旧结果失效并等待重新配置或用户手动验证，部分保存失败不会执行。读取 `GET /v0/plugins` 的可选 verification 元数据，核对 requestId 和 packageHash 与本次已批准任务一致。waiting_settings 提示填写 / 保存设置；running 等待检查结束；failed 说明已安装但运行检查未通过；passed 只证明首页执行和页面结构通过，不证明数据业务正确。不要把 installed 当成运行成功，不要为查询状态重复写设置或并发刷新。验证记录只在当前进程有效，字段缺失不表示通过。
 
-用户同意执行后可 `POST /v0/plugins/{id}/refresh?page=overview` 检查实际页面内容；page 只允许 manifest.navigation 声明的页。响应仍是直接 page JSON，摘要与执行时间在 `X-Crypto-Panel-Package-Hash` / `X-Crypto-Panel-Evaluated-At` 头。它们不是行情时间。409 APP_BUSY 时等当前执行结束，不并发制造 runner。必要时引导用户从 Apps 打开原生应用。
+用户同意执行后可 `POST /v0/plugins/{id}/refresh?page=overview` 检查实际页面内容；page 只允许 manifest.navigation 声明的页。响应仍是直接 page JSON，摘要与执行时间同时在 `X-Crypto-Panel-Package-Hash` / `X-Crypto-Panel-Evaluated-At` 和 `X-Lintel-Package-Hash` / `X-Lintel-Evaluated-At` 头。旧名称保留。它们不是行情时间。409 APP_BUSY 时等当前执行结束，不并发制造 runner。必要时引导用户从 Apps 打开原生应用。
 
 ## 修改已有应用
 
@@ -87,4 +87,4 @@ source 只能选一种：
 
 校验后 `PUT /v0/plugins/{id}`，正文包含 source 和 `expectedHash`。旧摘要变化时停止、重读当前状态，不盲目覆盖。仍须原生确认。只有 installed 才报告更新成功；失败时旧版应保留。不要要求用户通过卸载重装来绕过一次拒绝。
 
-`DELETE /v0/plugins/{id}` 会卸载应用及其宿主状态和凭据，只在用户明确要求卸载时调用。不要自行安装 agent、修改钱包 / Passkey / DApp、调用签名入口、关闭安全断言或自动批准工具。
+`DELETE /v0/plugins/{id}` 会卸载应用及其宿主状态和凭据，只在用户明确要求卸载、且宿主安装记录与磁盘一致的未签名 `local.*` 应用时调用。其他应用，以及宿主记录缺失、无法校验、包摘要不一致或 `install.json` 被伪造、硬链接、改为符号链接或无法解析的 `local.*` 应用，返回 403 `API_MUTATION_FORBIDDEN`。`DELETE /v0/installations/{requestId}` 只能取消本机 API 自己的 pending 任务；ACP 任务返回 403 `INSTALLATION_ORIGIN_FORBIDDEN`。`GET /v0/plugins` 和 `GET /v0/installations/{requestId}` 不返回 ACP 任务的 requestId。不要自行安装 agent、修改钱包 / Passkey / DApp、调用签名入口、关闭安全断言或自动批准工具。

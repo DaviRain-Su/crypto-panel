@@ -179,6 +179,9 @@ func TestRunReturnsOnlyFrozenPending(t *testing.T) {
 	if out.Workspace == req.WorkspaceRoot || filepath.Dir(out.Workspace) != req.WorkspaceRoot || out.Session.ID != "test-session" {
 		t.Fatalf("错误结果: %+v", out)
 	}
+	if _, err := os.Stat(out.Workspace); !errors.Is(err, os.ErrNotExist) {
+		t.Fatal("完成后的生成目录未删除")
+	}
 	if out.Initialization.ProtocolVersion != acp.ProtocolVersion || p.closes.Load() != 1 || m.validations.Load() != 1 || m.proposals.Load() != 1 {
 		t.Fatal("未完成握手 / 校验 / 清理")
 	}
@@ -186,12 +189,60 @@ func TestRunReturnsOnlyFrozenPending(t *testing.T) {
 	if err != nil || len(installed) != 0 {
 		t.Fatal("编排批准或运行了 pending 应用")
 	}
-	if err := os.WriteFile(filepath.Join(out.Workspace, "app", "index.js"), []byte("bad source"), 0600); err != nil {
-		t.Fatal(err)
-	}
 	frozen, err := m.manager.GetInstallation(out.Installation.RequestID)
 	if err != nil || frozen.PackageHash != out.Installation.PackageHash || frozen.Status != "pending" {
 		t.Fatal("外部文件改变影响了冻结提议")
+	}
+}
+
+func TestCancelRemovesAuthoringWorkspace(t *testing.T) {
+	s, p, _, _ := harness(t)
+	entered := make(chan string, 1)
+	p.prompt = func(ctx context.Context, _, _ string) (acp.PromptResult, error) {
+		entered <- p.cfg.Cwd
+		<-ctx.Done()
+		return acp.PromptResult{}, ctx.Err()
+	}
+	done := make(chan error, 1)
+	go func() { _, err := s.Run(context.Background(), testRequest(t)); done <- err }()
+	var workspace string
+	select {
+	case workspace = <-entered:
+	case <-time.After(3 * time.Second):
+		t.Fatal("生成没有开始")
+	}
+	if _, err := os.Stat(filepath.Join(workspace, "context")); err != nil {
+		t.Fatal("运行中的生成目录不存在")
+	}
+	s.Cancel()
+	if err := receiveError(t, done); !errors.Is(err, context.Canceled) {
+		t.Fatalf("取消: %v", err)
+	}
+	if _, err := os.Stat(workspace); !errors.Is(err, os.ErrNotExist) {
+		t.Fatal("取消后生成目录还在")
+	}
+}
+
+func TestInstalledHandoffDoesNotKeepAuthoringWorkspace(t *testing.T) {
+	s, p, m, store := harness(t)
+	p.prompt = func(context.Context, string, string) (acp.PromptResult, error) {
+		return acp.PromptResult{StopReason: "end_turn"}, writeApp(filepath.Join(p.cfg.Cwd, "app"), "local.personal.installed", "1.0.0", testCode)
+	}
+	out, err := s.Run(context.Background(), testRequest(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(out.Workspace); !errors.Is(err, os.ErrNotExist) {
+		t.Fatal("交接后生成目录还在")
+	}
+	if _, err := m.manager.Decide(out.Installation.RequestID, true); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Get("local.personal.installed"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(out.Workspace); !errors.Is(err, os.ErrNotExist) {
+		t.Fatal("安装后又出现了生成目录")
 	}
 }
 
@@ -285,8 +336,8 @@ func TestMissingArtifactAndRepairLimit(t *testing.T) {
 	if p.prompts.Load() != 4 || m.validations.Load() != 4 {
 		t.Fatalf("修复未封顶三轮: prompt=%d validate=%d", p.prompts.Load(), m.validations.Load())
 	}
-	if _, err := os.Stat(filepath.Join(out.Workspace, "app")); err != nil {
-		t.Fatal("失败文件未保留")
+	if _, err := os.Stat(out.Workspace); !errors.Is(err, os.ErrNotExist) {
+		t.Fatal("失败后的生成目录未删除")
 	}
 	requireNoProposal(t, m)
 }

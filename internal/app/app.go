@@ -38,6 +38,9 @@ const (
 	sidebarWidth    = 232
 	// sidebarRailWidth is the collapsed sidebar: the icon rail.
 	sidebarRailWidth = 64
+	// contentMaxWidth is how wide the page column grows. The header and
+	// the body share it, so a wider window uses the room up to this cap.
+	contentMaxWidth = 1100
 )
 
 // route is what the sidebar has selected: one of the shell's pages, or a
@@ -70,6 +73,11 @@ type App struct {
 	quitting bool
 	// pal is the appearance's colors, set for each frame the view draws.
 	pal palette
+	// pageBox is the page column, so the launcher can count columns from
+	// the width the last frame gave it.
+	pageBox ui.Handle
+	// passkeyDetails unfolds the passkey explanation on the wallet page.
+	passkeyDetails bool
 
 	draftAddr   string
 	draftLabel  string
@@ -152,19 +160,21 @@ type App struct {
 	// plugins is the installed plugins folder. The rest is the manager's
 	// state: the list last read, one runtime and one log per plugin, the
 	// switch and form values the view binds to, and the page it shows.
-	plugins            *plugin.Store
-	pluginManager      *plugin.Manager
-	coding             codingState
-	pluginItems        []plugin.Installed
-	pluginRunners      map[string]*plugin.Runner
-	pluginRunnerHashes map[string]string
-	pluginLogs         map[string]*plugin.LogBuffer
-	pluginEnabled      map[string]*bool
-	pluginDrafts       map[string]*string
-	pluginLogsOpen     map[string]bool
-	pluginNotice       string
-	pluginView         pluginPageState
-	pluginGen          int
+	plugins             *plugin.Store
+	pluginManager       *plugin.Manager
+	coding              codingState
+	pluginItems         []plugin.Installed
+	pluginRunners       map[string]*plugin.Runner
+	pluginRunnerHashes  map[string]string
+	pluginLogs          map[string]*plugin.LogBuffer
+	pluginEnabled       map[string]*bool
+	pluginDrafts        map[string]*string
+	pluginSettingStatus map[string][]plugin.SettingStatus
+	pluginLogsOpen      map[string]bool
+	pluginNotice        string
+	provenanceLocked    []plugin.Installed
+	pluginView          pluginPageState
+	pluginGen           int
 
 	// 安装后验证只保存当前进程中的安全元数据，不复用普通页面的签名能力。
 	installationVerifications        map[string]*installationVerification
@@ -196,7 +206,8 @@ type App struct {
 	goAsync   func(func())
 	// confirmInstall shows the permission prompt and reports the answer.
 	// Tests replace it.
-	confirmInstall func(plugin.Manifest, installRequest, func(bool))
+	confirmInstall    func(plugin.Manifest, installRequest, func(bool))
+	confirmProvenance func(plugin.ProvenanceView, func(bool))
 	// installOpen is set while the permission prompt is on screen.
 	installOpen bool
 	// confirmConnect asks the user to let a DApp see the NEAR accounts, and
@@ -221,6 +232,9 @@ type App struct {
 	dappBridge    *dappBridgeState
 
 	// 本机 API 的监听器、系统凭据服务、Settings 显示值与端口输入。
+	// pluginSecrets 非空时代替 crypto-panel-plugins。测试必须设置它；
+	// 生产路径留空，由 initPlugins 使用真实凭据服务。
+	pluginSecrets  plugin.Secrets
 	agentSecrets   wallet.SecretStore
 	agentSrv       *agent.Server
 	agentErr       string
@@ -249,9 +263,17 @@ type App struct {
 	approveIntents       func(intentsApprovalRequest) bool
 }
 
+// appUserDataDir, appRunOnMain and appGoAsync are the startup hooks. Tests
+// replace them so New can load the locked list without the UI loop.
+var (
+	appUserDataDir = func() (string, error) { return mygo.App.Path(mygo.PathUserData) }
+	appRunOnMain   = mygo.RunOnMain
+	appGoAsync     = func(fn func()) { go fn() }
+)
+
 // New loads the settings and returns the shell, before the app is ready.
 func New() (*App, error) {
-	dir, err := mygo.App.Path(mygo.PathUserData)
+	dir, err := appUserDataDir()
 	if err != nil {
 		return nil, err
 	}
@@ -281,9 +303,11 @@ func New() (*App, error) {
 	a.intentsClient = intents.New()
 	a.priceSource = prices.New()
 	a.startRefresh = a.fetch
-	a.runOnMain = mygo.RunOnMain
-	a.goAsync = func(fn func()) { go fn() }
+	a.runOnMain = appRunOnMain
+	a.goAsync = appGoAsync
 	a.confirmInstall = a.askInstall
+	a.confirmProvenance = a.openProvenanceConfirm
+	a.refreshProvenanceLocks()
 	a.initAuthoring()
 	a.confirmConnect = a.askConnect
 	// approve stays nil. Plugins, the wallet, and NEAR send go through
@@ -520,6 +544,9 @@ func (a *App) setNetwork(id string) {
 		return
 	}
 	a.settings.NetworkID = id
+	// A connection is for the network that was current. A NEAR testnet
+	// approval must not silently become a mainnet connection.
+	a.dappConnected = map[string]bool{}
 	a.settings.RPCURL = ""
 	a.rpcDraft = ""
 	a.settings = a.settings.Validate()

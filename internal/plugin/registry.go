@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"log"
 	"net/http"
 	"net/url"
 	"os"
@@ -87,8 +88,22 @@ func ParseRegistry(data []byte) (Registry, error) {
 		return Registry{}, fmt.Errorf("registry: more than %d plugins", maxRegistryPlugins)
 	}
 	seen := make(map[string]bool, len(reg.Plugins))
+	kept := reg.Plugins[:0]
+	skippedLocal := 0
+	const maxLoggedSkips = 5
 	for i := range reg.Plugins {
-		entry := &reg.Plugins[i]
+		entry := reg.Plugins[i]
+		if strings.HasPrefix(entry.ID, "local.") {
+			// One old local.* catalog row must not hide every other app.
+			// Signed install of that id is still rejected by Prepare.
+			// The id is untrusted catalog text: quote it, keep it short, and
+			// don't let one file flood the log.
+			if skippedLocal < maxLoggedSkips {
+				log.Printf("lintel: skipping registry entry %q: a signed install cannot use a local.* id", truncateForLog(entry.ID, 64))
+			}
+			skippedLocal++
+			continue
+		}
 		if err := entry.Validate(); err != nil {
 			return Registry{}, fmt.Errorf("registry entry %d: %w", i+1, err)
 		}
@@ -96,8 +111,21 @@ func ParseRegistry(data []byte) (Registry, error) {
 			return Registry{}, fmt.Errorf("registry: %s is listed twice", entry.ID)
 		}
 		seen[entry.ID] = true
+		kept = append(kept, entry)
 	}
+	if extra := skippedLocal - maxLoggedSkips; extra > 0 {
+		log.Printf("lintel: skipped %d more local.* registry entries", extra)
+	}
+	reg.Plugins = kept
 	return reg, nil
+}
+
+func truncateForLog(value string, max int) string {
+	r := []rune(value)
+	if len(r) <= max {
+		return value
+	}
+	return string(r[:max])
 }
 
 // Validate checks one entry's fields. The archive itself is checked when it
@@ -105,6 +133,9 @@ func ParseRegistry(data []byte) (Registry, error) {
 func (e RegistryEntry) Validate() error {
 	if !idPattern.MatchString(e.ID) || len(e.ID) > 128 {
 		return fmt.Errorf("id %q must be reverse-DNS, lowercase, such as \"com.example.portfolio\"", e.ID)
+	}
+	if strings.HasPrefix(e.ID, "local.") {
+		return fmt.Errorf("%s: a signed registry install cannot use a local.* id", e.ID)
 	}
 	if strings.TrimSpace(e.Name) == "" || len([]rune(e.Name)) > 64 {
 		return fmt.Errorf("%s: the name must be 1 to 64 characters", e.ID)
@@ -236,6 +267,9 @@ func readLimited(r io.Reader, max int64) ([]byte, error) {
 // manager leaves behind are not part of it, so enabling a plugin or opening
 // its folder does not change what was signed.
 func DigestDir(dir string) (string, error) {
+	if err := rejectSymlinkRoot(dir); err != nil {
+		return "", err
+	}
 	files, err := pluginFiles(dir)
 	if err != nil {
 		return "", err

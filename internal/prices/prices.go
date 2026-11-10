@@ -40,7 +40,7 @@ var ids = map[string]string{
 	"USDC":  "usd-coin",
 	"USDT":  "tether",
 	"DAI":   "dai",
-	"cbETH": "coinbase-wrapped-staked-eth",
+	"CBETH": "coinbase-wrapped-staked-eth",
 	"JUP":   "jupiter-exchange-solana",
 	"BONK":  "bonk",
 }

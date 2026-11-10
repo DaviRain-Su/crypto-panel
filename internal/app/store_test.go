@@ -184,6 +184,7 @@ func TestInstallPromptView(t *testing.T) {
 		"See your watched addresses and balances",
 		"Ask you to sign transactions", "Store 64 KB of data",
 		"Settings: 1", "Cancel", "Install",
+		"ID: com.example.signer",
 	} {
 		if !tt.HasText(want) {
 			t.Errorf("missing %q in %q", want, tt.Texts())

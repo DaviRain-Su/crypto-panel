@@ -7,6 +7,7 @@ import (
 	"slices"
 	"sort"
 	"strings"
+	"unicode"
 
 	"github.com/egoist/mygo/ui"
 
@@ -179,7 +180,10 @@ func (a *App) navRow(c *ui.Context, id, label string, g *glyph, selected, collap
 		row.Background(t.Accent).TextColor(t.AccentText)
 		iconColor = t.AccentText
 	case selected:
-		row.Background(t.SurfacePressed)
+		// Quiet, but still the current page: accent wash, not a gray
+		// that disappears into the sidebar.
+		row.Background(p.accentSoft).TextColor(p.accent)
+		iconColor = p.accent
 	case row.Hovered():
 		row.Background(t.SurfaceHover)
 	}
@@ -275,19 +279,40 @@ func (a *App) sidebarFooter(c *ui.Context) {
 func (a *App) content(c *ui.Context) {
 	p := a.pal
 	ui.Column(c).Grow(1).FillHeight().Background(p.bg).Children(func() {
-		a.pageHeader(c)
-		if a.route.kind == "apps" {
-			// The DApp page fills its height: a web view does not scroll
-			// with the shell's page.
-			a.dappBody(c)
-			return
-		}
-		ui.Scroll(c.Key("page")).Grow(1).Children(func() {
-			ui.Column(c).Padding(0, 44, 56, 44).MaxWidth(920).Children(func() {
-				a.pageBody(c)
+		// Header and body share one column that grows with the window
+		// and stops at contentMaxWidth.
+		page := ui.Column(c).Grow(1).FillWidth().FillHeight().MaxWidth(contentMaxWidth)
+		page.Bind(&a.pageBox)
+		page.Children(func() {
+			a.pageHeader(c)
+			if a.route.kind == "apps" {
+				// The DApp page fills its height: a web view does not scroll
+				// with the shell's page.
+				a.dappBody(c)
+				return
+			}
+			ui.Scroll(c.Key("page")).Grow(1).Children(func() {
+				ui.Column(c).Padding(0, 44, 56, 44).Children(func() {
+					a.pageBody(c)
+				})
 			})
 		})
 	})
+}
+
+// displayKicker is the small line above a page title. English kickers are
+// set in capitals. A URL, or any line that already contains Chinese, is
+// left as written so it does not shout.
+func displayKicker(s string) string {
+	if s == "" || strings.Contains(s, "://") {
+		return s
+	}
+	for _, r := range s {
+		if unicode.IsLetter(r) && r > unicode.MaxASCII {
+			return s
+		}
+	}
+	return strings.ToUpper(s)
 }
 
 func (a *App) pageHeader(c *ui.Context) {
@@ -299,7 +324,7 @@ func (a *App) pageHeader(c *ui.Context) {
 		}
 		ui.Column(c).Grow(1).Gap(5).Children(func() {
 			if subtitle != "" {
-				ui.Text(c, strings.ToUpper(subtitle)).FontSize(10.5).FontWeight(700).
+				ui.Text(c, displayKicker(subtitle)).FontSize(10.5).FontWeight(700).
 					TextColor(p.muted).LetterSpacing(0.8).MaxLines(1)
 			}
 			ui.Row(c).Gap(10).AlignItems(ui.Center).Children(func() {
@@ -490,7 +515,7 @@ func (a *App) heroCard(c *ui.Context) {
 	ui.Column(c).Gap(10).Padding(22).Radius(16).Border(1, p.hairline).
 		Gradient(p.accentSoft, p.card, 115).Children(func() {
 		ui.Row(c).AlignItems(ui.Center).Children(func() {
-			ui.Text(c, strings.ToUpper(a.t(i18n.TotalIn, network.Name))).FontSize(10.5).
+			ui.Text(c, displayKicker(a.t(i18n.TotalIn, network.Name))).FontSize(10.5).
 				FontWeight(700).TextColor(p.muted).LetterSpacing(0.8).Grow(1).MaxLines(1)
 			ui.Row(c).Gap(6).Padding(5, 9).Radius(99).Background(p.inset).
 				AlignItems(ui.Center).Children(func() {
@@ -506,6 +531,11 @@ func (a *App) heroCard(c *ui.Context) {
 		if known {
 			if fiat, ok := a.fiatText(total, network.Decimals, network.Symbol); ok {
 				ui.Text(c, a.t(i18n.FiatApprox, fiat)).FontSize(12).TextColor(p.muted).MaxLines(1)
+			} else if a.snap != nil && a.snap.fiatErr != "" && !a.settings.HideFiat {
+				ui.Text(c, a.t(i18n.FiatUnavailable)).FontSize(12).TextColor(p.muted).MaxLines(1)
+			}
+			if a.totalsPartial() {
+				ui.Text(c, a.t(i18n.PortfolioIncomplete)).FontSize(12).TextColor(p.danger).MaxLines(2)
 			}
 		}
 		ui.Text(c, a.headline()).FontSize(11.5).TextColor(p.muted).MaxLines(1)
@@ -543,15 +573,15 @@ func (a *App) accountCard(c *ui.Context, acc wallet.Address) {
 							TextColor(p.accent).Padding(3, 6).Radius(99).Background(p.accentSoft)
 					}
 				})
-				ui.Text(c, a.displayAddress(acc.Addr)).Font("monospace").FontSize(10.5).
+				ui.Text(c, a.displayAddress(acc.Addr)).Font("monospace").FontSize(12).
 					TextColor(p.muted).MaxLines(1)
 			})
 			ui.Column(c).AlignItems(ui.End).Gap(1).Children(func() {
 				ui.Text(c, a.nativeText(snap)).FontSize(15).FontWeight(700)
-				ui.Text(c, a.network().Symbol).FontSize(10).TextColor(p.faint)
+				ui.Text(c, a.network().Symbol).FontSize(12).TextColor(p.muted)
 				if snap != nil {
 					if fiat, ok := a.fiatText(snap.native, a.network().Decimals, a.network().Symbol); ok {
-						ui.Text(c, fiat).FontSize(10).TextColor(p.faint).MaxLines(1)
+						ui.Text(c, fiat).FontSize(12).TextColor(p.muted).MaxLines(1)
 					}
 				}
 			})
@@ -576,16 +606,16 @@ func (a *App) identicon(c *ui.Context, addr string) {
 	h := fnv.New32a()
 	h.Write([]byte(strings.ToLower(addr)))
 	bits := h.Sum32()
-	ui.Box(c).Size(34, 34).Radius(10).Background(p.inset).Center().Children(func() {
-		ui.Column(c).Gap(2).Children(func() {
+	ui.Box(c).Size(36, 36).Radius(10).Background(p.inset).Center().Children(func() {
+		ui.Column(c).Gap(4).Children(func() {
 			for row := 0; row < 3; row++ {
-				ui.Row(c).Gap(2).Children(func() {
+				ui.Row(c).Gap(4).Children(func() {
 					for col := 0; col < 3; col++ {
 						fill := p.inset
 						if bits&(1<<uint(row*3+col)) != 0 {
 							fill = p.accent
 						}
-						ui.Box(c).Size(5, 5).Radius(1.5).Background(fill)
+						ui.Box(c).Size(4, 4).Radius(1).Background(fill)
 					}
 				})
 			}
@@ -622,7 +652,7 @@ func (a *App) tokenRows(c *ui.Context, snap *accountSnapshot) {
 				ui.Text(c, chain.FormatAmount(tb.Amount, tb.Token.Decimals, tb.Token.DisplayFrac())).
 					FontSize(10.5).FontWeight(600).MaxLines(1)
 				if fiat, ok := a.fiatText(tb.Amount, tb.Token.Decimals, tb.Token.Symbol); ok {
-					ui.Text(c, fiat).FontSize(10).TextColor(p.faint).MaxLines(1)
+					ui.Text(c, fiat).FontSize(12).TextColor(p.muted).MaxLines(1)
 				}
 			})
 		}
@@ -637,6 +667,11 @@ func (a *App) fiatText(amount *big.Int, decimals int, symbol string) (string, bo
 		return "", false
 	}
 	price, ok := a.snap.usd[symbol]
+	if !ok {
+		// Prices keys symbols in upper case (CBETH). Token symbols keep
+		// their display case (cbETH).
+		price, ok = a.snap.usd[strings.ToUpper(symbol)]
+	}
 	if !ok || price <= 0 {
 		return "", false
 	}
@@ -689,6 +724,16 @@ func (a *App) nativeText(snap *accountSnapshot) string {
 
 // displayAddress returns addr the way a person reads it: EIP-55 for EVM,
 // unchanged base58 for Solana.
+// shortIfAddress shortens a bare address for a row and keeps the full
+// value as its tooltip. Sentences are left whole.
+func shortIfAddress(s string) (shown, tip string) {
+	s = strings.TrimSpace(s)
+	if len(s) > 18 && !strings.ContainsAny(s, " \t") {
+		return wallet.Short(s), s
+	}
+	return s, ""
+}
+
 func (a *App) displayAddress(addr string) string {
 	kind, ok := wallet.KindOf(addr)
 	if !ok {
@@ -740,7 +785,7 @@ func (a *App) settingsView(c *ui.Context) {
 	a.settingsGroup(c, a.t(i18n.AgentSection), func() {
 		a.agentRow(c)
 	})
-	a.settingsGroup(c, "编码 Agent", func() { a.codingSettings(c) })
+	a.settingsGroup(c, a.t(i18n.CodingSection), func() { a.codingSettings(c) })
 	a.settingsGroup(c, a.t(i18n.SecuritySection), func() {
 		a.presenceRow(c)
 		a.settingsDivider(c)

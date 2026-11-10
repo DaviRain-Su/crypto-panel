@@ -48,7 +48,7 @@ func TestInstallationVerificationDoesNotPersistOrRunAtRestart(t *testing.T) {
 	if err := a.pluginManager.Close(); err != nil {
 		t.Fatal(err)
 	}
-	b := &App{settings: DefaultSettings(), runOnMain: func(fn func()) { fn() }, goAsync: func(fn func()) { fn() }}
+	b := &App{settings: DefaultSettings(), pluginSecrets: memStore{}, runOnMain: func(fn func()) { fn() }, goAsync: func(fn func()) { fn() }}
 	b.initPlugins(filepath.Dir(a.plugins.Dir()))
 	t.Cleanup(func() { _ = b.pluginManager.Close() })
 	if got := installedVerification(t, b, job.PluginID); got != nil {

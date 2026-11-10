@@ -24,9 +24,10 @@ const (
 func newTestApp(t *testing.T) *App {
 	t.Helper()
 	a := &App{
-		settings:     DefaultSettings(),
-		settingsPath: filepath.Join(t.TempDir(), "settings.json"),
-		systemLocale: i18n.English,
+		settings:      DefaultSettings(),
+		settingsPath:  filepath.Join(t.TempDir(), "settings.json"),
+		systemLocale:  i18n.English,
+		pluginSecrets: memStore{},
 	}
 	a.newReader()
 	a.initPlugins(t.TempDir())
@@ -37,6 +38,7 @@ func newTestApp(t *testing.T) *App {
 	a.runOnMain = func(fn func()) { fn() }
 	a.goAsync = func(fn func()) { fn() }
 	a.confirmInstall = func(_ plugin.Manifest, _ installRequest, done func(bool)) { done(true) }
+	a.confirmProvenance = func(_ plugin.ProvenanceView, done func(bool)) { done(false) }
 	a.confirmConnect = func(string) bool { return true }
 	a.approve = func(approvalRequest) bool { return true }
 	a.dappConnected = map[string]bool{}
@@ -123,6 +125,90 @@ func TestViewSidebarSelectionUsesAccent(t *testing.T) {
 	// Accent in light mode is #4e6b52: green, darker than the paper sidebar.
 	if g>>8 < 0x40 || g < r || g < b {
 		t.Fatalf("focused selection is not the accent at (%d,%d): #%02x%02x%02x", x, y, r>>8, g>>8, b>>8)
+	}
+}
+
+func TestSidebarClickSelectsPage(t *testing.T) {
+	a := newTestApp(t)
+	tt := ui.NewTester(a.view, windowWidth, windowHeight)
+	info, ok := tt.AccessByRole(ui.RoleButton, "Wallet")
+	if !ok {
+		t.Fatal("no Wallet control")
+	}
+	tt.ClickAt(info.Bounds.X+info.Bounds.W/2, info.Bounds.Y+info.Bounds.H/2)
+	if a.route.kind != "wallet" {
+		t.Fatalf("clicking Wallet left the route at %q", a.route.kind)
+	}
+	info, ok = tt.AccessByRole(ui.RoleButton, "Settings")
+	if !ok {
+		t.Fatal("no Settings control")
+	}
+	tt.ClickAt(info.Bounds.X+info.Bounds.W/2, info.Bounds.Y+info.Bounds.H/2)
+	if a.route.kind != "settings" {
+		t.Fatalf("clicking Settings left the route at %q", a.route.kind)
+	}
+}
+
+func TestSidebarTooltip(t *testing.T) {
+	a := newTestApp(t)
+	a.settings.SidebarCollapsed = true
+	tt := ui.NewTester(a.view, windowWidth, windowHeight)
+	info, ok := tt.AccessByRole(ui.RoleButton, "Intents")
+	if !ok {
+		t.Fatal("no Intents control")
+	}
+	if info.Description != "Intents" {
+		t.Fatalf("collapsed Intents tooltip = %q", info.Description)
+	}
+}
+
+func TestSidebarUpClampsAtStart(t *testing.T) {
+	a := newTestApp(t)
+	tt := ui.NewTester(a.view, windowWidth, windowHeight)
+	info, ok := tt.AccessByRole(ui.RoleButton, "Portfolio")
+	if !ok {
+		t.Fatal("no Portfolio control")
+	}
+	tt.ClickAt(info.Bounds.X+info.Bounds.W/2, info.Bounds.Y+info.Bounds.H/2)
+	tt.Key(0, ui.KeyUp)
+	if a.route.kind != "" {
+		t.Fatalf("up from the first page went to %q", a.route.kind)
+	}
+}
+
+func TestSidebarDownClampsAtEnd(t *testing.T) {
+	a := newTestApp(t)
+	tt := ui.NewTester(a.view, windowWidth, windowHeight)
+	info, ok := tt.AccessByRole(ui.RoleButton, "Portfolio")
+	if !ok {
+		t.Fatal("no Portfolio control")
+	}
+	tt.ClickAt(info.Bounds.X+info.Bounds.W/2, info.Bounds.Y+info.Bounds.H/2)
+	tt.Key(0, ui.KeyEnd)
+	if a.route.kind != "settings" {
+		t.Fatalf("end went to %q", a.route.kind)
+	}
+	tt.Key(0, ui.KeyDown)
+	if a.route.kind != "settings" {
+		t.Fatalf("down from the last page went to %q", a.route.kind)
+	}
+}
+
+func TestSidebarHomeEnd(t *testing.T) {
+	a := newTestApp(t)
+	tt := ui.NewTester(a.view, windowWidth, windowHeight)
+	info, ok := tt.AccessByRole(ui.RoleButton, "Wallet")
+	if !ok {
+		t.Fatal("no Wallet control")
+	}
+	tt.ClickAt(info.Bounds.X+info.Bounds.W/2, info.Bounds.Y+info.Bounds.H/2)
+	tt.Key(0, ui.KeyEnd)
+	if a.route.kind != "settings" {
+		t.Fatalf("end went to %q", a.route.kind)
+	}
+	tt.Key(0, ui.KeyHome)
+	if a.route.kind != "" {
+		t.Fatalf("home went to %q", a.route.kind)
 	}
 }
 

@@ -65,7 +65,7 @@ function page(origin = "https://dapp.test", frame = false) {
   assert.equal(first.sent.length, 1);
   assert.equal(first.sent[0].url, "cryptopanel://near/request");
   assert.equal(first.sent[0].body.capability, oldToken);
-  first.answer({ id: first.sent[0].body.id, capability: oldToken, result: "first" });
+  first.answer({ id: first.sent[0].body.id, capability: oldToken, origin: "https://dapp.test", result: "first" });
   assert.equal(await firstCall, "first");
 
   // 即使 origin 相同，旧文档延迟执行的原生 Eval 也不能将 token 装入新文档。
@@ -79,9 +79,20 @@ function page(origin = "https://dapp.test", frame = false) {
   current.w[bindKey](token, 2, marker, "https://dapp.test");
   assert.equal(current.sent.length, 1);
   assert.equal(current.sent[0].body.capability, token);
-  current.answer({ id: current.sent[0].body.id, capability: oldToken, result: "stale" });
-  current.answer({ id: current.sent[0].body.id, capability: token, result: "current" });
+  current.answer({ id: current.sent[0].body.id, capability: oldToken, origin: "https://dapp.test", result: "stale" });
+  current.answer({ id: current.sent[0].body.id, capability: token, origin: "https://dapp.test", result: "current" });
   assert.equal(await call, "current");
+
+  // 乱序到达的携带他源 origin 的事件不能被本文档读取；capability 之外的第二道防线。
+  const foreign = current.w.nearWallet.getNetwork();
+  const foreignRequest = current.sent.at(-1);
+  let settled = false;
+  foreign.then(() => { settled = true; }, () => { settled = true; });
+  current.answer({ id: foreignRequest.body.id, capability: token, origin: "https://evil.test", result: "leak" });
+  await Promise.resolve();
+  assert.equal(settled, false, "an event with a foreign origin must be rejected");
+  current.answer({ id: foreignRequest.body.id, capability: token, origin: "https://dapp.test", result: "own" });
+  assert.equal(await foreign, "own");
 
   // 乱序执行的 Eval 不能覆盖已恢复文档中的较新绑定。
   current.w[bindKey](oldToken, 1, marker, "https://dapp.test");
@@ -109,7 +120,7 @@ function page(origin = "https://dapp.test", frame = false) {
   const last = current.sent.at(-1);
   assert.equal(last.body.method, "disconnect");
   assert.equal(last.body.capability, restoredToken);
-  current.answer({ id: last.body.id, capability: restoredToken, result: null });
+  current.answer({ id: last.body.id, capability: restoredToken, origin: "https://dapp.test", result: null });
   await disconnect;
 })().catch(err => { console.error(err); process.exitCode = 1; });
 `

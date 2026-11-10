@@ -279,3 +279,84 @@ func TestSettingsShowsTheAgentAPI(t *testing.T) {
 		}
 	}
 }
+
+func TestAPISummaryHidesACPRequestID(t *testing.T) {
+	a := newTestApp(t)
+	mgr := a.ApplicationManager()
+	id := "local.personal.pending"
+	first, err := mgr.Propose(personalSource(t, id, "1.0.0"), "install", "", "", "local-api")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := mgr.Decide(first.RequestID, true); err != nil {
+		t.Fatal(err)
+	}
+	a.refreshPlugins()
+	hash, err := a.plugins.PackageHash(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	acpJob, err := mgr.Propose(personalSource(t, id, "1.0.1"), "update", id, hash, "acp")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, item := range a.Plugins() {
+		if item.ID == id && item.PendingInstallationID != "" {
+			t.Fatalf("ACP request id exposed: %s", item.PendingInstallationID)
+		}
+	}
+	if _, err := mgr.Cancel(acpJob.RequestID); err != nil {
+		t.Fatal(err)
+	}
+	apiJob, err := mgr.Propose(personalSource(t, id, "1.0.1"), "update", id, hash, "local-api")
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, item := range a.Plugins() {
+		if item.ID == id && item.PendingInstallationID == apiJob.RequestID {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("API request id was hidden")
+	}
+}
+
+func TestRefreshRefusesNearSigning(t *testing.T) {
+	a := newTestApp(t)
+	dir := filepath.Join(t.TempDir(), "app")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	manifest := `{
+  "id": "local.personal.near-sign",
+  "name": "Near sign",
+  "version": "1.0.0",
+  "main": "index.js",
+  "permissions": { "sign": true, "chains": ["near:testnet"] },
+  "navigation": [{ "title": "Overview", "page": "overview" }]
+}`
+	source := `export function page() {
+  try {
+    const res = host.requestNearSign({ chainId: "near:testnet", receiver: "bob.testnet", actions: [{ type: "transfer", amount: "1" }] });
+    return { title: "signed", sections: [{ text: String(res.hash) }] };
+  } catch (err) {
+    return { title: "refused", sections: [{ text: String(err.message || err) }] };
+  }
+}`
+	if err := os.WriteFile(filepath.Join(dir, "plugin.json"), []byte(manifest), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "index.js"), []byte(source), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := a.plugins.Install(dir); err != nil {
+		t.Fatal(err)
+	}
+	result, err := a.RefreshPage("local.personal.near-sign", "overview")
+	page, ok := result.Page.(pages.Page)
+	if err != nil || !ok || page.Title != "refused" || len(page.Sections) == 0 || !strings.Contains(page.Sections[0].Text, "signing is not available over the local API") {
+		t.Fatalf("refresh 没有拒绝 NEAR 签名: %+v %v", result.Page, err)
+	}
+}

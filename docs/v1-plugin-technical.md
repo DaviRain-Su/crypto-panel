@@ -11,9 +11,9 @@
 - Installation 仅公开 requestId、operation、pluginId、version、packageHash、expectedHash、status、via、manifest、oldManifest、createdAt、expiresAt、completedAt、code、error。清单只含声明元数据；不包含源码、来源路径或设置值。时间为 UTC `time.Time`。
 - `GetInstallation/Installations/Decide/Cancel/CancelVia/Remove/Close` 保持约定签名。`Decide` 只能由宿主原生事件调用，不包含批准回调。`Installations` 只列活跃任务；终态仍可 Get 查询。
 - `TryExecution(id)(func(),error)` 是按仓库路径和 id 共享的非阻塞独占 lease；重复 release 安全。固定最大活跃 lease 数，释放后删除键，不永久增长。`Manager.SetSettings`、`Manager.SetEnabled` 与 Store setter、提交、Remove 使用同一协调源。执行期间再次变更返回 `APP_BUSY/409`，不得在持有 lease 时弹批准窗口。
-- `SettingStatus` 内嵌 SettingField：普通字段 `Value *string`，秘密字段仅 `Configured *bool`，使用 omitempty，永无秘密 value。`Store.DescribeSettings/SetSettings` 与 `PackageHash` 按约定公开。`SettingsWriteError{AppliedKeys,FailedKeys []string}` 仅列声明键名，Error 文案固定且无底层异常。
+- `SettingStatus` 内嵌 SettingField：普通字段 `Value *string`，秘密字段仅 `Configured *bool`，永无秘密 value。清单里的 `secret` 保持 `omitempty`，`json.Marshal(Manifest)` 与升级前的规范包摘要字节一致。设置状态接口另用 DTO，`secret` 始终序列化（`false` 也写出），客户端按键是否存在区分普通字段。`Store.DescribeSettings/SetSettings` 与 `PackageHash` 按约定公开。`SettingsWriteError{AppliedKeys,FailedKeys []string}` 仅列声明键名，Error 文案固定且无底层异常。
 - `OfficialPackage(id)(Package,string,error)` 仅从两个内嵌模板读取完整源与规范化摘要，不依赖安装目录。
-- `RPCMethods() map[string][]string` 返回 evm/near/solana 查询允许表的防御性副本；host.rpc 使用链注册表 family 做精确匹配，未知与跨 family 方法在 broker 前拒绝。旧 checkRPCMethod 保留兼容，只允许任一已知 family 的方法。
+- `RPCMethods() map[string][]string` 返回 evm/near/solana 查询允许表的防御性副本；host.rpc 按链 family 做精确匹配（`checkRPCFamily`），未知与跨 family 方法在 broker 前拒绝。`checkRPCMethod` 已删除，没有兼容入口。nearcore 里 `tx` 与 `EXPERIMENTAL_tx_status` 共用 `tx_status_common` 查询处理器，`tx` 不是 `broadcast_tx_commit` 的别名，允许表不收录 `tx`。
 
 ## 规范化与只读校验
 
@@ -37,13 +37,13 @@
 
 ## 设置与错误边界
 
-批量写入先验证所有键和每值 <=8192 字节（总量 <=1 MiB）再写。键按字典序执行，普通值原子更新 state.json；secret 写入凭据服务，空字符串调用 Delete。凭据服务缺失或失败不回落明文。平台错误继续处理剩余键，返回准确 appliedKeys/failedKeys。元数据读取从不返回秘密值；凭据读取失败按宿主既有“未配置”行为处理。所有对外错误为固定安全文案，不拼入文件路径、源码、值或平台原始错误。
+批量写入先验证所有键和每值 <=8192 字节（总量 <=1 MiB）再写。键按字典序执行，普通值原子更新 state.json；secret 写入凭据服务，空字符串调用 Delete。请求里显式 JSON `null` 与空字符串相同，会清空对应 secret，不表示保留原值；缺省键才保持原值。凭据服务缺失或失败不回落明文。平台错误继续处理剩余键，返回准确 appliedKeys/failedKeys。元数据读取从不返回秘密值；凭据读取失败按宿主既有“未配置”行为处理。所有对外错误为固定安全文案，不拼入文件路径、源码、值或平台原始错误。
 
 ## 任务与测试规格
 
 按以下顺序实现，每项先添加测试再实现：
 
-1. 严格 JSON/Source/规范化：合法两文件 folder=file=inline hash；官方原 id 格式有效；未知字段/大小写别名/嵌套重复键/尾随值/null 类型拒绝；合法 .mjs 子路径保持；非法链及多个独立错误结构化。
+1. 严格 JSON/Source/规范化：合法两文件 folder=file=inline hash；官方原 id 格式有效；未知字段/大小写别名/嵌套重复键/尾随值拒绝。显式 JSON `null` 与省略该字段相同（encoding/json 的 no-op），不再按类型错误拒绝；设置值里的 `null` 解码成空字符串，和传 `""` 一样会清空该字段（包括 secret），不表示「不修改」。合法 .mjs 子路径保持；非法链及多个独立错误结构化。
 2. 静态安全：顶层无限循环/host 调用不执行；坏语法失败；符号链接、特殊文件、主路径越界、manifest/main/tree/输入上限失败；来源壳元数据无法改变状态或伪装信任。
 3. 安装任务：pending 不进 Store；允许安装冻结内容；拒绝/取消/超时清快照；同候选去重、不同候选冲突、5 个上限；返回对象修改不影响内部状态；任务 JSON 无源码/路径/设置值；重启取消旧候选。
 4. 更新：同 id 更高版本保留普通值/secret/KV/enabled；同版本/降级/错误 baseline/官方或签名/非法字段迁移/KV 缩额失败；提交前 baseline 变化与快照破坏失败；切换失败和各中断阶段启动恢复旧版或完整新版。

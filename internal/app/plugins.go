@@ -3,9 +3,12 @@ package app
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/egoist/mygo"
@@ -38,31 +41,41 @@ type pluginPageState struct {
 	hasPage  bool
 }
 
+// newPluginSecrets is the production credential backend for plugin secrets
+// and install provenance. Tests replace it so they cannot reach the real
+// keychain by forgetting to inject one.
+var newPluginSecrets = func() plugin.Secrets {
+	// Same service name as before the product rename, so plugin secrets
+	// already in the keychain stay reachable.
+	return mygo.Secrets.Service("crypto-panel-plugins")
+}
+
 // initPlugins opens the plugins folder under the app's data directory and
 // seeds the official examples on first launch.
 func (a *App) initPlugins(dir string) {
-	a.plugins = plugin.NewStore(
-		filepath.Join(dir, "plugins"),
-		// Same service name as before the product rename, so plugin
-		// secrets already in the keychain stay reachable.
-		mygo.Secrets.Service("crypto-panel-plugins"),
-	)
+	secrets := a.pluginSecrets
+	if secrets == nil {
+		secrets = newPluginSecrets()
+	}
+	a.plugins = plugin.NewStore(filepath.Join(dir, "plugins"), secrets)
 	a.pluginRunners = map[string]*plugin.Runner{}
 	a.pluginRunnerHashes = map[string]string{}
 	a.pluginLogs = map[string]*plugin.LogBuffer{}
 	a.pluginEnabled = map[string]*bool{}
 	a.pluginDrafts = map[string]*string{}
+	a.pluginSettingStatus = map[string][]plugin.SettingStatus{}
 	a.pluginLogsOpen = map[string]bool{}
 	if err := a.plugins.EnsureOfficial(); err != nil {
-		a.pluginNotice = err.Error()
+		a.pluginNotice = a.pluginErrorText(err)
 	}
 	manager, err := plugin.NewManager(a.plugins)
 	if err != nil {
-		a.pluginNotice = "应用管理初始化失败：" + err.Error()
+		a.pluginNotice = a.t(i18n.PluginManagerFailed, a.pluginErrorText(err))
 	} else {
 		a.pluginManager = manager
 	}
 	a.refreshPlugins()
+	a.refreshProvenanceLocks()
 }
 
 // refreshPlugins re-reads the plugins folder. It runs on the main thread,
@@ -73,7 +86,7 @@ func (a *App) refreshPlugins() {
 	}
 	items, err := a.plugins.List()
 	if err != nil {
-		a.pluginNotice = err.Error()
+		a.pluginNotice = a.pluginErrorText(err)
 		return
 	}
 	a.pluginItems = items
@@ -113,6 +126,51 @@ func (a *App) refreshPlugins() {
 	if a.route.kind == "plugin" && !a.pluginPageAvailable(items, a.route.id) {
 		a.closePluginPage()
 	}
+	// 设置状态缓存随列表刷新：移除的条目丢弃，仍存在的重新读取。
+	present := make(map[string]bool, len(items))
+	for _, item := range items {
+		if id := item.Manifest.ID; id != "" {
+			present[id] = true
+		}
+	}
+	for id := range a.pluginSettingStatus {
+		if !present[id] {
+			delete(a.pluginSettingStatus, id)
+			continue
+		}
+		a.loadPluginSettingStatus(id)
+	}
+}
+
+// loadPluginSettingStatus caches one app's settings status so the form never
+// reads the keychain per frame. A busy lease keeps the last known status.
+func (a *App) loadPluginSettingStatus(id string) {
+	if a.plugins == nil {
+		return
+	}
+	statuses, err := a.plugins.DescribeSettings(id)
+	if err != nil {
+		return
+	}
+	a.pluginSettingStatus[id] = statuses
+}
+
+// refreshProvenanceLocks reloads the locked-app list off the UI thread.
+// The Apps page only reads the cached slice.
+func (a *App) refreshProvenanceLocks() {
+	if a.plugins == nil || a.goAsync == nil || a.runOnMain == nil {
+		return
+	}
+	plugins := a.plugins
+	a.goAsync(func() {
+		list, err := plugins.LockedLocalApps()
+		a.runOnMain(func() {
+			if err == nil && a.plugins == plugins {
+				a.provenanceLocked = list
+			}
+			a.invalidate()
+		})
+	})
 }
 
 // pluginPageAvailable tells whether id is installed, readable and on.
@@ -142,13 +200,13 @@ func (a *App) installPlugin() {
 	if a.plugins == nil {
 		return
 	}
-	paths, err := mygo.Dialog.Open(mygo.OpenDialogOptions{
+	paths, err := pickInstallPath(mygo.OpenDialogOptions{
 		Title:       a.t(i18n.PluginInstallTitle),
 		ButtonLabel: a.t(i18n.PluginInstall),
 		Directory:   true,
 	})
 	if err != nil {
-		a.pluginNotice = a.t(i18n.PluginInstallFailed, err.Error())
+		a.pluginNotice = a.t(i18n.PluginInstallFailed, a.pluginErrorText(err))
 		a.invalidate()
 		return
 	}
@@ -160,8 +218,12 @@ func (a *App) installPlugin() {
 	if err == nil {
 		err = m.ValidateDir(src)
 	}
+	var digest string
+	if err == nil {
+		digest, err = plugin.DigestDir(src)
+	}
 	if err != nil {
-		a.pluginNotice = a.t(i18n.PluginInstallFailed, err.Error())
+		a.pluginNotice = a.t(i18n.PluginInstallFailed, a.pluginErrorText(err))
 		a.invalidate()
 		return
 	}
@@ -169,15 +231,7 @@ func (a *App) installPlugin() {
 		if !ok {
 			return
 		}
-		m, err := a.plugins.Install(src)
-		if err != nil {
-			a.pluginNotice = a.t(i18n.PluginInstallFailed, err.Error())
-			a.invalidate()
-			return
-		}
-		a.pluginNotice = a.t(i18n.PluginInstalled, m.Name)
-		a.refreshPlugins()
-		a.invalidate()
+		a.installApprovedSource(src, m, digest, "folder")
 	})
 }
 
@@ -187,28 +241,35 @@ func (a *App) installPluginZip() {
 	if a.plugins == nil {
 		return
 	}
-	paths, err := mygo.Dialog.Open(mygo.OpenDialogOptions{
+	paths, err := pickInstallPath(mygo.OpenDialogOptions{
 		Title:       a.t(i18n.AppZipTitle),
 		ButtonLabel: a.t(i18n.StoreInstall),
 		Filters:     []mygo.FileFilter{{Name: "zip", Extensions: []string{"zip"}}},
 	})
 	if err != nil {
-		a.pluginNotice = a.t(i18n.PluginInstallFailed, err.Error())
+		a.pluginNotice = a.t(i18n.PluginInstallFailed, a.pluginErrorText(err))
 		a.invalidate()
 		return
 	}
 	if len(paths) == 0 {
 		return
 	}
-	data, err := os.ReadFile(paths[0])
+	data, err := readZipLimited(paths[0])
 	if err != nil {
-		a.pluginNotice = a.t(i18n.PluginInstallFailed, err.Error())
+		a.pluginNotice = a.t(i18n.PluginInstallFailed, a.pluginErrorText(err))
 		a.invalidate()
 		return
 	}
 	dir, m, err := a.plugins.UnpackLocal(data)
 	if err != nil {
-		a.pluginNotice = a.t(i18n.PluginInstallFailed, err.Error())
+		a.pluginNotice = a.t(i18n.PluginInstallFailed, a.pluginErrorText(err))
+		a.invalidate()
+		return
+	}
+	digest, err := plugin.DigestDir(dir)
+	if err != nil {
+		a.plugins.DiscardUnpacked(dir)
+		a.pluginNotice = a.t(i18n.PluginInstallFailed, a.pluginErrorText(err))
 		a.invalidate()
 		return
 	}
@@ -217,16 +278,149 @@ func (a *App) installPluginZip() {
 		if !ok {
 			return
 		}
-		m, err := a.plugins.Install(dir)
-		if err != nil {
-			a.pluginNotice = a.t(i18n.PluginInstallFailed, err.Error())
-			a.invalidate()
-			return
-		}
-		a.pluginNotice = a.t(i18n.PluginInstalled, m.Name)
-		a.refreshPlugins()
-		a.invalidate()
+		a.installApprovedSource(dir, m, digest, "zip")
 	})
+}
+
+// pickInstallPath opens the folder or zip dialog. Tests replace it.
+var pickInstallPath = func(opts mygo.OpenDialogOptions) ([]string, error) {
+	return mygo.Dialog.Open(opts)
+}
+
+func readZipLimited(path string) ([]byte, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	info, err := f.Stat()
+	if err != nil {
+		return nil, err
+	}
+	if !info.Mode().IsRegular() {
+		return nil, errors.New("the archive is not a regular file")
+	}
+	// Same handle as Stat, and one byte past the limit, so a file that grows
+	// after the size is observed is still refused without reading the rest.
+	data, err := io.ReadAll(io.LimitReader(f, plugin.MaxArchiveBytes+1))
+	if err != nil {
+		return nil, err
+	}
+	if int64(len(data)) > plugin.MaxArchiveBytes {
+		return nil, fmt.Errorf("the archive is larger than %d bytes", plugin.MaxArchiveBytes)
+	}
+	return data, nil
+}
+
+// afterSourceFrozen runs after the private copy is checked and before it is
+// installed. Nil in production. Tests use it to change the original folder
+// and prove the install reads the copy.
+var afterSourceFrozen func(src, frozen string)
+
+// installApprovedSource installs src only when every file still matches the
+// digest shown in the permission prompt, and only from a private copy taken
+// after that check. via is "folder" or "zip" and is stored as installedVia;
+// the copy lives outside the store, so the path can no longer imply it.
+func (a *App) installApprovedSource(src string, approved plugin.Manifest, digest, via string) {
+	if err := reverifyPackage(src, approved, digest); err != nil {
+		a.pluginNotice = a.t(i18n.StoreChanged)
+		a.invalidate()
+		return
+	}
+	frozen, err := plugin.FreezeDir(src)
+	if err != nil {
+		a.pluginNotice = a.t(i18n.PluginInstallFailed, a.pluginErrorText(err))
+		a.invalidate()
+		return
+	}
+	defer os.RemoveAll(frozen)
+	if err := reverifyPackage(frozen, approved, digest); err != nil {
+		a.pluginNotice = a.t(i18n.StoreChanged)
+		a.invalidate()
+		return
+	}
+	if afterSourceFrozen != nil {
+		afterSourceFrozen(src, frozen)
+	}
+	installed, err := a.plugins.InstallFrom(frozen, via, digest)
+	if errors.Is(err, plugin.ErrPackageChanged) {
+		a.pluginNotice = a.t(i18n.StoreChanged)
+		a.invalidate()
+		return
+	}
+	if err != nil {
+		a.pluginNotice = a.t(i18n.PluginInstallFailed, a.pluginErrorText(err))
+		a.invalidate()
+		return
+	}
+	a.pluginNotice = a.t(i18n.PluginInstalled, installed.Name)
+	a.refreshPlugins()
+	a.refreshProvenanceLocks()
+	a.invalidate()
+}
+
+// reverifyPackage refuses when the folder no longer matches the manifest
+// and the full-file digest shown in the permission prompt. A changed
+// index.js is refused the same way a changed manifest is.
+func reverifyPackage(src string, approved plugin.Manifest, digest string) error {
+	if err := reverifyManifest(src, approved); err != nil {
+		return err
+	}
+	got, err := plugin.DigestDir(src)
+	if err != nil {
+		return err
+	}
+	if got != digest {
+		return errors.New("the app's files changed after the permission prompt")
+	}
+	return nil
+}
+
+// reverifyManifest re-reads the manifest from the folder the user approved
+// and reports whether it is still the one the prompt showed. The comparison
+// is the canonical JSON of the manifest.
+func reverifyManifest(src string, approved plugin.Manifest) error {
+	now, err := plugin.LoadManifest(src)
+	if err != nil {
+		return err
+	}
+	if err := now.ValidateDir(src); err != nil {
+		return err
+	}
+	got, err := json.Marshal(now)
+	if err != nil {
+		return err
+	}
+	want, err := json.Marshal(approved)
+	if err != nil {
+		return err
+	}
+	if string(got) != string(want) {
+		return errors.New("the manifest changed after the permission prompt")
+	}
+	return nil
+}
+
+// confirmPluginRemoval asks before a native uninstall. Tests replace it so
+// they can approve the removal without a window.
+var confirmPluginRemoval = func(title, message, remove, cancel string) bool {
+	res, err := mygo.Dialog.Message(mygo.MessageOptions{
+		Type:               mygo.MessageWarning,
+		Title:              title,
+		Message:            message,
+		Buttons:            []string{remove, cancel},
+		CancelButton:       1,
+		DestructiveButtons: []int{0},
+	})
+	return err == nil && res.Button == 0
+}
+
+func (a *App) clearPluginDrafts(id string) {
+	for key := range a.pluginDrafts {
+		if strings.HasPrefix(key, id+"/") {
+			delete(a.pluginDrafts, key)
+		}
+	}
 }
 
 // removeBrokenPlugin deletes a folder the store could not read.
@@ -235,25 +429,14 @@ func (a *App) removeBrokenPlugin(dir string) {
 		return
 	}
 	name := filepath.Base(dir)
-	res, err := mygo.Dialog.Message(mygo.MessageOptions{
-		Type:               mygo.MessageWarning,
-		Title:              a.t(i18n.PluginRemoveTitle),
-		Message:            a.t(i18n.PluginRemoveBody, name),
-		Buttons:            []string{a.t(i18n.Remove), a.t(i18n.Cancel)},
-		CancelButton:       1,
-		DestructiveButtons: []int{0},
-	})
-	if err != nil || res.Button != 0 {
+	if !confirmPluginRemoval(a.t(i18n.PluginRemoveTitle), a.t(i18n.PluginRemoveBody, name), a.t(i18n.Remove), a.t(i18n.Cancel)) {
 		return
 	}
-	if err := a.plugins.RemoveAt(dir); err != nil {
-		a.pluginNotice = err.Error()
-		a.invalidate()
-		return
+	remove := a.plugins.RemoveAt
+	if a.pluginManager != nil {
+		remove = a.pluginManager.RemoveAt
 	}
-	a.pluginNotice = a.t(i18n.PluginRemoved, name)
-	a.refreshPlugins()
-	a.invalidate()
+	a.finishPluginRemoval(name, name, remove(dir))
 }
 
 // removePlugin asks, then deletes the plugin's folder and its secrets.
@@ -263,34 +446,41 @@ func (a *App) removePlugin(id string) {
 	}
 	inst, err := a.plugins.Get(id)
 	if err != nil {
-		a.pluginNotice = err.Error()
+		a.pluginNotice = a.pluginErrorText(err)
 		a.invalidate()
 		return
 	}
-	res, err := mygo.Dialog.Message(mygo.MessageOptions{
-		Type:               mygo.MessageWarning,
-		Title:              a.t(i18n.PluginRemoveTitle),
-		Message:            a.t(i18n.PluginRemoveBody, inst.Manifest.Name),
-		Buttons:            []string{a.t(i18n.Remove), a.t(i18n.Cancel)},
-		CancelButton:       1,
-		DestructiveButtons: []int{0},
-	})
-	if err != nil || res.Button != 0 {
+	if !confirmPluginRemoval(a.t(i18n.PluginRemoveTitle), a.t(i18n.PluginRemoveBody, inst.Manifest.Name), a.t(i18n.Remove), a.t(i18n.Cancel)) {
 		return
 	}
 	remove := a.plugins.Remove
 	if a.pluginManager != nil {
 		remove = a.pluginManager.Remove
 	}
-	if err := remove(id); err != nil {
-		a.pluginNotice = err.Error()
+	a.finishPluginRemoval(id, inst.Manifest.Name, remove(id))
+}
+
+// finishPluginRemoval drops the draft, runner and list once the folder is
+// gone. A provenance-delete failure happens after that delete; returning
+// first would keep the old secret draft and write it into a reinstall.
+func (a *App) finishPluginRemoval(id, name string, err error) {
+	var known *plugin.Error
+	gone := err == nil || (errors.As(err, &known) && known.Code == "PROVENANCE_DELETE_FAILED")
+	if !gone {
+		a.pluginNotice = a.pluginErrorText(err)
 		a.invalidate()
 		return
 	}
 	a.stopRunner(id)
 	delete(a.pluginLogs, id)
-	a.pluginNotice = a.t(i18n.PluginRemoved, inst.Manifest.Name)
+	a.clearPluginDrafts(id)
 	a.refreshPlugins()
+	a.refreshProvenanceLocks()
+	if err != nil {
+		a.pluginNotice = a.pluginErrorText(err)
+	} else {
+		a.pluginNotice = a.t(i18n.PluginRemoved, name)
+	}
 	a.invalidate()
 }
 
@@ -305,7 +495,7 @@ func (a *App) setPluginEnabled(id string, enabled bool) {
 		setEnabled = a.pluginManager.SetEnabled
 	}
 	if err := setEnabled(id, enabled); err != nil {
-		a.pluginNotice = err.Error()
+		a.pluginNotice = a.pluginErrorText(err)
 		a.invalidate()
 		return
 	}
@@ -336,20 +526,35 @@ func (a *App) savePluginSettings(m plugin.Manifest) {
 	_, err := set(m.ID, values)
 	// 部分系统凭据写入失败时也必须使旧设置快照失效。
 	a.stopRunner(m.ID)
+	a.loadPluginSettingStatus(m.ID)
 	if a.pluginKey().id == m.ID {
 		a.pluginGen++
 		a.pluginView = pluginPageState{}
 	}
+	// 只清空确实已应用的 secret 草稿：零写入的失败（busy、校验）保留输入，
+	// 部分失败按事务报告的 applied/failed 区分，让用户只补输失败的字段。
+	applied := map[string]bool{}
+	var writeErr *plugin.SettingsWriteError
+	if errors.As(err, &writeErr) {
+		for _, key := range writeErr.AppliedKeys {
+			applied[key] = true
+		}
+	} else if err == nil {
+		for key := range values {
+			applied[key] = true
+		}
+	}
 	for _, field := range m.Settings {
-		if field.Secret {
-			if draft := a.pluginDrafts[m.ID+"/"+field.Key]; draft != nil {
-				*draft = ""
-			}
+		if !field.Secret || !applied[field.Key] {
+			continue
+		}
+		if draft := a.pluginDrafts[m.ID+"/"+field.Key]; draft != nil {
+			*draft = ""
 		}
 	}
 	if err != nil {
 		a.invalidateInstallationVerification(m.ID, "SETTINGS_WRITE_FAILED")
-		a.pluginNotice = err.Error()
+		a.pluginNotice = a.t(i18n.PluginSettingsWriteFailed)
 		a.invalidate()
 		return
 	}
@@ -437,6 +642,7 @@ func (a *App) openPluginDetail(id string) {
 	a.pluginDetail = id
 	a.pluginTab = "installed"
 	a.route = routePlugins
+	a.loadPluginSettingStatus(id)
 	a.invalidate()
 }
 
@@ -458,7 +664,9 @@ func (a *App) openApps() {
 // loadPluginPage computes the open page in the background. The runtime is
 // created on the main thread (compiling the module is cheap and touches the
 // runner map); the call itself runs on its own goroutine, so a slow plugin
-// never freezes the window.
+// never freezes the window. The execution lease is held from before Get until
+// the page call finishes, and released via defer on every path — including a
+// panic in the synchronous section, which would otherwise wedge the app busy.
 func (a *App) loadPluginPage() {
 	key := a.pluginKey()
 	if key.id == "" || a.plugins == nil {
@@ -467,30 +675,36 @@ func (a *App) loadPluginPage() {
 	if a.pluginView.key == key && a.pluginView.loading {
 		return
 	}
-	var release func()
+	var release func() = func() {}
 	if a.pluginManager != nil {
 		var err error
 		release, err = a.pluginManager.TryExecution(key.id)
 		if err != nil {
 			if a.pluginView.key != key {
-				a.pluginView = pluginPageState{key: key, err: "应用正忙，请稍后刷新"}
+				a.pluginView = pluginPageState{key: key, err: a.t(i18n.PluginBusy)}
 			}
 			return
 		}
-	} else {
-		release = func() {}
 	}
+	// release 现在覆盖 Get 到 goroutine 结束的每一条路径；同步段的 panic
+	// 也会经 defer 释放租约，不会把应用永久卡在 busy。
+	defer func() {
+		if r := recover(); r != nil {
+			release()
+			panic(r)
+		}
+	}()
 	inst, err := a.plugins.Get(key.id)
 	if err != nil {
 		release()
-		a.pluginView = pluginPageState{key: key, err: "应用不可用"}
+		a.pluginView = pluginPageState{key: key, err: a.t(i18n.PluginUnavailable)}
 		return
 	}
 	state := pluginPageState{key: key, name: inst.Manifest.Name, unsigned: inst.Err == "" && !inst.Signed && !inst.Official, official: inst.Err == "" && inst.Official}
 	if inst.Err != "" {
 		release()
 		a.stopRunner(key.id)
-		state.err = inst.Err
+		state.err = a.pluginErrText(inst.Err)
 		a.pluginView = state
 		return
 	}
@@ -509,14 +723,14 @@ func (a *App) loadPluginPage() {
 	}
 	if !declared {
 		release()
-		state.err = "页面未在应用中声明"
+		state.err = a.t(i18n.PluginPageMissing)
 		a.pluginView = state
 		return
 	}
 	state.hash, err = a.plugins.PackageHash(key.id)
 	if err != nil {
 		release()
-		state.err = "无法校验应用内容"
+		state.err = a.t(i18n.PluginVerifyFailed)
 		a.pluginView = state
 		return
 	}
@@ -526,7 +740,7 @@ func (a *App) loadPluginPage() {
 	runner, err := a.pluginRunner(inst, state.hash)
 	if err != nil {
 		release()
-		state.err = "应用模块加载失败"
+		state.err = a.t(i18n.PluginLoadFailed)
 		a.pluginView = state
 		return
 	}
@@ -543,7 +757,7 @@ func (a *App) loadPluginPage() {
 			}
 			state.loading = false
 			if err != nil {
-				state.err = "刷新失败，保留上次成功内容"
+				state.err = a.t(i18n.PluginRefreshKept)
 			} else {
 				state.page = page
 				state.updated = time.Now()

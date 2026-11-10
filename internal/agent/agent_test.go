@@ -59,15 +59,52 @@ func newTestServer(t *testing.T) (*Server, *fakeData) {
 	return New(data, "test-token"), data
 }
 
+func withLocalHost(s *Server, req *http.Request) *http.Request {
+	req.Host = "127.0.0.1:9"
+	if s != nil && s.ln != nil {
+		if host := s.ln.Addr().String(); host != "" {
+			req.Host = host
+		}
+	}
+	return req
+}
+
 func do(t *testing.T, s *Server, method, path, token string) *httptest.ResponseRecorder {
 	t.Helper()
-	req := httptest.NewRequest(method, path, nil)
+	req := withLocalHost(s, httptest.NewRequest(method, path, nil))
 	if token != "" {
 		req.Header.Set("Authorization", "Bearer "+token)
 	}
 	rec := httptest.NewRecorder()
 	s.handler().ServeHTTP(rec, req)
 	return rec
+}
+
+func TestUnknownRouteAndMethodAnswerJSON(t *testing.T) {
+	s, _ := newTestServer(t)
+	for _, tc := range []struct {
+		method, path string
+		status       int
+		code         string
+	}{
+		{http.MethodGet, "/v0/nope", http.StatusNotFound, "NOT_FOUND"},
+		{http.MethodPost, "/v0/portfolio", http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED"},
+	} {
+		rec := do(t, s, tc.method, tc.path, "test-token")
+		if rec.Code != tc.status {
+			t.Fatalf("%s %s: status %d", tc.method, tc.path, rec.Code)
+		}
+		var body map[string]string
+		if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil || body["code"] != tc.code || body["error"] == "" {
+			t.Fatalf("%s %s: body %q", tc.method, tc.path, rec.Body.String())
+		}
+	}
+	// 处理器自己的 JSON 404 不能被兜底改写。
+	rec := do(t, s, http.MethodGet, "/v0/examples/missing", "test-token")
+	var body map[string]string
+	if rec.Code != http.StatusNotFound || json.Unmarshal(rec.Body.Bytes(), &body) != nil || body["code"] != "EXAMPLE_NOT_FOUND" {
+		t.Fatalf("handler 404 changed: %d %q", rec.Code, rec.Body.String())
+	}
 }
 
 func TestRefusesWithoutTheToken(t *testing.T) {
@@ -85,13 +122,131 @@ func TestRefusesWithoutTheToken(t *testing.T) {
 
 func TestRefusesBrowserOrigins(t *testing.T) {
 	s, _ := newTestServer(t)
-	req := httptest.NewRequest(http.MethodGet, "/v0/portfolio", nil)
+	req := withLocalHost(s, httptest.NewRequest(http.MethodGet, "/v0/portfolio", nil))
 	req.Header.Set("Authorization", "Bearer test-token")
 	req.Header.Set("Origin", "https://evil.example")
 	rec := httptest.NewRecorder()
 	s.handler().ServeHTTP(rec, req)
 	if rec.Code != http.StatusForbidden {
 		t.Fatalf("status %d", rec.Code)
+	}
+}
+
+func TestRejectsMultipleOriginsCrossSiteAndForeignHost(t *testing.T) {
+	s, _ := newTestServer(t)
+	forbid := func(t *testing.T, mutate func(*http.Request)) {
+		t.Helper()
+		req := withLocalHost(s, httptest.NewRequest(http.MethodGet, "/v0/portfolio", nil))
+		req.Header.Set("Authorization", "Bearer test-token")
+		mutate(req)
+		rec := httptest.NewRecorder()
+		s.handler().ServeHTTP(rec, req)
+		if rec.Code != http.StatusForbidden {
+			t.Fatalf("status %d, body %s", rec.Code, rec.Body.Bytes())
+		}
+	}
+	t.Run("multiple origins", func(t *testing.T) {
+		forbid(t, func(req *http.Request) {
+			req.Header.Add("Origin", "https://a.example")
+			req.Header.Add("Origin", "https://b.example")
+		})
+	})
+	t.Run("multiple origins with empty first", func(t *testing.T) {
+		forbid(t, func(req *http.Request) {
+			req.Header["Origin"] = []string{"", "https://evil.example"}
+		})
+	})
+	t.Run("cross-site", func(t *testing.T) {
+		forbid(t, func(req *http.Request) {
+			req.Header.Set("Sec-Fetch-Site", "cross-site")
+		})
+	})
+	t.Run("cross-site case and padding", func(t *testing.T) {
+		forbid(t, func(req *http.Request) {
+			req.Header.Set("Sec-Fetch-Site", " Cross-Site ")
+		})
+	})
+	t.Run("foreign host", func(t *testing.T) {
+		forbid(t, func(req *http.Request) { req.Host = "evil.example" })
+	})
+	t.Run("host without port", func(t *testing.T) {
+		forbid(t, func(req *http.Request) { req.Host = "127.0.0.1" })
+	})
+	for _, site := range []string{"none", "same-origin", "same-site"} {
+		t.Run(site, func(t *testing.T) {
+			req := withLocalHost(s, httptest.NewRequest(http.MethodGet, "/v0/portfolio", nil))
+			req.Header.Set("Authorization", "Bearer test-token")
+			req.Header.Set("Sec-Fetch-Site", site)
+			rec := httptest.NewRecorder()
+			s.handler().ServeHTTP(rec, req)
+			if rec.Code != http.StatusOK {
+				t.Fatalf("%s status %d", site, rec.Code)
+			}
+		})
+	}
+	if err := s.Start(0); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { s.Close() })
+	forbid(t, func(req *http.Request) { req.Host = "127.0.0.1:1" })
+	forbid(t, func(req *http.Request) { req.Host = "localhost:1" })
+	req := withLocalHost(s, httptest.NewRequest(http.MethodGet, "/v0/portfolio", nil))
+	req.Header.Set("Authorization", "Bearer test-token")
+	port := s.Addr()[strings.LastIndex(s.Addr(), ":"):]
+	req.Host = "localhost" + port
+	rec := httptest.NewRecorder()
+	s.handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("localhost status %d", rec.Code)
+	}
+	req = withLocalHost(s, httptest.NewRequest(http.MethodGet, "/v0/portfolio", nil))
+	req.Header.Set("Authorization", "Bearer test-token")
+	req.Host = "LOCALHOST" + port
+	rec = httptest.NewRecorder()
+	s.handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("LOCALHOST status %d", rec.Code)
+	}
+	forbid(t, func(req *http.Request) { req.Host = "evil.example" + port })
+}
+
+func TestLoopbackHostDoesNotRaceWithClose(t *testing.T) {
+	s, _ := newTestServer(t)
+	if err := s.Start(0); err != nil {
+		t.Fatal(err)
+	}
+	host := s.Addr()
+	done := make(chan struct{})
+	go func() {
+		_ = s.Close()
+		close(done)
+	}()
+	for {
+		if !s.loopbackHost(host) {
+			t.Fatal("bound host rejected")
+		}
+		select {
+		case <-done:
+			return
+		default:
+		}
+	}
+}
+
+func TestRefreshOmitsEmptyMetadataHeaders(t *testing.T) {
+	_, base := newTestServer(t)
+	s := New(headerManagedEmpty{base}, "test-token")
+	rec := do(t, s, http.MethodPost, "/v0/plugins/com.example.gas/refresh", "test-token")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("refresh: %d %s", rec.Code, rec.Body)
+	}
+	for _, name := range []string{
+		"X-Crypto-Panel-Package-Hash", "X-Lintel-Package-Hash",
+		"X-Crypto-Panel-Evaluated-At", "X-Lintel-Evaluated-At",
+	} {
+		if rec.Header().Get(name) != "" {
+			t.Fatalf("%s = %q", name, rec.Header().Get(name))
+		}
 	}
 }
 
