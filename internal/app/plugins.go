@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -230,7 +231,7 @@ func (a *App) installPlugin() {
 		if !ok {
 			return
 		}
-		a.installApprovedSource(src, m, digest)
+		a.installApprovedSource(src, m, digest, "folder")
 	})
 }
 
@@ -277,7 +278,7 @@ func (a *App) installPluginZip() {
 		if !ok {
 			return
 		}
-		a.installApprovedSource(dir, m, digest)
+		a.installApprovedSource(dir, m, digest, "zip")
 	})
 }
 
@@ -286,28 +287,41 @@ var pickInstallPath = func(opts mygo.OpenDialogOptions) ([]string, error) {
 	return mygo.Dialog.Open(opts)
 }
 
-// readPluginZip is the zip read. Tests replace it to prove an oversized
-// archive is rejected before its bytes are pulled into memory.
-var readPluginZip = os.ReadFile
-
 func readZipLimited(path string) ([]byte, error) {
-	info, err := os.Stat(path)
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	info, err := f.Stat()
 	if err != nil {
 		return nil, err
 	}
 	if !info.Mode().IsRegular() {
 		return nil, errors.New("the archive is not a regular file")
 	}
-	if info.Size() > plugin.MaxArchiveBytes {
+	// Same handle as Stat, and one byte past the limit, so a file that grows
+	// after the size is observed is still refused without reading the rest.
+	data, err := io.ReadAll(io.LimitReader(f, plugin.MaxArchiveBytes+1))
+	if err != nil {
+		return nil, err
+	}
+	if int64(len(data)) > plugin.MaxArchiveBytes {
 		return nil, fmt.Errorf("the archive is larger than %d bytes", plugin.MaxArchiveBytes)
 	}
-	return readPluginZip(path)
+	return data, nil
 }
+
+// afterSourceFrozen runs after the private copy is checked and before it is
+// installed. Nil in production. Tests use it to change the original folder
+// and prove the install reads the copy.
+var afterSourceFrozen func(src, frozen string)
 
 // installApprovedSource installs src only when every file still matches the
 // digest shown in the permission prompt, and only from a private copy taken
-// after that check.
-func (a *App) installApprovedSource(src string, approved plugin.Manifest, digest string) {
+// after that check. via is "folder" or "zip" and is stored as installedVia;
+// the copy lives outside the store, so the path can no longer imply it.
+func (a *App) installApprovedSource(src string, approved plugin.Manifest, digest, via string) {
 	if err := reverifyPackage(src, approved, digest); err != nil {
 		a.pluginNotice = a.t(i18n.StoreChanged)
 		a.invalidate()
@@ -325,7 +339,15 @@ func (a *App) installApprovedSource(src string, approved plugin.Manifest, digest
 		a.invalidate()
 		return
 	}
-	installed, err := a.plugins.Install(frozen)
+	if afterSourceFrozen != nil {
+		afterSourceFrozen(src, frozen)
+	}
+	installed, err := a.plugins.InstallFrom(frozen, via, digest)
+	if errors.Is(err, plugin.ErrPackageChanged) {
+		a.pluginNotice = a.t(i18n.StoreChanged)
+		a.invalidate()
+		return
+	}
 	if err != nil {
 		a.pluginNotice = a.t(i18n.PluginInstallFailed, a.pluginErrorText(err))
 		a.invalidate()
@@ -414,18 +436,7 @@ func (a *App) removeBrokenPlugin(dir string) {
 	if a.pluginManager != nil {
 		remove = a.pluginManager.RemoveAt
 	}
-	if err := remove(dir); err != nil {
-		a.pluginNotice = a.pluginErrorText(err)
-		a.invalidate()
-		return
-	}
-	a.stopRunner(name)
-	delete(a.pluginLogs, name)
-	a.clearPluginDrafts(name)
-	a.pluginNotice = a.t(i18n.PluginRemoved, name)
-	a.refreshPlugins()
-	a.refreshProvenanceLocks()
-	a.invalidate()
+	a.finishPluginRemoval(name, name, remove(dir))
 }
 
 // removePlugin asks, then deletes the plugin's folder and its secrets.
@@ -446,7 +457,16 @@ func (a *App) removePlugin(id string) {
 	if a.pluginManager != nil {
 		remove = a.pluginManager.Remove
 	}
-	if err := remove(id); err != nil {
+	a.finishPluginRemoval(id, inst.Manifest.Name, remove(id))
+}
+
+// finishPluginRemoval drops the draft, runner and list once the folder is
+// gone. A provenance-delete failure happens after that delete; returning
+// first would keep the old secret draft and write it into a reinstall.
+func (a *App) finishPluginRemoval(id, name string, err error) {
+	var known *plugin.Error
+	gone := err == nil || (errors.As(err, &known) && known.Code == "PROVENANCE_DELETE_FAILED")
+	if !gone {
 		a.pluginNotice = a.pluginErrorText(err)
 		a.invalidate()
 		return
@@ -454,9 +474,13 @@ func (a *App) removePlugin(id string) {
 	a.stopRunner(id)
 	delete(a.pluginLogs, id)
 	a.clearPluginDrafts(id)
-	a.pluginNotice = a.t(i18n.PluginRemoved, inst.Manifest.Name)
 	a.refreshPlugins()
 	a.refreshProvenanceLocks()
+	if err != nil {
+		a.pluginNotice = a.pluginErrorText(err)
+	} else {
+		a.pluginNotice = a.t(i18n.PluginRemoved, name)
+	}
 	a.invalidate()
 }
 

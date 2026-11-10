@@ -234,17 +234,22 @@ func AccessKeyOf(ctx context.Context, rpc RPC, signer Signer) (AccessKey, error)
 		}
 		allowance = parsed
 	}
+	rawReceiver, ok := fields["receiver_id"]
+	if !ok || string(bytesTrim(rawReceiver)) == "null" {
+		return AccessKey{}, errors.New("reading the access key's permission")
+	}
 	var receiver string
-	if raw, ok := fields["receiver_id"]; ok && string(bytesTrim(raw)) != "null" {
-		if err := json.Unmarshal(raw, &receiver); err != nil {
-			return AccessKey{}, errors.New("reading the access key's permission")
-		}
+	if err := json.Unmarshal(rawReceiver, &receiver); err != nil || receiver == "" {
+		return AccessKey{}, errors.New("reading the access key's permission")
+	}
+	rawMethods, ok := fields["method_names"]
+	if !ok || string(bytesTrim(rawMethods)) == "null" {
+		// A missing list is not "any method". Only an explicit empty array is.
+		return AccessKey{}, errors.New("reading the access key's permission")
 	}
 	var methods []string
-	if raw, ok := fields["method_names"]; ok && string(bytesTrim(raw)) != "null" {
-		if err := json.Unmarshal(raw, &methods); err != nil {
-			return AccessKey{}, errors.New("reading the access key's permission")
-		}
+	if err := json.Unmarshal(rawMethods, &methods); err != nil {
+		return AccessKey{}, errors.New("reading the access key's permission")
 	}
 	key.Permission.FunctionCall = &FunctionCallPermission{
 		Allowance:   allowance,

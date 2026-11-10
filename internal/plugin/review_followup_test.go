@@ -285,3 +285,51 @@ func TestRemoveRejectsSymlink(t *testing.T) {
 		t.Fatal("remove deleted credentials through the symlink")
 	}
 }
+
+func TestInstallFromKeepsZipSourceAndRechecksTheStage(t *testing.T) {
+	root := t.TempDir()
+	src := filepath.Join(root, "src")
+	writePlugin(t, src, storeManifest, `export function page() { return { title: "original" }; }`)
+	digest, err := DigestDir(src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	store := NewStore(filepath.Join(root, "plugins"), &memSecrets{m: map[string][]byte{}})
+	outside := filepath.Join(t.TempDir(), "frozen")
+	if err := os.MkdirAll(outside, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := copyTree(src, outside); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.InstallFrom(outside, "zip", digest); err != nil {
+		t.Fatal(err)
+	}
+	got, err := store.Get("com.example.store")
+	if err != nil || got.InstalledVia != "zip" {
+		t.Fatalf("installed via %q: %v", got.InstalledVia, err)
+	}
+	if err := store.Remove("com.example.store"); err != nil {
+		t.Fatal(err)
+	}
+	previous := beforeInstallRename
+	beforeInstallRename = func(staged string) {
+		if err := os.WriteFile(filepath.Join(staged, "index.js"), []byte("SWAPPED IN STAGE"), 0o644); err != nil {
+			t.Error(err)
+		}
+	}
+	t.Cleanup(func() { beforeInstallRename = previous })
+	if _, err := store.InstallFrom(outside, "zip", digest); !errors.Is(err, ErrPackageChanged) {
+		t.Fatalf("staged swap: %v", err)
+	}
+	if inst, err := store.Get("com.example.store"); err == nil {
+		body, _ := os.ReadFile(filepath.Join(inst.Dir, "index.js"))
+		if strings.Contains(string(body), "SWAPPED") {
+			t.Fatal("a staged swap was installed")
+		}
+	}
+	left, _ := filepath.Glob(filepath.Join(store.Dir(), ".install-*"))
+	if len(left) != 0 {
+		t.Fatalf("install staging left %v", left)
+	}
+}

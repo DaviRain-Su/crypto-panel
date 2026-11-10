@@ -54,6 +54,9 @@ type snapshot struct {
 	vault vaultState
 }
 
+// runOnUI delivers a finished refresh to the main thread. Tests replace it.
+var runOnUI = mygo.RunOnMain
+
 // priceSource prices assets in USD. *prices.Client implements it.
 type priceSource interface {
 	Prices(ctx context.Context, symbols []string) (map[string]float64, error)
@@ -165,7 +168,7 @@ func (a *App) fetch(gen int, reader chain.Reader, addrs []string) {
 				snap.fiatErr = err.Error()
 			}
 		}
-		mygo.RunOnMain(func() {
+		runOnUI(func() {
 			a.loading = false
 			if gen != a.gen {
 				// The user changed what is watched while this ran; its

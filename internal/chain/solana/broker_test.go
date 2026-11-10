@@ -246,7 +246,7 @@ func TestAccountExistsRejectsMalformedResults(t *testing.T) {
 	defer srv.Close()
 	b := testBroker()
 	ep := Endpoint{URL: srv.URL, Genesis: testGenesis}
-	for _, body := range []string{`null`, `{}`, `{"context":{"slot":1}}`} {
+	for _, body := range []string{`null`, `{}`, `{"context":{"slot":1}}`, `[]`, `"nope"`} {
 		fake.accountBodies["Bad1111111111111111111111111111111111111111"] = json.RawMessage(body)
 		exists, err := b.AccountExists(context.Background(), ep, "Bad1111111111111111111111111111111111111111")
 		if err == nil || exists {

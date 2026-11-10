@@ -178,6 +178,14 @@ func TestSignatureRejectsSAtOrAboveOrder(t *testing.T) {
 			t.Fatalf("accepted s = %s", s)
 		}
 	}
+	der, err := asn1.Marshal(struct{ R, S *big.Int }{R: new(big.Int).Set(n), S: big.NewInt(1)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertion.Signature = der
+	if _, err := Signature(assertion); err == nil {
+		t.Fatal("accepted r >= n")
+	}
 }
 
 func TestSignatureRejectsBadAssertion(t *testing.T) {

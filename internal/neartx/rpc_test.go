@@ -153,6 +153,7 @@ func TestAccessKeyOfAllowance(t *testing.T) {
 		{"sign is an error", `"+5"`, false, "", false, true},
 		{"fraction is an error", `"1.5"`, false, "", false, true},
 		{"over u128 is an error", `"340282366920938463463374607431768211456"`, false, "", false, true},
+		{"number is an error", `5`, false, "", false, true},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -196,6 +197,33 @@ func TestAccessKeyOfAllowance(t *testing.T) {
 				t.Fatal("a deposit outside the key's limits was prepared")
 			}
 		})
+	}
+}
+
+func TestAccessKeyRequiresReceiverAndMethods(t *testing.T) {
+	block := `{"header":{"hash":"F3bucPK7JgJPCPf8yuBB28DaGqQ6jHfUuxJ68Tnc9PbG"}}`
+	for _, perm := range []string{
+		`{"allowance":null,"method_names":[]}`,
+		`{"allowance":null,"receiver_id":"contract.testnet"}`,
+		`{"allowance":null,"receiver_id":"contract.testnet","method_names":null}`,
+	} {
+		rpc := &fakeRPC{
+			accessKey: `{"nonce":7,"permission":{"FunctionCall":` + perm + `}}`,
+			block:     block,
+		}
+		if _, err := AccessKeyOf(context.Background(), rpc.call, testSigner(t)); err == nil {
+			t.Fatalf("accepted permission %s", perm)
+		}
+	}
+	rpc := &fakeRPC{
+		accessKey: `{"nonce":7,"permission":{"FunctionCall":{"allowance":null,"receiver_id":"contract.testnet","method_names":[]}}}`,
+		block:     block,
+	}
+	if _, _, err := Prepare(context.Background(), rpc.call, testSigner(t), Request{
+		ReceiverID: "contract.testnet",
+		Actions:    []Action{FunctionCall("donate", nil, 0, big.NewInt(1))},
+	}); err != nil {
+		t.Fatalf("an explicit empty method list was refused: %v", err)
 	}
 }
 
