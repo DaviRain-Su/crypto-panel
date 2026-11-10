@@ -182,7 +182,9 @@ func (refreshReader) RPC(context.Context, string, any) (json.RawMessage, error) 
 func TestFetchKeepsEVMNetworksSeparate(t *testing.T) {
 	a := newTestApp(t)
 	done := make(chan struct{})
-	a.runOnMain = func(fn func()) { fn(); close(done) }
+	previous := runOnUI
+	runOnUI = func(fn func()) { fn(); close(done) }
+	t.Cleanup(func() { runOnUI = previous })
 	jobs := []familyFetch{
 		{network: chains.Ethereum, addrs: []string{strings.ToUpper(viewAddr)}, reader: refreshReader{account: func(context.Context, string) (chain.AccountBalances, error) {
 			return chain.AccountBalances{Native: big.NewInt(1)}, nil
@@ -214,7 +216,9 @@ func TestFetchKeepsEVMNetworksSeparate(t *testing.T) {
 func TestFetchBoundsConcurrentJobs(t *testing.T) {
 	a := newTestApp(t)
 	done := make(chan struct{})
-	a.runOnMain = func(fn func()) { fn(); close(done) }
+	previous := runOnUI
+	runOnUI = func(fn func()) { fn(); close(done) }
+	t.Cleanup(func() { runOnUI = previous })
 	var active atomic.Int32
 	var maximum atomic.Int32
 	var jobs []familyFetch

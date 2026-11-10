@@ -142,6 +142,23 @@ func (a *App) fetch(gen int, jobs []familyFetch) {
 	// Read the main-thread state before the goroutine starts.
 	source := a.priceSource
 	hideFiat := a.settings.HideFiat
+	// The vault check is best-effort: it rides along with the refresh and
+	// leaves the state unknown when the reader cannot answer. It belongs to
+	// the Solana family's reader, when one is in this refresh.
+	var vaultAddr string
+	var exister accountExister
+	if pk := a.settings.Passkey; pk != nil && pk.SolanaAddress != "" {
+		vaultAddr = pk.SolanaAddress
+		for _, job := range jobs {
+			if job.network.Family != chain.Solana {
+				continue
+			}
+			if ex, ok := job.reader.(accountExister); ok {
+				exister = ex
+				break
+			}
+		}
+	}
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 		defer cancel()
