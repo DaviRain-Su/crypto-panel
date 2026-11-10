@@ -49,8 +49,8 @@ func TestDecodeJSONStrict(t *testing.T) {
 		`{"values":{"token":"a","token":"b"}}`,
 		`{"values":{},"values":{}}`,
 		`{"Values":{}}`, `{"values":{},"unknown":true}`,
-		`{"values":{"x":null}}`, `{"values":{"x":1}}`,
-		`{"values":{}} {}`, `{"values":{}} true`, `null`,
+		`{"values":{"x":1}}`,
+		`{"values":{}} {}`, `{"values":{}} true`,
 	} {
 		t.Run(body, func(t *testing.T) {
 			var p payload
@@ -62,6 +62,15 @@ func TestDecodeJSONStrict(t *testing.T) {
 	var good payload
 	if err := DecodeJSON([]byte(`{"values":{"x":"a"}}  `), &good); err != nil || good.Values["x"] != "a" {
 		t.Fatalf("正常 JSON: %v", err)
+	}
+	// 显式 null 与 encoding/json 一致：no-op，后续字段仍正常解码。
+	var nullable payload
+	if err := DecodeJSON([]byte(`{"values":{"x":null,"y":"a"}}`), &nullable); err != nil || nullable.Values["y"] != "a" || nullable.Values["x"] != "" {
+		t.Fatalf("null 语义: %v %#v", err, nullable.Values)
+	}
+	var top payload
+	if err := DecodeJSON([]byte(`null`), &top); err != nil || top.Values != nil {
+		t.Fatalf("顶层 null 语义: %v %#v", err, top)
 	}
 	for _, body := range []string{
 		strings.Replace(personalManifest, `"name":"个人应用"`, `"name":"个人应用","name":"伪造"`, 1),

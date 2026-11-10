@@ -118,6 +118,10 @@ func TestManagerQueueCancelExpireClose(t *testing.T) {
 	if len(m.Installations()) != 0 {
 		t.Fatal("未按来源取消")
 	}
+	if _, err := m.Propose(Source{Kind: "inline", Package: &p}, "install", "", "", "local-api"); err == nil {
+		t.Fatal("关闭的入口仍登记了提议")
+	}
+	m.ResumeVia("local-api")
 	i = proposeTest(t, m, p, "install", "")
 	if err := m.Close(); err != nil {
 		t.Fatal(err)

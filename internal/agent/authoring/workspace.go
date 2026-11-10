@@ -19,7 +19,8 @@ import (
 )
 
 var (
-	localIDPattern = regexp.MustCompile(`^local\.[a-z0-9][a-z0-9-]*(\.[a-z0-9][a-z0-9-]*)+$`)
+	// 与 Manager.Propose 一致：个人应用 id 恰好三段 local.<owner>.<slug>。
+	localIDPattern = regexp.MustCompile(`^local\.[a-z0-9][a-z0-9-]*\.[a-z0-9][a-z0-9-]*$`)
 	hashPattern    = regexp.MustCompile(`^sha256:[0-9a-f]{64}$`)
 )
 

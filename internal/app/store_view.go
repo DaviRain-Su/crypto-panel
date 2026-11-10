@@ -143,7 +143,7 @@ func (a *App) storeCard(c *ui.Context, entry plugin.RegistryEntry) {
 			ui.Text(c, entry.Description).FontSize(12).TextColor(p.muted).MaxLines(3)
 		}
 		if inst != nil && inst.Err != "" {
-			ui.Text(c, inst.Err).FontSize(11).TextColor(p.danger).MaxLines(2)
+			ui.Text(c, a.pluginErrText(inst.Err)).FontSize(11).TextColor(p.danger).MaxLines(2)
 		}
 	})
 }

@@ -540,8 +540,12 @@ func TestRemoveReportsProvenanceDeleteFailure(t *testing.T) {
 	}
 	t.Cleanup(func() { m.Close() })
 	err = m.Remove(id)
-	if err == nil || !strings.Contains(err.Error(), ProvenanceAccount(id)) {
+	var known *Error
+	if !errors.As(err, &known) || known.Code != "PROVENANCE_DELETE_FAILED" {
 		t.Fatalf("卸载没有报告来源记录删除失败: %v", err)
+	}
+	if strings.Contains(err.Error(), ProvenanceAccount(id)) || strings.Contains(err.Error(), id) {
+		t.Fatalf("删除失败文案带上了凭据账户: %v", err)
 	}
 	if _, statErr := os.Stat(filepath.Join(s.Dir(), id)); !errors.Is(statErr, os.ErrNotExist) {
 		t.Fatal("报告删除失败时应用目录还在")
