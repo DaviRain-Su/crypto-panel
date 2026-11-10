@@ -124,17 +124,18 @@ restarted on the next call if the call timed out or hit the memory limit.
 
 A page has `title`, `subtitle` and up to 32 `sections`. A section may hold one
 of each block, drawn in this order: `stats`, `table`, `cards`, `links`, `text`,
-`divider`, `chart`.
+`divider`, `chart`, `gauge`.
 
 | Block | Shape | Limits |
 |---|---|---|
-| `stats` | `[{ label, value }]` | 12 per section; label 40, value 80 characters |
+| `stats` | `[{ label, value, trend, sparkline }]` | 12 per section; label 40, value 80 characters; `trend` is `"up"` or `"down"` and colors the value; `sparkline` is up to 32 finite numbers, oldest first, drawn as the shape behind the number |
 | `table` | `{ columns: [{ title, align }], rows: [[…]] }` | 8 columns, 200 rows, 200 characters per cell; `align` is `start` (default) or `end`; every row has one cell per column |
 | `cards` | `[{ title, subtitle, body }]` | 32 per section; body 500 characters |
 | `links` | `[{ title, page }]` | 16 per section; `page` must be a page the app draws |
 | `text` | a string | 2000 characters |
 | `divider` | `true` | — |
 | `chart` | `{ kind, points: [{ label, value }] }` | 60 points; `kind` is `line` (default) or `bar`; values are finite numbers |
+| `gauge` | `{ label, value, text }` | `value` is 0 to 100; `text` is the short reading beside the label, 20 characters |
 
 All strings are plain text. Control characters and bidirectional overrides
 are refused, so a page cannot reorder or hide what it shows. A page larger

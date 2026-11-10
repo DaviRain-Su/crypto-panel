@@ -17,7 +17,8 @@ const validPage = `{
     { "title": "Pools", "cards": [{ "title": "ETH/USDC", "subtitle": "0.05%", "body": "APR 12.4%" }] },
     { "title": "More", "links": [{ "title": "History", "page": "history" }] },
     { "text": "Plain text", "divider": true },
-    { "chart": { "kind": "line", "points": [{ "label": "Mon", "value": 1 }, { "label": "Tue", "value": 2 }] } }
+    { "chart": { "kind": "line", "points": [{ "label": "Mon", "value": 1 }, { "label": "Tue", "value": 2 }] } },
+    { "gauge": { "label": "Health", "value": 62, "text": "62%" } }
   ]
 }`
 
@@ -26,11 +27,14 @@ func TestDecodeValid(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Decode: %v", err)
 	}
-	if p.Title != "Portfolio" || len(p.Sections) != 6 {
+	if p.Title != "Portfolio" || len(p.Sections) != 7 {
 		t.Fatalf("page = %+v", p)
 	}
 	if p.Sections[1].Table.Rows[0][1] != "3.204" {
 		t.Fatalf("table = %+v", p.Sections[1].Table)
+	}
+	if p.Sections[6].Gauge == nil || p.Sections[6].Gauge.Value != 62 {
+		t.Fatalf("gauge = %+v", p.Sections[6].Gauge)
 	}
 }
 
@@ -84,6 +88,22 @@ func TestDecodeRejects(t *testing.T) {
 			name: "bidi override",
 			page: `{"title": "a‮b"}`,
 			want: "bidirectional",
+		},
+		{
+			name: "bad trend",
+			page: `{"sections": [{"stats": [{"label": "a", "value": "1", "trend": "sideways"}]}]}`,
+			want: "neither up nor down",
+		},
+		{
+			name: "sparkline too long",
+			page: `{"sections": [{"stats": [{"label": "a", "value": "1", "sparkline": [` +
+				strings.TrimSuffix(strings.Repeat("1,", maxSparkline+1), ",") + `]}]}]}`,
+			want: "sparkline points",
+		},
+		{
+			name: "gauge out of range",
+			page: `{"sections": [{"gauge": {"value": 120}}]}`,
+			want: "outside 0 to 100",
 		},
 		{
 			name: "trailing data",

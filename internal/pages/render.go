@@ -76,17 +76,107 @@ func renderSection(c *ui.Context, s Section, onLink func(string)) {
 		if s.Chart != nil {
 			renderChart(c, s.Chart)
 		}
+		if s.Gauge != nil {
+			renderGauge(c, s.Gauge)
+		}
 	})
 }
 
 // statCard is the face of one reading: its label over its value, on the
-// theme's surface.
+// theme's surface. The value takes the trend's color, and the shape behind
+// the number draws under it when the stat carries a sparkline.
 func statCard(c *ui.Context, s Stat) {
 	t := c.Theme()
+	trend := trendColor(c, s.Trend)
 	ui.Column(c).Gap(4).Padding(14).Radius(10).
 		Background(t.Surface).Border(1, t.Border).Children(func() {
 		ui.Text(c, s.Label).FontSize(11).FontWeight(600).TextColor(t.TextMuted).LetterSpacing(0.3)
-		ui.Text(c, s.Value).FontSize(24).FontWeight(700).LetterSpacing(-0.4)
+		ui.Text(c, s.Value).FontSize(24).FontWeight(700).LetterSpacing(-0.4).TextColor(trend)
+		if len(s.Sparkline) > 1 {
+			drawSparkline(c, s.Sparkline, trend)
+		}
+	})
+}
+
+// trendColor turns a stat's trend into the color its value reads in: up
+// into the theme's success, down into its danger, and no trend keeps the
+// text color.
+func trendColor(c *ui.Context, trend string) ui.Color {
+	t := c.Theme()
+	switch trend {
+	case "up":
+		return t.Success
+	case "down":
+		return t.Danger
+	}
+	return ui.Color{}
+}
+
+// drawSparkline draws the shape behind a number: a hairline through the
+// values, oldest first, with the area under it faintly filled. No axes —
+// a sparkline is a shape, not a chart.
+func drawSparkline(c *ui.Context, values []float64, color ui.Color) {
+	t := c.Theme()
+	if color == (ui.Color{}) {
+		color = t.Accent
+	}
+	xs, ys := sparkFractions(values)
+	ui.Box(c).Height(26).Grow(1).Draw(func(p *ui.Painter, r ui.Rect) {
+		line := linePath(r, xs, ys)
+		p.FillPath(areaPath(r, xs, ys), color.Alpha(0.14))
+		p.StrokePath(line, 1.5, color)
+	})
+}
+
+// sparkFractions maps a series onto a unit box: x runs left to right in
+// the series' order, y runs bottom to top between the series' own low and
+// high, so a flat series still draws as a line.
+func sparkFractions(values []float64) (xs, ys []float32) {
+	if len(values) < 2 {
+		return nil, nil
+	}
+	lo, hi := values[0], values[0]
+	for _, v := range values {
+		lo = min(lo, v)
+		hi = max(hi, v)
+	}
+	n := float32(len(values) - 1)
+	xs = make([]float32, len(values))
+	ys = make([]float32, len(values))
+	if hi == lo {
+		// A flat series has no range to span; its line draws across the
+		// middle, where the stroke stays whole.
+		for i := range values {
+			xs[i] = float32(i) / n
+			ys[i] = 0.5
+		}
+		return xs, ys
+	}
+	for i, v := range values {
+		xs[i] = float32(i) / n
+		ys[i] = 1 - float32((v-lo)/(hi-lo))
+	}
+	return xs, ys
+}
+
+// renderGauge draws one reading against its scale: the label and short
+// reading above the meter's empty-to-full bar.
+func renderGauge(c *ui.Context, g *Gauge) {
+	t := c.Theme()
+	ui.Column(c).Gap(7).Padding(14).Radius(10).
+		Background(t.Surface).Border(1, t.Border).Children(func() {
+		if g.Label != "" || g.Text != "" {
+			ui.Row(c).AlignItems(ui.Center).Children(func() {
+				if g.Label != "" {
+					ui.Text(c, g.Label).FontSize(11).FontWeight(600).
+						TextColor(t.TextMuted).LetterSpacing(0.3).Grow(1)
+				}
+				if g.Text != "" {
+					ui.Text(c, g.Text).FontSize(12.5).FontWeight(700)
+				}
+			})
+		}
+		ui.Meter(c, g.Value, 0, 100, nil)
 	})
 }
 
