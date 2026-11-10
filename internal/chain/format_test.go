@@ -2,6 +2,7 @@ package chain
 
 import (
 	"math/big"
+	"strings"
 	"testing"
 )
 
@@ -81,6 +82,9 @@ func TestParseUnits(t *testing.T) {
 		{"", 6, "", false},
 		{".", 6, "", false},
 		{"1", -1, "", false},
+		{"1", -3, "", false},
+		{"1", 256, "", false},
+		{"1", MaxTokenDecimals, "1" + strings.Repeat("0", MaxTokenDecimals), true},
 	} {
 		got, ok := ParseUnits(tc.s, tc.decimals)
 		if ok != tc.ok {

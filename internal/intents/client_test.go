@@ -3,11 +3,13 @@ package intents
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestQuoteAsksForADryQuote(t *testing.T) {
@@ -168,6 +170,229 @@ func TestTokens(t *testing.T) {
 	}
 	if tokens[1].Decimals != 24 || tokens[1].Blockchain != "near" {
 		t.Fatalf("token = %+v", tokens[1])
+	}
+}
+
+func TestTokensDropsUnusableAssets(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		io.WriteString(w, `[
+			{"assetId":"nep141:wrap.near","decimals":24,"blockchain":"near","symbol":"wNEAR"},
+			{"assetId":"nep141:missing-decimals.near","blockchain":"near","symbol":"MISS"},
+			{"assetId":"nep141:null-decimals.near","decimals":null,"blockchain":"near","symbol":"NULL"},
+			{"assetId":"nep141:neg.near","decimals":-3,"blockchain":"near","symbol":"NEG"},
+			{"assetId":"nep141:frac.near","decimals":24.5,"blockchain":"near","symbol":"FRAC"},
+			{"assetId":"nep141:huge.near","decimals":4000000000,"blockchain":"near","symbol":"HUGE"},
+			{"assetId":"nep141:exp.near","decimals":1e300,"blockchain":"near","symbol":"EXP"},
+			{"assetId":"nep141:wide.near","decimals":256,"blockchain":"near","symbol":"WIDE"},
+			{"assetId":"nep141:noblock.near","decimals":18,"blockchain":"","symbol":"NOB"},
+			{"assetId":"","decimals":6,"blockchain":"eth","symbol":"EMPTY"}
+		]`)
+	}))
+	defer srv.Close()
+	tokens, err := NewAt(srv.URL).Tokens(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(tokens) != 1 || tokens[0].Symbol != "wNEAR" || tokens[0].Decimals != 24 {
+		t.Fatalf("tokens = %+v", tokens)
+	}
+}
+
+func TestQuoteFailsClosed(t *testing.T) {
+	good := QuoteRequest{
+		OriginAsset:      "nep141:wrap.near",
+		DestinationAsset: "nep141:eth.omft.near",
+		Amount:           "1000",
+		Recipient:        "0xabc",
+		RefundTo:         "alice.testnet",
+	}
+	echo := func(change string) string {
+		req := `{
+			"dry": true,
+			"swapType": "EXACT_INPUT",
+			"slippageTolerance": 100,
+			"originAsset": "nep141:wrap.near",
+			"depositType": "ORIGIN_CHAIN",
+			"destinationAsset": "nep141:eth.omft.near",
+			"amount": "1000",
+			"refundTo": "alice.testnet",
+			"refundType": "ORIGIN_CHAIN",
+			"recipient": "0xabc",
+			"recipientType": "DESTINATION_CHAIN"
+		}`
+		if change != "" {
+			req = change
+		}
+		return `{
+			"correlationId": "c1",
+			"quoteRequest": ` + req + `,
+			"quote": {
+				"amountIn": "1000",
+				"amountOut": "2000",
+				"minAmountOut": "1900"
+			}
+		}`
+	}
+	bodies := []string{
+		`{}`,
+		`null`,
+		`{"quote":null,"correlationId":"c1"}`,
+		`{"correlationId":"c1","quote":{"amountInFormatted":"1"}}`,
+		`{"correlationId":"","quoteRequest":` + `{
+			"dry": true, "swapType": "EXACT_INPUT", "slippageTolerance": 100,
+			"originAsset": "nep141:wrap.near", "depositType": "ORIGIN_CHAIN",
+			"destinationAsset": "nep141:eth.omft.near", "amount": "1000",
+			"refundTo": "alice.testnet", "refundType": "ORIGIN_CHAIN",
+			"recipient": "0xabc", "recipientType": "DESTINATION_CHAIN"
+		}` + `,"quote":{"amountIn":"1000","amountOut":"2000","minAmountOut":"1900"}}`,
+		`{"correlationId":"c1","quoteRequest":{
+			"dry": false, "swapType": "EXACT_INPUT", "slippageTolerance": 100,
+			"originAsset": "nep141:wrap.near", "depositType": "ORIGIN_CHAIN",
+			"destinationAsset": "nep141:eth.omft.near", "amount": "1000",
+			"refundTo": "alice.testnet", "refundType": "ORIGIN_CHAIN",
+			"recipient": "0xabc", "recipientType": "DESTINATION_CHAIN"
+		},"quote":{"amountIn":"1000","amountOut":"2000","minAmountOut":"1900"}}`,
+		`{"correlationId":"c1","quoteRequest":{
+			"dry": true, "swapType": "EXACT_INPUT", "slippageTolerance": 100,
+			"originAsset": "nep141:wrap.near", "depositType": "ORIGIN_CHAIN",
+			"destinationAsset": "nep141:eth.omft.near", "amount": "1000",
+			"refundTo": "alice.testnet", "refundType": "ORIGIN_CHAIN",
+			"recipient": "0xchanged", "recipientType": "DESTINATION_CHAIN"
+		},"quote":{"amountIn":"1000","amountOut":"2000","minAmountOut":"1900"}}`,
+		`{"correlationId":"c1","quoteRequest":{
+			"dry": true, "swapType": "EXACT_INPUT", "slippageTolerance": 100,
+			"originAsset": "nep141:wrap.near", "depositType": "ORIGIN_CHAIN",
+			"destinationAsset": "nep141:eth.omft.near", "amount": "1000",
+			"refundTo": "alice.testnet", "refundType": "ORIGIN_CHAIN",
+			"recipient": "0xabc", "recipientType": "DESTINATION_CHAIN"
+		},"quote":{"depositAddress":"0xATTACKERDEPOSIT","amountIn":"1000","amountOut":"2000","minAmountOut":"1900"}}`,
+		`{"correlationId":"c1","quoteRequest":{
+			"dry": true, "swapType": "EXACT_INPUT", "slippageTolerance": 100,
+			"originAsset": "nep141:wrap.near", "depositType": "ORIGIN_CHAIN",
+			"destinationAsset": "nep141:eth.omft.near", "amount": "1000",
+			"refundTo": "alice.testnet", "refundType": "ORIGIN_CHAIN",
+			"recipient": "0xabc", "recipientType": "DESTINATION_CHAIN"
+		},"quote":{"amountIn":"0","amountOut":"2000","minAmountOut":"1900"}}`,
+	}
+	for _, body := range bodies {
+		t.Run(body, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				io.WriteString(w, body)
+			}))
+			defer srv.Close()
+			if _, err := NewAt(srv.URL).Quote(context.Background(), good); err == nil {
+				t.Fatal("a bad quote was accepted")
+			}
+		})
+	}
+	// The matching dry echo is accepted and carries no deposit address.
+	okBody := echo("")
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		io.WriteString(w, okBody)
+	}))
+	defer srv.Close()
+	q, err := NewAt(srv.URL).Quote(context.Background(), good)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if q.DepositAddress != "" || q.CorrelationID != "c1" || q.MinAmountOut != "1900" {
+		t.Fatalf("quote = %+v", q)
+	}
+}
+
+func TestClientDoesNotFollowRedirects(t *testing.T) {
+	evilCalled := false
+	evil := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		evilCalled = true
+		w.Header().Set("Content-Type", "application/json")
+		io.WriteString(w, `{"correlationId":"evil","quote":{"amountIn":"1","amountOut":"1","minAmountOut":"1"}}`)
+	}))
+	defer evil.Close()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, evil.URL, http.StatusTemporaryRedirect)
+	}))
+	defer srv.Close()
+	_, err := NewAt(srv.URL).Quote(context.Background(), QuoteRequest{
+		OriginAsset: "nep141:wrap.near", DestinationAsset: "nep141:eth.omft.near",
+		Amount: "1", Recipient: "0xabc", RefundTo: "alice.testnet",
+	})
+	if err == nil || evilCalled {
+		t.Fatalf("err = %v, evil called = %v", err, evilCalled)
+	}
+}
+
+func TestOnlyOKIsSuccess(t *testing.T) {
+	body := `{
+		"correlationId": "c1",
+		"quoteRequest": {
+			"dry": true, "swapType": "EXACT_INPUT", "slippageTolerance": 100,
+			"originAsset": "nep141:wrap.near", "depositType": "ORIGIN_CHAIN",
+			"destinationAsset": "nep141:eth.omft.near", "amount": "1",
+			"refundTo": "alice.testnet", "refundType": "ORIGIN_CHAIN",
+			"recipient": "0xabc", "recipientType": "DESTINATION_CHAIN"
+		},
+		"quote": {"amountIn": "1", "amountOut": "1", "minAmountOut": "1"}
+	}`
+	for _, status := range []int{http.StatusCreated, 299, http.StatusTemporaryRedirect} {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(status)
+			io.WriteString(w, body)
+		}))
+		_, err := NewAt(srv.URL).Quote(context.Background(), QuoteRequest{
+			OriginAsset: "nep141:wrap.near", DestinationAsset: "nep141:eth.omft.near",
+			Amount: "1", Recipient: "0xabc", RefundTo: "alice.testnet",
+		})
+		srv.Close()
+		if err == nil {
+			t.Fatalf("status %d was treated as success", status)
+		}
+	}
+}
+
+func TestJSONDecodeErrorsSurface(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		io.WriteString(w, `{`)
+	}))
+	defer srv.Close()
+	if _, err := NewAt(srv.URL).Tokens(context.Background()); err == nil {
+		t.Fatal("broken JSON was accepted")
+	}
+}
+
+func TestResponseIsCappedAndTimedOut(t *testing.T) {
+	c := New()
+	if c.http.Timeout != clientTimeout {
+		t.Fatalf("timeout = %s", c.http.Timeout)
+	}
+	if err := c.http.CheckRedirect(nil, nil); !errors.Is(err, http.ErrUseLastResponse) {
+		t.Fatalf("redirect = %v", err)
+	}
+	if maxResponseBytes != 4<<20 {
+		t.Fatalf("cap = %d", maxResponseBytes)
+	}
+	padding := strings.Repeat("a", maxResponseBytes)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		io.WriteString(w, `[{"assetId":"`+padding+`","symbol":"X","blockchain":"near","decimals":8}]`)
+	}))
+	defer srv.Close()
+	if _, err := NewAt(srv.URL).Tokens(context.Background()); err == nil {
+		t.Fatal("a body over 4MiB was decoded")
+	}
+
+	hung := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		<-r.Context().Done()
+	}))
+	defer hung.Close()
+	short := NewAt(hung.URL)
+	short.http.Timeout = 30 * time.Millisecond
+	if _, err := short.Tokens(context.Background()); err == nil {
+		t.Fatal("a request past the client timeout succeeded")
 	}
 }
 
