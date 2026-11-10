@@ -63,6 +63,11 @@ creating that vault and sending SOL are not wired.
 - **Plugin UI is data.** A plugin returns pages (`stats`, `table`, `cards`,
   `links`, `chart`); the shell draws them with native UI. No HTML, no
   plugin-drawn dialogs, so an approval prompt cannot be imitated.
+- **The menu bar keeps watch.** The shell puts one icon in the macOS menu
+  bar whose text is the first stat of the first enabled app's first page; its
+  menu lists every enabled app's first stat and opens the app an item names.
+  A plugin declares nothing new: any app whose page leads with a stat shows
+  up there.
 - **DApps are untrusted pages.** The DApp page opens an https URL (or http on
   localhost) in an isolated web view with a small injected NEAR wallet bridge.
   The page can ask to connect and to sign; it cannot read a key, call a Go

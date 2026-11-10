@@ -1,7 +1,9 @@
 // Command icon draws the app's icon: an ink rounded square with three brass
-// bars, the app's mark. It writes the 1024×1024 PNG mygo.json names.
+// bars, the app's mark. It writes the 1024×1024 PNG mygo.json names, and
+// the copy the shell embeds for the Dock when the binary runs outside a
+// bundle (`go run .`).
 //
-//	go run ./tools/icon -out resources/icon.png
+//	go run ./tools/icon
 package main
 
 import (
@@ -20,23 +22,33 @@ import (
 
 const size = 1024
 
+// targets are the two copies of the art: the bundled app's icon, and the
+// PNG internal/app embeds for the Dock in development runs.
+var targets = []string{"resources/icon.png", "internal/app/logo.png"}
+
 func main() {
-	out := flag.String("out", "resources/icon.png", "where to write the PNG")
+	out := flag.String("out", "", "where to write the PNG instead of both default copies")
 	flag.Parse()
 	img := drawIcon()
-	if err := os.MkdirAll(filepath.Dir(*out), 0o755); err != nil {
-		log.Fatal(err)
+	outs := targets
+	if *out != "" {
+		outs = []string{*out}
 	}
-	f, err := os.Create(*out)
-	if err != nil {
-		log.Fatal(err)
-	}
-	if err := png.Encode(f, img); err != nil {
-		f.Close()
-		log.Fatal(err)
-	}
-	if err := f.Close(); err != nil {
-		log.Fatal(err)
+	for _, target := range outs {
+		if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+			log.Fatal(err)
+		}
+		f, err := os.Create(target)
+		if err != nil {
+			log.Fatal(err)
+		}
+		if err := png.Encode(f, img); err != nil {
+			f.Close()
+			log.Fatal(err)
+		}
+		if err := f.Close(); err != nil {
+			log.Fatal(err)
+		}
 	}
 }
 
