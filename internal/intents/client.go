@@ -22,9 +22,20 @@ import (
 	"math/big"
 	"net/http"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 )
+
+// maxTokenDecimals matches chain.MaxTokenDecimals. A larger value is not a
+// token this client will hand to ParseUnits.
+const maxTokenDecimals = 255
+
+// maxResponseBytes is the most of a 1Click body this client will read.
+const maxResponseBytes = 4 << 20
+
+// clientTimeout is the HTTP client's own deadline, inside the caller's context.
+const clientTimeout = 25 * time.Second
 
 // DefaultBaseURL is 1Click's public API. It has no testnet.
 const DefaultBaseURL = "https://1click.chaindefuser.com"
@@ -50,7 +61,15 @@ func New() *Client { return NewAt(DefaultBaseURL) }
 func NewAt(baseURL string) *Client {
 	return &Client{
 		baseURL: strings.TrimRight(baseURL, "/"),
-		http:    &http.Client{Timeout: 25 * time.Second},
+		http: &http.Client{
+			Timeout: clientTimeout,
+			// A redirect would replay the quote, including recipient and
+			// refundTo, at whatever host answered. Keep the response and
+			// refuse it below.
+			CheckRedirect: func(*http.Request, []*http.Request) error {
+				return http.ErrUseLastResponse
+			},
+		},
 	}
 }
 
@@ -100,11 +119,11 @@ type Quote struct {
 // may send more fields — coingeckoId, contractAddress — and the decode
 // ignores what it does not name.
 type wireToken struct {
-	AssetID    string  `json:"assetId"`
-	Symbol     string  `json:"symbol"`
-	Blockchain string  `json:"blockchain"`
-	Decimals   float64 `json:"decimals"`
-	Price      float64 `json:"price"`
+	AssetID    string          `json:"assetId"`
+	Symbol     string          `json:"symbol"`
+	Blockchain string          `json:"blockchain"`
+	Decimals   json.RawMessage `json:"decimals"`
+	Price      float64         `json:"price"`
 }
 
 // Tokens lists the assets 1Click supports, sorted for display.
@@ -115,16 +134,11 @@ func (c *Client) Tokens(ctx context.Context) ([]Token, error) {
 	}
 	out := make([]Token, 0, len(wire))
 	for _, t := range wire {
-		if strings.TrimSpace(t.AssetID) == "" || strings.TrimSpace(t.Symbol) == "" {
+		tok, ok := acceptToken(t)
+		if !ok {
 			continue
 		}
-		out = append(out, Token{
-			AssetID:    t.AssetID,
-			Symbol:     t.Symbol,
-			Blockchain: t.Blockchain,
-			Decimals:   int(t.Decimals),
-			Price:      t.Price,
-		})
+		out = append(out, tok)
 	}
 	sort.Slice(out, func(i, j int) bool {
 		if out[i].Symbol != out[j].Symbol {
@@ -182,38 +196,51 @@ func (c *Client) Quote(ctx context.Context, req QuoteRequest) (Quote, error) {
 		"recipientType":     "DESTINATION_CHAIN",
 		"deadline":          req.Deadline,
 	}
-	var res wireQuoteResponse
-	if err := c.post(ctx, "/v0/quote", body, &res); err != nil {
+	var raw json.RawMessage
+	if err := c.post(ctx, "/v0/quote", body, &raw); err != nil {
 		return Quote{}, err
 	}
-	out := Quote{
-		DepositAddress: res.Quote.DepositAddress,
-		DepositMemo:    res.Quote.DepositMemo,
-		AmountIn:       res.Quote.AmountIn,
-		AmountInText:   res.Quote.AmountInFormatted,
-		AmountInUSD:    res.Quote.AmountInUsd,
-		MinAmountIn:    res.Quote.MinAmountIn,
-		AmountOut:      res.Quote.AmountOut,
-		AmountOutText:  res.Quote.AmountOutFormatted,
-		AmountOutUSD:   res.Quote.AmountOutUsd,
-		MinAmountOut:   res.Quote.MinAmountOut,
-		TimeEstimate:   int(res.Quote.TimeEstimate),
-		CorrelationID:  res.CorrelationID,
-		Signature:      res.Signature,
-		Request:        req,
-	}
-	if res.Quote.Deadline != nil {
-		out.Deadline = *res.Quote.Deadline
-	}
-	return out, nil
+	return decodeQuote(raw, req)
 }
 
-// wireQuoteResponse is the part of a quote answer this client reads. See
-// wireToken for why the rest of the answer stays unnamed.
-type wireQuoteResponse struct {
-	CorrelationID string    `json:"correlationId"`
-	Signature     string    `json:"signature"`
-	Quote         wireQuote `json:"quote"`
+// acceptToken drops a token the shell must not price. A missing, null,
+// negative, fractional, or oversized decimals value is not zero: using zero
+// would turn "1" into a single base unit and still open the approval window.
+func acceptToken(t wireToken) (Token, bool) {
+	if strings.TrimSpace(t.AssetID) == "" || strings.TrimSpace(t.Symbol) == "" || strings.TrimSpace(t.Blockchain) == "" {
+		return Token{}, false
+	}
+	decimals, ok := tokenDecimals(t.Decimals)
+	if !ok {
+		return Token{}, false
+	}
+	return Token{
+		AssetID:    t.AssetID,
+		Symbol:     t.Symbol,
+		Blockchain: t.Blockchain,
+		Decimals:   decimals,
+		Price:      t.Price,
+	}, true
+}
+
+func tokenDecimals(raw json.RawMessage) (int, bool) {
+	raw = bytes.TrimSpace(raw)
+	if len(raw) == 0 || string(raw) == "null" {
+		return 0, false
+	}
+	for _, r := range raw {
+		if r < '0' || r > '9' {
+			return 0, false
+		}
+	}
+	if len(raw) > 3 {
+		return 0, false
+	}
+	n, err := strconv.Atoi(string(raw))
+	if err != nil || n > maxTokenDecimals {
+		return 0, false
+	}
+	return n, true
 }
 
 type wireQuote struct {
@@ -229,6 +256,141 @@ type wireQuote struct {
 	MinAmountOut       string     `json:"minAmountOut"`
 	Deadline           *time.Time `json:"deadline"`
 	TimeEstimate       float64    `json:"timeEstimate"`
+}
+
+// decodeQuote fails closed. A missing amount, an empty correlation id, a
+// null quote, or a deposit address on a dry answer is an error, not a blank
+// quote the approval window can show.
+func decodeQuote(data []byte, req QuoteRequest) (Quote, error) {
+	data = bytes.TrimSpace(data)
+	if len(data) == 0 || string(data) == "null" {
+		return Quote{}, errors.New("1Click: the quote is missing")
+	}
+	var top map[string]json.RawMessage
+	if err := json.Unmarshal(data, &top); err != nil || top == nil {
+		return Quote{}, errors.New("1Click: the quote could not be read")
+	}
+	qraw, ok := top["quote"]
+	if !ok || len(bytes.TrimSpace(qraw)) == 0 || string(bytes.TrimSpace(qraw)) == "null" {
+		return Quote{}, errors.New("1Click: the quote is missing")
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(qraw, &fields); err != nil || fields == nil {
+		return Quote{}, errors.New("1Click: the quote could not be read")
+	}
+	amountIn, ok := positiveField(fields, "amountIn")
+	if !ok {
+		return Quote{}, errors.New("1Click: the quote amount is missing")
+	}
+	amountOut, ok := positiveField(fields, "amountOut")
+	if !ok {
+		return Quote{}, errors.New("1Click: the quote amount is missing")
+	}
+	minAmountOut, ok := positiveField(fields, "minAmountOut")
+	if !ok {
+		return Quote{}, errors.New("1Click: the quote amount is missing")
+	}
+	if raw, present := fields["depositAddress"]; present && depositAddressPresent(raw) {
+		return Quote{}, errors.New("1Click: a dry quote must not include a deposit address")
+	}
+	correlationID, ok := jsonString(top["correlationId"])
+	if !ok || strings.TrimSpace(correlationID) == "" {
+		return Quote{}, errors.New("1Click: the quote has no correlation id")
+	}
+	if err := echoedRequestOK(top["quoteRequest"], req); err != nil {
+		return Quote{}, err
+	}
+	var parsed wireQuote
+	if err := json.Unmarshal(qraw, &parsed); err != nil {
+		return Quote{}, errors.New("1Click: the quote could not be read")
+	}
+	out := Quote{
+		DepositMemo:   parsed.DepositMemo,
+		AmountIn:      amountIn,
+		AmountInText:  parsed.AmountInFormatted,
+		AmountInUSD:   parsed.AmountInUsd,
+		MinAmountIn:   parsed.MinAmountIn,
+		AmountOut:     amountOut,
+		AmountOutText: parsed.AmountOutFormatted,
+		AmountOutUSD:  parsed.AmountOutUsd,
+		MinAmountOut:  minAmountOut,
+		TimeEstimate:  int(parsed.TimeEstimate),
+		CorrelationID: correlationID,
+		Request:       req,
+	}
+	if sig, ok := jsonString(top["signature"]); ok {
+		out.Signature = sig
+	}
+	if parsed.Deadline != nil {
+		out.Deadline = *parsed.Deadline
+	}
+	return out, nil
+}
+
+func positiveField(fields map[string]json.RawMessage, key string) (string, bool) {
+	s, ok := jsonString(fields[key])
+	if !ok || !positiveInteger(s) {
+		return "", false
+	}
+	return s, true
+}
+
+func jsonString(raw json.RawMessage) (string, bool) {
+	raw = bytes.TrimSpace(raw)
+	if len(raw) == 0 || string(raw) == "null" {
+		return "", false
+	}
+	var s string
+	if err := json.Unmarshal(raw, &s); err != nil {
+		return "", false
+	}
+	return s, true
+}
+
+func depositAddressPresent(raw json.RawMessage) bool {
+	raw = bytes.TrimSpace(raw)
+	if len(raw) == 0 || string(raw) == "null" || string(raw) == `""` {
+		return false
+	}
+	s, ok := jsonString(raw)
+	return !ok || s != ""
+}
+
+func echoedRequestOK(raw json.RawMessage, req QuoteRequest) error {
+	raw = bytes.TrimSpace(raw)
+	if len(raw) == 0 || string(raw) == "null" {
+		return errors.New("1Click: the quote does not echo the request")
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &fields); err != nil || fields == nil {
+		return errors.New("1Click: the quote does not echo the request")
+	}
+	if string(bytes.TrimSpace(fields["dry"])) != "true" {
+		return errors.New("1Click: the quote is not a dry quote")
+	}
+	want := []struct{ key, value string }{
+		{"swapType", "EXACT_INPUT"},
+		{"depositType", "ORIGIN_CHAIN"},
+		{"refundType", "ORIGIN_CHAIN"},
+		{"recipientType", "DESTINATION_CHAIN"},
+		{"originAsset", req.OriginAsset},
+		{"destinationAsset", req.DestinationAsset},
+		{"amount", req.Amount},
+		{"refundTo", req.RefundTo},
+		{"recipient", req.Recipient},
+	}
+	for _, field := range want {
+		got, ok := jsonString(fields[field.key])
+		if !ok || got != field.value {
+			return errors.New("1Click: the quote does not match the request")
+		}
+	}
+	slipRaw := bytes.TrimSpace(fields["slippageTolerance"])
+	var slip int
+	if err := json.Unmarshal(slipRaw, &slip); err != nil || slip != req.SlippageBps {
+		return errors.New("1Click: the quote does not match the request")
+	}
+	return nil
 }
 
 // get fetches path and decodes the JSON answer into out.
@@ -264,11 +426,13 @@ func (c *Client) do(req *http.Request, out any) error {
 		return err
 	}
 	defer res.Body.Close()
-	data, err := io.ReadAll(io.LimitReader(res.Body, 4<<20))
+	data, err := io.ReadAll(io.LimitReader(res.Body, maxResponseBytes))
 	if err != nil {
 		return err
 	}
-	if res.StatusCode >= 300 {
+	// Only 200 is a quote or a token list. 3xx is the redirect we refused
+	// to follow; other 2xx bodies are not this API's success shape.
+	if res.StatusCode != http.StatusOK {
 		return apiError(res.StatusCode, data)
 	}
 	if err := json.Unmarshal(data, out); err != nil {

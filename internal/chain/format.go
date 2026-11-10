@@ -89,9 +89,16 @@ func FormatAmount(v *big.Int, decimals, maxFrac int) string {
 // ParseUnits reads a decimal amount of a token with decimals places and
 // returns its smallest unit: "1.5" at 6 decimals is 1500000. It accepts at
 // most decimals fraction digits, and no sign or exponent.
+//
+// MaxTokenDecimals is the largest decimals value ParseUnits will expand.
+// A multi-gigabyte repeat (decimals of 4e9) would exhaust the process, and
+// a value past int range (1e300) overflows the decimals argument. 255 covers
+// every asset this app formats.
+const MaxTokenDecimals = 255
+
 func ParseUnits(s string, decimals int) (*big.Int, bool) {
 	s = strings.TrimSpace(s)
-	if s == "" || decimals < 0 {
+	if s == "" || decimals < 0 || decimals > MaxTokenDecimals {
 		return nil, false
 	}
 	whole, frac := s, ""

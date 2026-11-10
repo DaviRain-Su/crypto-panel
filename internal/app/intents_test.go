@@ -52,37 +52,24 @@ func quoteServer(t *testing.T, amount *string) *httptest.Server {
 			*amount, _ = body["amount"].(string)
 		}
 		w.Header().Set("Content-Type", "application/json")
-		io.WriteString(w, `{
+		_ = json.NewEncoder(w).Encode(map[string]any{
 			"correlationId": "quote-1",
-			"timestamp": "2026-11-09T00:00:00Z",
-			"signature": "sig",
-			"quoteRequest": {
-				"dry": true,
-				"swapType": "EXACT_INPUT",
-				"slippageTolerance": 100,
-				"originAsset": "nep141:wrap.near",
-				"depositType": "ORIGIN_CHAIN",
-				"destinationAsset": "nep141:eth-0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48.omft.near",
-				"amount": "1000000000000000000000000",
-				"refundTo": "alice.testnet",
-				"refundType": "ORIGIN_CHAIN",
-				"recipient": "0x2527D02599Ba641c19FEa793cD0F167589a0f10D",
-				"recipientType": "DESTINATION_CHAIN",
-				"deadline": "2026-11-09T12:30:00Z"
-			},
-			"quote": {
-				"amountIn": "1000000000000000000000000",
-				"amountInFormatted": "1",
-				"amountInUsd": "2.5",
-				"minAmountIn": "1000000000000000000000000",
-				"amountOut": "10000000",
+			"timestamp":     "2026-11-09T00:00:00Z",
+			"signature":     "sig",
+			"quoteRequest":  body,
+			"quote": map[string]any{
+				"amountIn":           "1000000000000000000000000",
+				"amountInFormatted":  "1",
+				"amountInUsd":        "2.5",
+				"minAmountIn":        "1000000000000000000000000",
+				"amountOut":          "10000000",
 				"amountOutFormatted": "10",
-				"amountOutUsd": "10",
-				"minAmountOut": "9900000",
-				"deadline": "2026-11-09T12:30:00Z",
-				"timeEstimate": 120
-			}
-		}`)
+				"amountOutUsd":       "10",
+				"minAmountOut":       "9900000",
+				"deadline":           "2026-11-09T12:30:00Z",
+				"timeEstimate":       120,
+			},
+		})
 	}))
 }
 
@@ -165,6 +152,38 @@ func TestIntentsQuoteShowsResultLanguage(t *testing.T) {
 		if !tt.HasText(want) {
 			t.Errorf("missing %q in %q", want, tt.Texts())
 		}
+	}
+}
+
+func TestBadQuoteDoesNotOpenApproval(t *testing.T) {
+	for _, body := range []string{
+		`{}`,
+		`null`,
+		`{"quote":null,"correlationId":"c"}`,
+		`{"correlationId":"","quote":{"amountIn":"1","amountOut":"1","minAmountOut":"1"}}`,
+		`{"correlationId":"c","quote":{"amountInFormatted":"1"}}`,
+	} {
+		t.Run(body, func(t *testing.T) {
+			a := intentsTestApp(t)
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				io.WriteString(w, body)
+			}))
+			defer srv.Close()
+			a.intentsClient = intents.NewAt(srv.URL)
+			opened := false
+			a.approveIntents = func(intentsApprovalRequest) bool {
+				opened = true
+				return true
+			}
+			a.requestIntentsQuote()
+			if opened || a.intentsQuote != nil || a.intentsAccepted {
+				t.Fatalf("approval opened for %s (err %q)", body, a.intentsErr)
+			}
+			if a.intentsErr == "" {
+				t.Fatal("a bad quote was treated as success")
+			}
+		})
 	}
 }
 
