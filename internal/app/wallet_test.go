@@ -132,8 +132,8 @@ func TestImportRejectsABadKey(t *testing.T) {
 	if len(a.settings.Wallet) != 0 {
 		t.Fatalf("wallet = %+v", a.settings.Wallet)
 	}
-	if !strings.Contains(a.walletErr, "not a valid private key") {
-		t.Fatalf("err = %q", a.walletErr)
+	if !strings.Contains(a.importErr, "not a valid private key") {
+		t.Fatalf("err = %q", a.importErr)
 	}
 }
 
@@ -146,8 +146,8 @@ func TestImportRejectsADuplicate(t *testing.T) {
 	if len(a.settings.Wallet) != 1 {
 		t.Fatalf("wallet = %+v", a.settings.Wallet)
 	}
-	if !strings.Contains(a.walletErr, "already in the wallet") {
-		t.Fatalf("err = %q", a.walletErr)
+	if !strings.Contains(a.importErr, "already in the wallet") {
+		t.Fatalf("err = %q", a.importErr)
 	}
 }
 

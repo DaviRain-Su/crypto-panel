@@ -90,7 +90,7 @@ func TestNearWalletImport(t *testing.T) {
 	a.draftNearKey = neartx.SecretKeyString(key)
 	a.draftNearAccount = "alice.testnet"
 	a.importNearAccount()
-	if a.nearErr == "" {
+	if a.importErr == "" {
 		t.Fatal("a duplicate import was accepted")
 	}
 	if len(a.settings.NearWallet) != 2 {
@@ -102,7 +102,7 @@ func TestNearWalletRejectsABadKey(t *testing.T) {
 	a := newTestApp(t)
 	a.draftNearKey = "not a key"
 	a.importNearAccount()
-	if a.nearErr == "" {
+	if a.importErr == "" {
 		t.Fatal("an invalid key was accepted")
 	}
 	if len(a.settings.NearWallet) != 0 {

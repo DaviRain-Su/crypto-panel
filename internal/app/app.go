@@ -91,7 +91,10 @@ type App struct {
 	draftKey         string
 	draftWalletLabel string
 	walletErr        string
-	walletNotice     string
+	// importErr is only the key-import form. walletErr and nearErr are the
+	// other wallet actions, and folding the form does not clear them.
+	importErr    string
+	walletNotice string
 	// walletImportOpen keeps the key-import form folded away: importing is
 	// occasional, and the wallet page leads with the accounts.
 	walletImportOpen bool

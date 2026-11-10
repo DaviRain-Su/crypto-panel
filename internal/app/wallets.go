@@ -230,12 +230,10 @@ func (a *App) importWalletKey() {
 		a.draftNearKey = a.draftKey
 		a.draftNearLabel = a.draftWalletLabel
 		a.importNearAccount()
-		if a.nearErr != "" {
-			a.walletErr = a.nearErr
+		if a.importErr != "" {
 			return
 		}
 		a.draftKey, a.draftWalletLabel = "", ""
-		a.walletErr = ""
 	case chain.Solana:
 		a.importSolanaAccount()
 	default:
@@ -246,7 +244,7 @@ func (a *App) importWalletKey() {
 // toggleWalletImport opens the key form, or folds it. Folding drops the
 // drafts, including a NEAR key copied aside on a failed import and the
 // Solana secret, which lives in the same draft as an EVM key. Opening
-// starts from an empty form too, so a previous error is not still there.
+// starts from an empty form too. Errors from other wallet actions stay.
 func (a *App) toggleWalletImport() {
 	if a.walletImportOpen {
 		a.foldWalletImport()
@@ -264,16 +262,17 @@ func (a *App) foldWalletImport() {
 	a.invalidate()
 }
 
-// clearWalletImportDraft drops every key-import field. Solana has no
-// separate draft: its secret is draftKey, the same field an EVM key uses.
+// clearWalletImportDraft drops every key-import field and the import
+// form's own error. Solana has no separate draft: its secret is draftKey,
+// the same field an EVM key uses. walletErr and nearErr belong to the
+// other wallet actions and stay on the page.
 func (a *App) clearWalletImportDraft() {
 	a.draftKey = ""
 	a.draftWalletLabel = ""
 	a.draftNearKey = ""
 	a.draftNearAccount = ""
 	a.draftNearLabel = ""
-	a.walletErr = ""
-	a.nearErr = ""
+	a.importErr = ""
 }
 
 // submitWalletImport runs the import and folds the form when it succeeded.
@@ -281,7 +280,7 @@ func (a *App) clearWalletImportDraft() {
 // open so that error can be read. A failed key stays in the field too.
 func (a *App) submitWalletImport() {
 	a.importWalletKey()
-	if strings.TrimSpace(a.draftKey) != "" || a.walletErr != "" || a.nearErr != "" {
+	if strings.TrimSpace(a.draftKey) != "" || a.importErr != "" {
 		return
 	}
 	a.foldWalletImport()
@@ -289,7 +288,7 @@ func (a *App) submitWalletImport() {
 
 func (a *App) importSolanaAccount() {
 	if a.solanaKeyring == nil {
-		a.walletErr = a.t(i18n.WalletUnavailable)
+		a.importErr = a.t(i18n.WalletUnavailable)
 		a.invalidate()
 		return
 	}
@@ -299,7 +298,7 @@ func (a *App) importSolanaAccount() {
 	}
 	acc, err := a.solanaKeyring.Import(raw, a.draftWalletLabel)
 	if err != nil {
-		a.walletErr = a.walletFailure(err)
+		a.importErr = a.walletFailure(err)
 		a.invalidate()
 		return
 	}
@@ -307,7 +306,7 @@ func (a *App) importSolanaAccount() {
 	a.settings = a.settings.Validate()
 	a.draftKey, a.draftWalletLabel = "", ""
 	a.save()
-	a.walletErr = ""
+	a.importErr = ""
 	a.walletNotice = a.t(i18n.WalletImported, wallet.Short(acc.Address))
 	a.touch()
 	a.requestRefresh()

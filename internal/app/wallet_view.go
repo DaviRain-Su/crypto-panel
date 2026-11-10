@@ -24,6 +24,10 @@ func (a *App) walletView(c *ui.Context) {
 		ui.Text(c, a.walletNotice).FontSize(11.5).TextColor(p.success).
 			Margin(0, 0, 10, 0).MaxLines(2)
 	}
+	// These errors belong to New wallet, reveal, unlock, and delete. They
+	// stay outside the import form, which is folded unless the user asked
+	// for it.
+	a.walletActionErrors(c)
 	// Accounts come before the security essay, so the balances are the
 	// first thing on the page. The header already offers New wallet, so
 	// the empty state does not repeat it.
@@ -326,6 +330,20 @@ func (a *App) walletAccountCard(c *ui.Context, acc wallet.Account) {
 	})
 }
 
+// walletActionErrors shows failures from New wallet, reveal, unlock, and
+// delete. The import form is not opened to display them.
+func (a *App) walletActionErrors(c *ui.Context) {
+	p := a.pal
+	seen := map[string]bool{}
+	for _, msg := range []string{a.walletErr, a.nearErr} {
+		if msg == "" || seen[msg] {
+			continue
+		}
+		seen[msg] = true
+		ui.Text(c, msg).FontSize(12).TextColor(p.danger).Margin(0, 0, 10, 0).MaxLines(3)
+	}
+}
+
 // walletImportSection keeps the key form folded away until asked for:
 // importing is occasional, and the page leads with the accounts.
 func (a *App) walletImportSection(c *ui.Context) {
@@ -367,12 +385,8 @@ func (a *App) walletImportForm(c *ui.Context) {
 		ui.Row(c).AlignItems(ui.Center).Gap(10).Children(func() {
 			a.primaryButton(c, a.t(i18n.WalletImportButton), nil,
 				strings.TrimSpace(a.draftKey) == "", a.submitWalletImport)
-			errText := a.walletErr
-			if family == chain.Near && a.nearErr != "" {
-				errText = a.nearErr
-			}
-			if errText != "" {
-				ui.Text(c, errText).FontSize(11).TextColor(p.danger).Grow(1).MaxLines(3)
+			if a.importErr != "" {
+				ui.Text(c, a.importErr).FontSize(11).TextColor(p.danger).Grow(1).MaxLines(3)
 			}
 		})
 		ui.Text(c, a.importKeyNote()).FontSize(11).TextColor(p.muted).MaxLines(3)
